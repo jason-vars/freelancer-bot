@@ -1,0 +1,3441 @@
+Auto polling started. interval=30s dry_run=env/default
+
+[1780343134] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343164] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343194] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343224] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780343254] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780343284] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343314] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780343344] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780343374] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780343404] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780343434] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780343464] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 14s. Sleeping 16s...
+
+[1780343494] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 13s. Sleeping 17s...
+
+[1780343524] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780343554] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780343584] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343614] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780343644] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780343674] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343704] Running fetch/score cycle...
+[40484472] stored (passed filters)
+Fetched/stored 1 new projects
+[40484472] score=100 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780343734] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343764] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780343794] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343824] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343854] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780343884] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780343914] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780343944] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780343974] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780344004] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780344034] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780344064] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780344094] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344124] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344154] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344184] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344214] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780344244] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344274] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344304] Running fetch/score cycle...
+[40484492] stored (passed filters)
+Fetched/stored 1 new projects
+[40484492] score=100 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 10s. Sleeping 20s...
+
+[1780344334] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780344364] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780344394] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780344424] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780344454] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780344484] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780344514] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780344544] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344574] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780344604] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344634] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780344664] Running fetch/score cycle...
+[40484501] stored (passed filters)
+Fetched/stored 1 new projects
+[40484501] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 16s. Sleeping 14s...
+
+[1780344694] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780344724] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344754] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780344784] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780344814] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344844] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344874] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780344904] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780344934] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780344964] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780344994] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345024] Running fetch/score cycle...
+[40484507] stored (passed filters)
+Fetched/stored 1 new projects
+[40484507] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780345054] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345084] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780345114] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345144] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345174] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780345204] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780345234] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780345264] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780345294] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780345324] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780345354] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345384] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780345414] Running fetch/score cycle...
+[40484514] stored (passed filters)
+Fetched/stored 1 new projects
+[40484514] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780345444] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345474] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780345504] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345534] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345564] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345594] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345624] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780345654] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345684] Running fetch/score cycle...
+[40484520] excluded (not saved): currency_skipped:INR
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345714] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345744] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780345774] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780345804] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780345834] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780345864] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345894] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780345924] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345954] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780345984] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346014] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346044] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780346074] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346104] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780346134] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346164] Running fetch/score cycle...
+[40484527] stored (passed filters)
+Fetched/stored 1 new projects
+[40484527] score=50 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780346194] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346224] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780346254] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780346284] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780346314] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780346344] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346374] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346404] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780346434] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780346464] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346494] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780346524] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346554] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780346584] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780346614] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 12s. Sleeping 18s...
+
+[1780346644] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780346674] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780346704] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346734] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780346764] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346794] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346824] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346854] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780346884] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346914] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780346944] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780346974] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780347004] Running fetch/score cycle...
+[40484547] stored (passed filters)
+Fetched/stored 1 new projects
+[40484547] score=75 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780347034] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780347064] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780347094] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780347124] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780347154] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780347184] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780347214] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780347244] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780347274] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780347304] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780347334] Running fetch/score cycle...
+[40484551] stored (passed filters)
+Fetched/stored 1 new projects
+[40484551] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780347364] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780347394] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780347424] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780347454] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780347484] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780347514] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780347544] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780347574] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780347604] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780347634] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780347664] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780347694] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780347724] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780347754] Running fetch/score cycle...
+[40484056] stored (passed filters)
+Fetched/stored 1 new projects
+[40484056] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 28s. Sleeping 2s...
+
+[1780347784] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780347814] Running fetch/score cycle...
+[40484555] stored (passed filters)
+Fetched/stored 1 new projects
+[40484555] score=50 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780347844] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780347874] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780347904] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780347934] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780347964] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780347994] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780348024] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780348054] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780348084] Running fetch/score cycle...
+[40484567] stored (passed filters)
+Fetched/stored 1 new projects
+[40484567] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780348114] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780348144] Running fetch/score cycle...
+[40484564] stored (passed filters)
+Fetched/stored 1 new projects
+[40484564] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780348174] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780348204] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780348234] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780348264] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 14s. Sleeping 16s...
+
+[1780348294] Running fetch/score cycle...
+[40484581] stored (passed filters)
+Fetched/stored 1 new projects
+[40484581] score=65 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 11s. Sleeping 19s...
+
+[1780348324] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780348354] Running fetch/score cycle...
+Run failed: HTTPSConnectionPool(host='www.freelancer.com', port=443): Max retries exceeded with url: /api/projects/0.1/projects/active/?query=react+next+vue+angular+php+laravel+python+django+nuxt+express+nest+typescript+html+css+javascript+flutter+fastapi+api+bugfix+feature+voip+mvp+web+mobile+desktop+fullstack+backend+frontend+sass+mern+ga4+gmt&limit=50&offset=0&full_description=True&job_details=True (Caused by NameResolutionError("HTTPSConnection(host='www.freelancer.com', port=443): Failed to resolve 'www.freelancer.com' ([Errno -3] Temporary failure in name resolution)"))
+Cycle complete in 20s. Sleeping 10s...
+
+[1780348384] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780348414] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780348444] Running fetch/score cycle...
+[40484584] stored (passed filters)
+Fetched/stored 1 new projects
+[40484584] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780348474] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780348504] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 15s. Sleeping 15s...
+
+[1780348534] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780348564] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780348594] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780348624] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 10s. Sleeping 20s...
+
+[1780348654] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 15s. Sleeping 15s...
+
+[1780348684] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 16s. Sleeping 14s...
+
+[1780348714] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 13s. Sleeping 17s...
+
+[1780348744] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780348774] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780348804] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780348834] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 11s. Sleeping 19s...
+
+[1780348864] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 10s. Sleeping 20s...
+
+[1780348894] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780348924] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780348954] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780348984] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780349014] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780349044] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780349074] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780349104] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780349134] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780349164] Running fetch/score cycle...
+[40484600] stored (passed filters)
+Fetched/stored 1 new projects
+[40484600] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780349194] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780349224] Running fetch/score cycle...
+[40484602] stored (passed filters)
+Fetched/stored 1 new projects
+[40484602] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 10s. Sleeping 20s...
+
+[1780349254] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780349284] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780349314] Running fetch/score cycle...
+[40484608] stored (passed filters)
+Fetched/stored 1 new projects
+[40484608] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780349344] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780349374] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780349404] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780349434] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780349464] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780349494] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780349524] Running fetch/score cycle...
+[40484613] stored (passed filters)
+Fetched/stored 1 new projects
+[40484613] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780349554] Running fetch/score cycle...
+[40484616] stored (passed filters)
+[40484614] stored (passed filters)
+[40484611] stored (passed filters)
+Fetched/stored 3 new projects
+[40484616] score=100 min_score=0 -> ALERT
+[40484614] score=50 min_score=0 -> ALERT
+[40484611] score=0 min_score=0 -> ALERT
+Notified 3 project(s).
+Cycle complete in 22s. Sleeping 8s...
+
+[1780349584] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780349614] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780349644] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780349674] Running fetch/score cycle...
+[40484603] stored (passed filters)
+Fetched/stored 1 new projects
+[40484603] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780349704] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780349734] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780349764] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780349794] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780349824] Running fetch/score cycle...
+Run failed: HTTPSConnectionPool(host='www.freelancer.com', port=443): Max retries exceeded with url: /api/projects/0.1/projects/active/?query=react+next+vue+angular+php+laravel+python+django+nuxt+express+nest+typescript+html+css+javascript+flutter+fastapi+api+bugfix+feature+voip+mvp+web+mobile+desktop+fullstack+backend+frontend+sass+mern+ga4+gmt&limit=50&offset=0&full_description=True&job_details=True (Caused by NameResolutionError("HTTPSConnection(host='www.freelancer.com', port=443): Failed to resolve 'www.freelancer.com' ([Errno -3] Temporary failure in name resolution)"))
+Cycle complete in 20s. Sleeping 10s...
+
+[1780349854] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 10s. Sleeping 20s...
+
+[1780349884] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780349914] Running fetch/score cycle...
+[40484621] stored (passed filters)
+Fetched/stored 1 new projects
+[40484621] score=100 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780349944] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780349974] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780350004] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780350034] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780350064] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780350094] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780350124] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780350154] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780350184] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780350214] Running fetch/score cycle...
+[40484625] stored (passed filters)
+Fetched/stored 1 new projects
+[40484625] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780350244] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780350274] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780350304] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780350334] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780350364] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780350394] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780350424] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 17s. Sleeping 13s...
+
+[1780350454] Running fetch/score cycle...
+[40484636] stored (passed filters)
+Fetched/stored 1 new projects
+[40484636] score=100 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 16s. Sleeping 14s...
+
+[1780350484] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780350514] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780350544] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780350574] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780350604] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780350634] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780350664] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780350694] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780350724] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780350754] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780350784] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780350814] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780350844] Running fetch/score cycle...
+[40484642] stored (passed filters)
+Fetched/stored 1 new projects
+[40484642] score=50 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780350874] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780350904] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780350934] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780350964] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780350994] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780351024] Running fetch/score cycle...
+[40484630] stored (passed filters)
+Fetched/stored 1 new projects
+[40484630] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 12s. Sleeping 18s...
+
+[1780351054] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351084] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 20s. Sleeping 10s...
+
+[1780351114] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780351144] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780351174] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780351204] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780351234] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351264] Running fetch/score cycle...
+[40484647] stored (passed filters)
+Fetched/stored 1 new projects
+[40484647] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780351294] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780351324] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780351354] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780351384] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351414] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351444] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780351474] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780351504] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780351534] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351564] Running fetch/score cycle...
+[40484651] stored (passed filters)
+Fetched/stored 1 new projects
+[40484651] score=75 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780351594] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780351624] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351654] Running fetch/score cycle...
+[40484653] stored (passed filters)
+Fetched/stored 1 new projects
+[40484653] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 15s. Sleeping 15s...
+
+[1780351684] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780351714] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780351744] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780351774] Running fetch/score cycle...
+[40484654] stored (passed filters)
+Fetched/stored 1 new projects
+[40484654] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780351804] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351834] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351864] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351894] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780351924] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780351954] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780351984] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352014] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352044] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780352074] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352104] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352134] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780352164] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352194] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780352224] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352254] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352284] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352314] Running fetch/score cycle...
+[40484672] stored (passed filters)
+Fetched/stored 1 new projects
+[40484672] score=75 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 10s. Sleeping 20s...
+
+[1780352344] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352374] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352404] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352434] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352464] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352494] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352524] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352554] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780352584] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352614] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352644] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352674] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352704] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352734] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352764] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352794] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352824] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352854] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352884] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352914] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780352944] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780352974] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353004] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353034] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353064] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780353094] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353124] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353154] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353184] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353214] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353244] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353274] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353304] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353334] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353364] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353394] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353424] Running fetch/score cycle...
+[40484685] stored (passed filters)
+Fetched/stored 1 new projects
+[40484685] score=50 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780353454] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353484] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353514] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353544] Running fetch/score cycle...
+[40484690] stored (passed filters)
+Fetched/stored 1 new projects
+[40484690] score=75 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780353574] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353604] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353634] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353664] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780353694] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353724] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780353754] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353784] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780353814] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353844] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353874] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780353904] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780353934] Running fetch/score cycle...
+[40484698] excluded (not saved): currency_skipped:INR
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780353964] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780353994] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780354024] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780354054] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780354084] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780354114] Running fetch/score cycle...
+[40484701] stored (passed filters)
+[40484686] stored (passed filters)
+Fetched/stored 2 new projects
+[40484701] score=75 min_score=0 -> ALERT
+[40484686] score=75 min_score=0 -> ALERT
+Notified 2 project(s).
+Cycle complete in 15s. Sleeping 15s...
+
+[1780354144] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354174] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354204] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780354234] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780354264] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780354294] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780354324] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354354] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780354384] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780354414] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780354444] Running fetch/score cycle...
+[40484711] stored (passed filters)
+Fetched/stored 1 new projects
+[40484711] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780354474] Running fetch/score cycle...
+[40484713] excluded (not saved): currency_skipped:INR
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 10s. Sleeping 20s...
+
+[1780354504] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354534] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354564] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780354594] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780354624] Running fetch/score cycle...
+[40484717] stored (passed filters)
+Fetched/stored 1 new projects
+[40484717] score=40 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780354654] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354684] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 13s. Sleeping 17s...
+
+[1780354714] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 13s. Sleeping 17s...
+
+[1780354744] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354774] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354804] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354834] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354864] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780354894] Running fetch/score cycle...
+[40484704] stored (passed filters)
+Fetched/stored 1 new projects
+[40484704] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780354924] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780354954] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780354984] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355014] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355044] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355074] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355104] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355134] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355164] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355194] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355224] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780355254] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355284] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355314] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780355344] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780355374] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355404] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780355434] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355464] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355494] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355524] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355554] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355584] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355614] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355644] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780355674] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355704] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355734] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780355764] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355794] Running fetch/score cycle...
+[40484737] excluded (not saved): currency_skipped:INR
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355824] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780355854] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780355884] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355914] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780355944] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780355974] Running fetch/score cycle...
+[40484742] stored (passed filters)
+Fetched/stored 1 new projects
+[40484742] score=0 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 12s. Sleeping 18s...
+
+[1780356004] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356034] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356064] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780356094] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356124] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780356154] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780356184] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780356214] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780356244] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780356274] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356304] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356334] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 2s. Sleeping 28s...
+
+[1780356364] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356394] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356424] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 13s. Sleeping 17s...
+
+[1780356454] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780356484] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356514] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356544] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780356574] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 6s. Sleeping 24s...
+
+[1780356604] Running fetch/score cycle...
+[40484742] stored (passed filters)
+[40484737] excluded (not saved): currency_skipped:INR
+[40484190] excluded (not saved): project_too_old:23376s
+[40484704] stored (passed filters)
+[40484717] stored (passed filters)
+[40484713] excluded (not saved): currency_skipped:INR
+[40484711] stored (passed filters)
+[40479967] excluded (not saved): project_too_old:190421s
+[40484701] stored (passed filters)
+[40484686] stored (passed filters)
+[40484698] excluded (not saved): currency_skipped:INR
+[40484690] stored (passed filters)
+[40484685] stored (passed filters)
+[40484672] stored (passed filters)
+[40484654] stored (passed filters)
+[40484653] stored (passed filters)
+[40484651] stored (passed filters)
+[40484647] stored (passed filters)
+[40484642] stored (passed filters)
+[40483329] excluded (not saved): project_too_old:49584s
+[40484636] stored (passed filters)
+[40484625] stored (passed filters)
+[40484621] stored (passed filters)
+[40484603] stored (passed filters)
+[40484616] stored (passed filters)
+[40484611] stored (passed filters)
+[40484613] stored (passed filters)
+[40484602] stored (passed filters)
+[40484581] stored (passed filters)
+[40482145] stored (passed filters)
+[40484564] stored (passed filters)
+[40484567] stored (passed filters)
+[40484555] stored (passed filters)
+[40484056] stored (passed filters)
+[40484551] stored (passed filters)
+[40484527] stored (passed filters)
+[40484520] excluded (not saved): project_too_old:10942s
+[40484514] excluded (not saved): project_too_old:11216s
+[40484507] excluded (not saved): project_too_old:11617s
+[40484501] excluded (not saved): project_too_old:11959s
+[40484492] excluded (not saved): project_too_old:12322s
+[40484472] excluded (not saved): project_too_old:12919s
+[40484459] excluded (not saved): project_too_old:13747s
+[40484448] excluded (not saved): project_too_old:13985s
+[40484447] excluded (not saved): project_too_old:13987s
+[40484439] excluded (not saved): project_too_old:14352s
+[40484433] excluded (not saved): project_too_old:14823s
+[40484415] excluded (not saved): project_too_old:15258s
+[40483016] excluded (not saved): project_too_old:59075s
+[40484412] excluded (not saved): project_too_old:15518s
+[40484404] excluded (not saved): project_too_old:15695s
+[40484405] excluded (not saved): project_too_old:15735s
+[40484401] excluded (not saved): project_too_old:15837s
+[40484396] excluded (not saved): project_too_old:16054s
+[40484382] excluded (not saved): project_too_old:16777s
+[40484379] excluded (not saved): project_too_old:16841s
+[40484376] excluded (not saved): project_too_old:16863s
+[40484375] excluded (not saved): project_too_old:16880s
+[40484377] excluded (not saved): project_too_old:16900s
+[40484374] excluded (not saved): project_too_old:16989s
+[40484369] excluded (not saved): project_too_old:17060s
+[40484357] excluded (not saved): project_too_old:17438s
+[40484349] excluded (not saved): project_too_old:17574s
+[40484344] excluded (not saved): project_too_old:17879s
+[40484339] excluded (not saved): project_too_old:17990s
+[40484342] excluded (not saved): project_too_old:17991s
+[40484331] excluded (not saved): project_too_old:18112s
+[40484332] excluded (not saved): project_too_old:18144s
+[40484330] excluded (not saved): project_too_old:18230s
+[40484328] excluded (not saved): project_too_old:18264s
+[40484302] excluded (not saved): project_too_old:19053s
+[40484287] excluded (not saved): project_too_old:19303s
+[40484293] excluded (not saved): project_too_old:19569s
+[40484272] excluded (not saved): project_too_old:20140s
+[40484274] excluded (not saved): project_too_old:20256s
+[40484273] excluded (not saved): project_too_old:20308s
+[40484263] excluded (not saved): project_too_old:20612s
+[40484259] excluded (not saved): project_too_old:20721s
+[40484257] excluded (not saved): project_too_old:20845s
+[40484249] excluded (not saved): project_too_old:21111s
+[40484245] excluded (not saved): project_too_old:21310s
+[40484239] excluded (not saved): project_too_old:21750s
+[40484228] excluded (not saved): project_too_old:21961s
+[40484221] excluded (not saved): project_too_old:22285s
+[40484217] excluded (not saved): project_too_old:22383s
+[40484214] excluded (not saved): project_too_old:22501s
+[40484207] excluded (not saved): project_too_old:22667s
+[40484204] excluded (not saved): project_too_old:22870s
+[40484201] excluded (not saved): project_too_old:22921s
+[40484194] excluded (not saved): project_too_old:23094s
+[40484197] excluded (not saved): project_too_old:23133s
+[40484196] excluded (not saved): project_too_old:23152s
+[40484187] excluded (not saved): project_too_old:23559s
+[40484177] excluded (not saved): project_too_old:23788s
+[40484165] excluded (not saved): project_too_old:24393s
+[40484136] excluded (not saved): project_too_old:24695s
+[40484150] excluded (not saved): project_too_old:24807s
+[40484148] excluded (not saved): project_too_old:24840s
+[40484134] excluded (not saved): project_too_old:25059s
+[40484139] excluded (not saved): project_too_old:25150s
+[40484130] excluded (not saved): project_too_old:25422s
+[40484126] excluded (not saved): project_too_old:25541s
+[40484122] excluded (not saved): project_too_old:25615s
+[40484111] excluded (not saved): project_too_old:25894s
+[40484106] excluded (not saved): project_too_old:26035s
+[40484074] excluded (not saved): project_too_old:26198s
+[40484098] excluded (not saved): project_too_old:26319s
+[40484090] excluded (not saved): project_too_old:26549s
+[40484087] excluded (not saved): project_too_old:26622s
+[40484076] excluded (not saved): project_too_old:26930s
+[40484055] excluded (not saved): project_too_old:27136s
+[40484063] excluded (not saved): project_too_old:27396s
+[40484060] excluded (not saved): project_too_old:27432s
+[40484057] excluded (not saved): project_too_old:27512s
+[40484048] excluded (not saved): project_too_old:27694s
+[40484049] excluded (not saved): project_too_old:27905s
+[40484040] excluded (not saved): project_too_old:28236s
+[40484036] excluded (not saved): project_too_old:28311s
+[40484034] excluded (not saved): project_too_old:28355s
+[40484022] excluded (not saved): project_too_old:28913s
+[40484012] excluded (not saved): project_too_old:29028s
+[40484010] excluded (not saved): project_too_old:29084s
+[40483918] excluded (not saved): project_too_old:29105s
+[40483996] excluded (not saved): project_too_old:29390s
+[40483993] excluded (not saved): project_too_old:29530s
+[40483992] excluded (not saved): project_too_old:29536s
+[40483990] excluded (not saved): project_too_old:29565s
+[40483989] excluded (not saved): project_too_old:29568s
+[40483988] excluded (not saved): project_too_old:29653s
+[40483980] excluded (not saved): project_too_old:29970s
+[40483977] excluded (not saved): project_too_old:30039s
+[40483973] excluded (not saved): project_too_old:30148s
+[40483971] excluded (not saved): project_too_old:30281s
+[40483947] excluded (not saved): project_too_old:31048s
+[40483928] excluded (not saved): project_too_old:31472s
+[40483921] excluded (not saved): project_too_old:31607s
+[40483915] excluded (not saved): project_too_old:31754s
+[40483909] excluded (not saved): project_too_old:31771s
+[40483913] excluded (not saved): project_too_old:31775s
+[40483908] excluded (not saved): project_too_old:31920s
+[40483864] excluded (not saved): project_too_old:32373s
+[40483889] excluded (not saved): project_too_old:32417s
+[40483890] excluded (not saved): project_too_old:32456s
+[40483883] excluded (not saved): project_too_old:32748s
+[40483733] excluded (not saved): project_too_old:33066s
+[40483857] excluded (not saved): project_too_old:33237s
+[40483848] excluded (not saved): project_too_old:33746s
+[40483844] excluded (not saved): project_too_old:33890s
+[40483841] excluded (not saved): project_too_old:33941s
+[40483744] excluded (not saved): project_too_old:33955s
+[40483828] excluded (not saved): project_too_old:34042s
+[40483822] excluded (not saved): project_too_old:34279s
+[40483812] excluded (not saved): project_too_old:34471s
+[40483807] excluded (not saved): project_too_old:34799s
+[40483787] excluded (not saved): project_too_old:35208s
+[40483778] excluded (not saved): project_too_old:35539s
+[40483779] excluded (not saved): project_too_old:35588s
+[40483777] excluded (not saved): project_too_old:35679s
+[40483766] excluded (not saved): project_too_old:36044s
+[40483764] excluded (not saved): project_too_old:36066s
+[40483762] excluded (not saved): project_too_old:36112s
+[40483518] excluded (not saved): project_too_old:36724s
+[40483728] excluded (not saved): project_too_old:37045s
+[40483724] excluded (not saved): project_too_old:37334s
+[40483717] excluded (not saved): project_too_old:37650s
+[40483677] excluded (not saved): project_too_old:37708s
+[40483709] excluded (not saved): project_too_old:37858s
+[40483707] excluded (not saved): project_too_old:37887s
+[40483697] excluded (not saved): project_too_old:38156s
+[40483694] excluded (not saved): project_too_old:38305s
+[40483693] excluded (not saved): project_too_old:38384s
+[40483686] excluded (not saved): project_too_old:38613s
+[40483684] excluded (not saved): project_too_old:38627s
+[40482906] excluded (not saved): project_too_old:38792s
+[40483674] excluded (not saved): project_too_old:38898s
+[40483670] excluded (not saved): project_too_old:38931s
+[40483659] excluded (not saved): project_too_old:39170s
+[40483661] excluded (not saved): project_too_old:39211s
+[40479459] excluded (not saved): project_too_old:39508s
+[40483652] excluded (not saved): project_too_old:39713s
+[40483649] excluded (not saved): project_too_old:39801s
+[40483647] excluded (not saved): project_too_old:39823s
+[40483644] excluded (not saved): project_too_old:40005s
+[40483639] excluded (not saved): project_too_old:40150s
+[40483630] excluded (not saved): project_too_old:40265s
+[40483609] excluded (not saved): project_too_old:40349s
+[40483619] excluded (not saved): project_too_old:40501s
+[40482279] excluded (not saved): project_too_old:84131s
+[40483594] excluded (not saved): project_too_old:41037s
+[40483596] excluded (not saved): project_too_old:41195s
+[40483595] excluded (not saved): project_too_old:41241s
+[40478214] excluded (not saved): project_too_old:41320s
+[40483589] excluded (not saved): project_too_old:41576s
+[40483586] excluded (not saved): project_too_old:41741s
+[40483582] excluded (not saved): project_too_old:41805s
+[40483578] excluded (not saved): project_too_old:41840s
+[40483579] excluded (not saved): project_too_old:41859s
+[40483576] excluded (not saved): project_too_old:41926s
+[40483572] excluded (not saved): project_too_old:41997s
+[40483567] excluded (not saved): project_too_old:42250s
+[40483562] excluded (not saved): project_too_old:42340s
+[40483556] excluded (not saved): project_too_old:42463s
+[40483555] excluded (not saved): project_too_old:42478s
+[40483551] excluded (not saved): project_too_old:42716s
+[40483445] excluded (not saved): project_too_old:42784s
+[40483547] excluded (not saved): project_too_old:42883s
+[40483540] excluded (not saved): project_too_old:43095s
+[40483531] excluded (not saved): project_too_old:43381s
+[40483529] excluded (not saved): project_too_old:43508s
+[40483525] excluded (not saved): project_too_old:43638s
+[40483499] excluded (not saved): project_too_old:44448s
+[40483479] excluded (not saved): project_too_old:44526s
+[40483490] excluded (not saved): project_too_old:44983s
+[40483484] excluded (not saved): project_too_old:45242s
+[40483475] excluded (not saved): project_too_old:45298s
+[40483473] excluded (not saved): project_too_old:45393s
+[40483474] excluded (not saved): project_too_old:45503s
+[40483465] excluded (not saved): project_too_old:45625s
+[40483461] excluded (not saved): project_too_old:45783s
+[40483458] excluded (not saved): project_too_old:45824s
+[40483430] excluded (not saved): project_too_old:46834s
+[40483423] excluded (not saved): project_too_old:47206s
+[40483416] excluded (not saved): project_too_old:47538s
+[40483413] excluded (not saved): project_too_old:47584s
+[40483405] excluded (not saved): project_too_old:47674s
+[40483411] excluded (not saved): project_too_old:47679s
+[40483406] excluded (not saved): project_too_old:47692s
+[40483407] excluded (not saved): project_too_old:47735s
+[40483383] excluded (not saved): project_too_old:48230s
+[40483361] excluded (not saved): project_too_old:48326s
+[40483340] excluded (not saved): project_too_old:49334s
+[40483335] excluded (not saved): project_too_old:49361s
+[40483334] excluded (not saved): project_too_old:49443s
+[40483319] excluded (not saved): project_too_old:50014s
+[40483305] excluded (not saved): project_too_old:50399s
+[40483301] excluded (not saved): project_too_old:50475s
+[40473582] excluded (not saved): project_too_old:50561s
+[40483283] excluded (not saved): project_too_old:51188s
+[40483279] excluded (not saved): project_too_old:51299s
+[40483267] excluded (not saved): project_too_old:51665s
+[40483257] excluded (not saved): project_too_old:51821s
+[40483210] excluded (not saved): project_too_old:52197s
+[40483156] excluded (not saved): project_too_old:52220s
+[40483182] excluded (not saved): project_too_old:52507s
+[40483232] excluded (not saved): project_too_old:52631s
+[40483226] excluded (not saved): project_too_old:52701s
+[40483215] excluded (not saved): project_too_old:52973s
+[40483202] excluded (not saved): project_too_old:53130s
+[40483205] excluded (not saved): project_too_old:53142s
+[40483200] excluded (not saved): project_too_old:53234s
+[40483192] excluded (not saved): project_too_old:53488s
+[40483175] excluded (not saved): project_too_old:54193s
+[40483173] excluded (not saved): project_too_old:54314s
+[40483126] excluded (not saved): project_too_old:54787s
+[40483155] excluded (not saved): project_too_old:54880s
+[40483146] excluded (not saved): project_too_old:55086s
+[40483089] excluded (not saved): project_too_old:55885s
+[40479669] excluded (not saved): project_too_old:55959s
+[40483107] excluded (not saved): project_too_old:56146s
+[40483105] excluded (not saved): project_too_old:56197s
+[40483040] excluded (not saved): project_too_old:57072s
+[40483076] excluded (not saved): project_too_old:57201s
+[40483074] excluded (not saved): project_too_old:57203s
+[40483075] excluded (not saved): project_too_old:57221s
+[40483068] excluded (not saved): project_too_old:57346s
+[40483058] excluded (not saved): project_too_old:57655s
+[40483056] excluded (not saved): project_too_old:57677s
+[40457121] excluded (not saved): project_too_old:57829s
+[40483049] excluded (not saved): project_too_old:57837s
+[40483043] excluded (not saved): project_too_old:58049s
+[40483029] excluded (not saved): project_too_old:58638s
+[40483019] excluded (not saved): project_too_old:58920s
+[40482982] excluded (not saved): project_too_old:59158s
+[40483005] excluded (not saved): project_too_old:59250s
+[40483003] excluded (not saved): project_too_old:59362s
+[40483002] excluded (not saved): project_too_old:59381s
+[40482999] excluded (not saved): project_too_old:59542s
+[40482989] excluded (not saved): project_too_old:59732s
+[40482948] excluded (not saved): project_too_old:59884s
+[40482977] excluded (not saved): project_too_old:59984s
+[40482932] excluded (not saved): project_too_old:60274s
+[40482936] excluded (not saved): project_too_old:60739s
+[40482935] excluded (not saved): project_too_old:60954s
+[40482922] excluded (not saved): project_too_old:61316s
+[40482907] excluded (not saved): project_too_old:61648s
+[40482897] excluded (not saved): project_too_old:61827s
+[40482893] excluded (not saved): project_too_old:61957s
+[40482890] excluded (not saved): project_too_old:61994s
+[40482888] excluded (not saved): project_too_old:62027s
+[40482882] excluded (not saved): project_too_old:62283s
+[40482880] excluded (not saved): project_too_old:62321s
+[40482879] excluded (not saved): project_too_old:62427s
+[40482871] excluded (not saved): project_too_old:62591s
+[40482866] excluded (not saved): project_too_old:62681s
+[40482827] excluded (not saved): project_too_old:62760s
+[40482863] excluded (not saved): project_too_old:62830s
+[40482856] excluded (not saved): project_too_old:62946s
+[40482811] excluded (not saved): project_too_old:62972s
+[40482852] excluded (not saved): project_too_old:63030s
+[40482848] excluded (not saved): project_too_old:63059s
+[40482841] excluded (not saved): project_too_old:63104s
+[40482840] excluded (not saved): project_too_old:63135s
+[40482799] excluded (not saved): project_too_old:63483s
+[40482824] excluded (not saved): project_too_old:63586s
+[40482818] excluded (not saved): project_too_old:63663s
+[40482817] excluded (not saved): project_too_old:63706s
+[40482815] excluded (not saved): project_too_old:63731s
+[40482709] excluded (not saved): project_too_old:64228s
+[40482757] excluded (not saved): project_too_old:64433s
+[40482790] excluded (not saved): project_too_old:64530s
+[40482788] excluded (not saved): project_too_old:64594s
+[40482780] excluded (not saved): project_too_old:64707s
+[40482778] excluded (not saved): project_too_old:64815s
+[40482763] excluded (not saved): project_too_old:65056s
+[40482758] excluded (not saved): project_too_old:65156s
+[40482756] excluded (not saved): project_too_old:65187s
+[40482752] excluded (not saved): project_too_old:65382s
+[40482749] excluded (not saved): project_too_old:65483s
+[40482738] excluded (not saved): project_too_old:65742s
+[40482735] excluded (not saved): project_too_old:65900s
+[40482730] excluded (not saved): project_too_old:65946s
+[40482733] excluded (not saved): project_too_old:65960s
+[40482724] excluded (not saved): project_too_old:66182s
+[40482719] excluded (not saved): project_too_old:66265s
+[40482710] excluded (not saved): project_too_old:66438s
+[40482701] excluded (not saved): project_too_old:66887s
+[40482690] excluded (not saved): project_too_old:67201s
+[40482688] excluded (not saved): project_too_old:67286s
+[40482662] excluded (not saved): project_too_old:67433s
+[40482681] excluded (not saved): project_too_old:67464s
+[40482680] excluded (not saved): project_too_old:67503s
+[40482669] excluded (not saved): project_too_old:67702s
+[40482666] excluded (not saved): project_too_old:67718s
+[40482667] excluded (not saved): project_too_old:67747s
+[40482658] excluded (not saved): project_too_old:68083s
+[40482655] excluded (not saved): project_too_old:68123s
+[40482634] excluded (not saved): project_too_old:68279s
+[40482639] excluded (not saved): project_too_old:68623s
+[40482637] excluded (not saved): project_too_old:68941s
+[40482627] excluded (not saved): project_too_old:69425s
+[40482599] excluded (not saved): project_too_old:69665s
+[40482617] excluded (not saved): project_too_old:69759s
+[40482608] excluded (not saved): project_too_old:69970s
+[40482603] excluded (not saved): project_too_old:70103s
+[40482593] excluded (not saved): project_too_old:70700s
+[40482589] excluded (not saved): project_too_old:70835s
+[40482583] excluded (not saved): project_too_old:71049s
+[40476272] excluded (not saved): project_too_old:335259s
+[40482575] excluded (not saved): project_too_old:71455s
+[40482549] excluded (not saved): project_too_old:71637s
+[40482557] excluded (not saved): project_too_old:72237s
+[40482482] excluded (not saved): project_too_old:72320s
+[40482546] excluded (not saved): project_too_old:72573s
+[40482545] excluded (not saved): project_too_old:72737s
+[40482543] excluded (not saved): project_too_old:72769s
+[40482541] excluded (not saved): project_too_old:72911s
+[40482539] excluded (not saved): project_too_old:72934s
+[40482526] excluded (not saved): project_too_old:73183s
+[40482517] excluded (not saved): project_too_old:73492s
+[40482516] excluded (not saved): project_too_old:73503s
+[40482510] excluded (not saved): project_too_old:73600s
+[40482473] excluded (not saved): project_too_old:74046s
+[40482456] excluded (not saved): project_too_old:75415s
+[40482454] excluded (not saved): project_too_old:75601s
+[40482453] excluded (not saved): project_too_old:75610s
+[40482452] excluded (not saved): project_too_old:75748s
+[40482445] excluded (not saved): project_too_old:75809s
+[40482444] excluded (not saved): project_too_old:75874s
+[40482437] excluded (not saved): project_too_old:76018s
+[40482438] excluded (not saved): project_too_old:76122s
+[40482431] excluded (not saved): project_too_old:76477s
+[40482428] excluded (not saved): project_too_old:76773s
+[40482415] excluded (not saved): project_too_old:77357s
+[40482406] excluded (not saved): project_too_old:77407s
+[40482399] excluded (not saved): project_too_old:77889s
+[40482394] excluded (not saved): project_too_old:77984s
+[40482390] excluded (not saved): project_too_old:78157s
+[40482388] excluded (not saved): project_too_old:78325s
+[40482370] excluded (not saved): project_too_old:79149s
+[40482358] excluded (not saved): project_too_old:79794s
+[40482351] excluded (not saved): project_too_old:80454s
+[40482341] excluded (not saved): project_too_old:81170s
+[40482337] excluded (not saved): project_too_old:81298s
+[40482324] excluded (not saved): project_too_old:82053s
+[40482319] excluded (not saved): project_too_old:82306s
+[40482318] excluded (not saved): project_too_old:82355s
+[40482317] excluded (not saved): project_too_old:82442s
+[40482299] excluded (not saved): project_too_old:83173s
+[40482297] excluded (not saved): project_too_old:83296s
+[40482294] excluded (not saved): project_too_old:83392s
+[40482291] excluded (not saved): project_too_old:83525s
+[40482273] excluded (not saved): project_too_old:84243s
+[40482272] excluded (not saved): project_too_old:84343s
+[40482267] excluded (not saved): project_too_old:84594s
+[40482248] excluded (not saved): project_too_old:85609s
+[40482243] excluded (not saved): project_too_old:85817s
+[40482241] excluded (not saved): project_too_old:85895s
+[40482219] excluded (not saved): project_too_old:86953s
+[40482213] excluded (not saved): project_too_old:87389s
+[40482190] excluded (not saved): project_too_old:88446s
+[40482203] excluded (not saved): project_too_old:88560s
+[40482191] excluded (not saved): project_too_old:89082s
+[40481880] excluded (not saved): project_too_old:89714s
+[40482182] excluded (not saved): project_too_old:89717s
+[40482171] excluded (not saved): project_too_old:90155s
+[40482162] excluded (not saved): project_too_old:90525s
+[40482153] excluded (not saved): project_too_old:91137s
+[40482148] excluded (not saved): project_too_old:91401s
+[40482147] excluded (not saved): project_too_old:91472s
+[40482141] excluded (not saved): project_too_old:91855s
+[40482140] excluded (not saved): project_too_old:92157s
+[40482125] excluded (not saved): project_too_old:92759s
+[40482126] excluded (not saved): project_too_old:92845s
+[40482106] excluded (not saved): project_too_old:93707s
+[40482092] excluded (not saved): project_too_old:94806s
+[40482082] excluded (not saved): project_too_old:95350s
+[40482079] excluded (not saved): project_too_old:95608s
+[40482078] excluded (not saved): project_too_old:95612s
+[40482077] excluded (not saved): project_too_old:95631s
+[40482066] excluded (not saved): project_too_old:95999s
+[40482062] excluded (not saved): project_too_old:96116s
+[40482046] excluded (not saved): project_too_old:97170s
+[40482045] excluded (not saved): project_too_old:97192s
+[40482030] excluded (not saved): project_too_old:98016s
+[40482023] excluded (not saved): project_too_old:98451s
+[40482022] excluded (not saved): project_too_old:98651s
+[40482019] excluded (not saved): project_too_old:98827s
+[40482020] excluded (not saved): project_too_old:98839s
+[40482018] excluded (not saved): project_too_old:98915s
+[40482014] excluded (not saved): project_too_old:99300s
+[40482007] excluded (not saved): project_too_old:99545s
+[40482006] excluded (not saved): project_too_old:99602s
+[40482000] excluded (not saved): project_too_old:99695s
+[40481994] excluded (not saved): project_too_old:99883s
+[40481988] excluded (not saved): project_too_old:100050s
+[40481960] excluded (not saved): project_too_old:100193s
+[40481985] excluded (not saved): project_too_old:100313s
+[40481984] excluded (not saved): project_too_old:100386s
+[40481982] excluded (not saved): project_too_old:100487s
+[40481932] excluded (not saved): project_too_old:101662s
+[40481958] excluded (not saved): project_too_old:101924s
+[40481953] excluded (not saved): project_too_old:102429s
+[40481946] excluded (not saved): project_too_old:102820s
+[40481933] excluded (not saved): project_too_old:102842s
+[40481931] excluded (not saved): project_too_old:103551s
+[40481928] excluded (not saved): project_too_old:103688s
+[40481930] excluded (not saved): project_too_old:103723s
+[40481923] excluded (not saved): project_too_old:104099s
+[40481907] excluded (not saved): project_too_old:104281s
+[40481916] excluded (not saved): project_too_old:104351s
+[40481915] excluded (not saved): project_too_old:104371s
+[40481893] excluded (not saved): project_too_old:105082s
+[40481885] excluded (not saved): project_too_old:105419s
+[40481830] excluded (not saved): project_too_old:106652s
+[40481862] excluded (not saved): project_too_old:106987s
+[40481857] excluded (not saved): project_too_old:107030s
+[40481846] excluded (not saved): project_too_old:107693s
+[40481844] excluded (not saved): project_too_old:107753s
+[40481839] excluded (not saved): project_too_old:107868s
+[40481820] excluded (not saved): project_too_old:108698s
+[40481805] excluded (not saved): project_too_old:109262s
+[40481762] excluded (not saved): project_too_old:109706s
+[40481791] excluded (not saved): project_too_old:109986s
+[40481782] excluded (not saved): project_too_old:110281s
+[40481764] excluded (not saved): project_too_old:110293s
+[40481778] excluded (not saved): project_too_old:110416s
+[40481760] excluded (not saved): project_too_old:111165s
+[40481756] excluded (not saved): project_too_old:111456s
+[40481750] excluded (not saved): project_too_old:111525s
+[40481751] excluded (not saved): project_too_old:111526s
+[40481747] excluded (not saved): project_too_old:111662s
+[40481740] excluded (not saved): project_too_old:112056s
+[40481738] excluded (not saved): project_too_old:112098s
+[40481729] excluded (not saved): project_too_old:112500s
+[40481727] excluded (not saved): project_too_old:112545s
+[40481721] excluded (not saved): project_too_old:112718s
+[40481716] excluded (not saved): project_too_old:112954s
+[40481711] excluded (not saved): project_too_old:112972s
+[40481710] excluded (not saved): project_too_old:113059s
+[40481707] excluded (not saved): project_too_old:113130s
+[40481687] excluded (not saved): project_too_old:113712s
+[40481683] excluded (not saved): project_too_old:114012s
+[40481677] excluded (not saved): project_too_old:114013s
+[40481672] excluded (not saved): project_too_old:114320s
+[40481674] excluded (not saved): project_too_old:114394s
+[40481660] excluded (not saved): project_too_old:114982s
+[40481659] excluded (not saved): project_too_old:115015s
+[40481656] excluded (not saved): project_too_old:115148s
+[40481645] excluded (not saved): project_too_old:115747s
+[40481640] excluded (not saved): project_too_old:116104s
+[40481636] excluded (not saved): project_too_old:116290s
+[40481621] excluded (not saved): project_too_old:116701s
+[40481616] excluded (not saved): project_too_old:116868s
+[40481606] excluded (not saved): project_too_old:117297s
+[40481601] excluded (not saved): project_too_old:117503s
+[39540546] excluded (not saved): project_too_old:117631s
+[40466680] excluded (not saved): project_too_old:117631s
+[40481583] excluded (not saved): project_too_old:118005s
+[40481581] excluded (not saved): project_too_old:118052s
+[40481573] excluded (not saved): project_too_old:118381s
+[40481569] excluded (not saved): project_too_old:118515s
+[40481560] excluded (not saved): project_too_old:118830s
+[40481554] excluded (not saved): project_too_old:119086s
+[40481549] excluded (not saved): project_too_old:119418s
+[40481543] excluded (not saved): project_too_old:119471s
+[40481538] excluded (not saved): project_too_old:119474s
+[40481540] excluded (not saved): project_too_old:119502s
+[40481533] excluded (not saved): project_too_old:119632s
+[40481510] excluded (not saved): project_too_old:120118s
+[40481520] excluded (not saved): project_too_old:120394s
+[40481508] excluded (not saved): project_too_old:121017s
+[40481498] excluded (not saved): project_too_old:121339s
+[40481490] excluded (not saved): project_too_old:121580s
+[40481485] excluded (not saved): project_too_old:121639s
+[40481486] excluded (not saved): project_too_old:121664s
+[40481482] excluded (not saved): project_too_old:121719s
+[40481480] excluded (not saved): project_too_old:121830s
+[40481470] excluded (not saved): project_too_old:122064s
+[40481466] excluded (not saved): project_too_old:122154s
+[40481445] excluded (not saved): project_too_old:122977s
+[40481442] excluded (not saved): project_too_old:123120s
+[40481441] excluded (not saved): project_too_old:123139s
+[40481425] excluded (not saved): project_too_old:123200s
+[40481439] excluded (not saved): project_too_old:123215s
+[40481436] excluded (not saved): project_too_old:123302s
+[40481434] excluded (not saved): project_too_old:123358s
+[40456099] excluded (not saved): project_too_old:123497s
+[40481422] excluded (not saved): project_too_old:123930s
+[40481417] excluded (not saved): project_too_old:124019s
+[40481421] excluded (not saved): project_too_old:124033s
+[40481420] excluded (not saved): project_too_old:124059s
+[40481419] excluded (not saved): project_too_old:124065s
+[40481415] excluded (not saved): project_too_old:124201s
+[40481377] excluded (not saved): project_too_old:124705s
+[40481026] excluded (not saved): project_too_old:124998s
+[40481394] excluded (not saved): project_too_old:125155s
+[40481374] excluded (not saved): project_too_old:125258s
+[40481391] excluded (not saved): project_too_old:125268s
+[40481387] excluded (not saved): project_too_old:125332s
+[40481386] excluded (not saved): project_too_old:125426s
+[40481361] excluded (not saved): project_too_old:126091s
+[40478772] excluded (not saved): project_too_old:126104s
+[40481357] excluded (not saved): project_too_old:126193s
+[40481344] excluded (not saved): project_too_old:126738s
+[40481325] excluded (not saved): project_too_old:127507s
+[40481324] excluded (not saved): project_too_old:127545s
+[40481320] excluded (not saved): project_too_old:127869s
+[40481308] excluded (not saved): project_too_old:128401s
+[40481301] excluded (not saved): project_too_old:128514s
+[40481280] excluded (not saved): project_too_old:128521s
+[40481298] excluded (not saved): project_too_old:128540s
+[40481293] excluded (not saved): project_too_old:128641s
+[40481289] excluded (not saved): project_too_old:128752s
+[40481288] excluded (not saved): project_too_old:128760s
+[40479101] excluded (not saved): project_too_old:129037s
+[40481283] excluded (not saved): project_too_old:129107s
+[40481258] excluded (not saved): project_too_old:129458s
+[40481271] excluded (not saved): project_too_old:129589s
+[40481245] excluded (not saved): project_too_old:129652s
+[40481251] excluded (not saved): project_too_old:130367s
+[40481242] excluded (not saved): project_too_old:130789s
+[40481232] excluded (not saved): project_too_old:131058s
+[40481229] excluded (not saved): project_too_old:131090s
+[40481226] excluded (not saved): project_too_old:131139s
+[40481215] excluded (not saved): project_too_old:131467s
+[40481209] excluded (not saved): project_too_old:131647s
+[40481205] excluded (not saved): project_too_old:131692s
+[40481206] excluded (not saved): project_too_old:131722s
+[40481201] excluded (not saved): project_too_old:131836s
+[40481200] excluded (not saved): project_too_old:131872s
+[40479316] excluded (not saved): project_too_old:131918s
+[40481187] excluded (not saved): project_too_old:132204s
+[40481178] excluded (not saved): project_too_old:132483s
+[40481172] excluded (not saved): project_too_old:132594s
+[40481174] excluded (not saved): project_too_old:132680s
+[40481170] excluded (not saved): project_too_old:132750s
+[40481169] excluded (not saved): project_too_old:132776s
+[40481163] excluded (not saved): project_too_old:133023s
+[40481157] excluded (not saved): project_too_old:133304s
+[40481149] excluded (not saved): project_too_old:133484s
+[40481147] excluded (not saved): project_too_old:133612s
+[40481145] excluded (not saved): project_too_old:133693s
+[40481144] excluded (not saved): project_too_old:133745s
+[40481125] excluded (not saved): project_too_old:134241s
+[40481129] excluded (not saved): project_too_old:134526s
+[40481126] excluded (not saved): project_too_old:134787s
+[40481107] excluded (not saved): project_too_old:135622s
+[40481106] excluded (not saved): project_too_old:135654s
+[40481100] excluded (not saved): project_too_old:135835s
+[40481098] excluded (not saved): project_too_old:136032s
+[40481086] excluded (not saved): project_too_old:136521s
+[40481084] excluded (not saved): project_too_old:136598s
+[40481080] excluded (not saved): project_too_old:136784s
+[40481073] excluded (not saved): project_too_old:137133s
+[40481070] excluded (not saved): project_too_old:137261s
+[40481068] excluded (not saved): project_too_old:137360s
+[40481069] excluded (not saved): project_too_old:137389s
+[40481066] excluded (not saved): project_too_old:137547s
+[40481051] excluded (not saved): project_too_old:138141s
+[40481050] excluded (not saved): project_too_old:138154s
+[40481030] excluded (not saved): project_too_old:138545s
+[40480994] excluded (not saved): project_too_old:139293s
+[40480916] excluded (not saved): project_too_old:139427s
+[40480986] excluded (not saved): project_too_old:139731s
+[40480953] excluded (not saved): project_too_old:140430s
+[40480968] excluded (not saved): project_too_old:140438s
+[40480962] excluded (not saved): project_too_old:140608s
+[40480959] excluded (not saved): project_too_old:140863s
+[40472393] excluded (not saved): project_too_old:142020s
+[40480954] excluded (not saved): project_too_old:141082s
+[40480927] excluded (not saved): project_too_old:141576s
+[40480929] excluded (not saved): project_too_old:141578s
+[40480901] excluded (not saved): project_too_old:141958s
+[40480915] excluded (not saved): project_too_old:142221s
+[40480910] excluded (not saved): project_too_old:142292s
+[40480905] excluded (not saved): project_too_old:142614s
+[40480890] excluded (not saved): project_too_old:142855s
+[40480895] excluded (not saved): project_too_old:142964s
+[40480840] excluded (not saved): project_too_old:143413s
+[40480876] excluded (not saved): project_too_old:143428s
+[40480837] excluded (not saved): project_too_old:144375s
+[40480822] excluded (not saved): project_too_old:144962s
+[40480819] excluded (not saved): project_too_old:145043s
+[40480806] excluded (not saved): project_too_old:145781s
+[40480782] excluded (not saved): project_too_old:146290s
+[40480778] excluded (not saved): project_too_old:146530s
+[40480767] excluded (not saved): project_too_old:147620s
+[40480755] excluded (not saved): project_too_old:147986s
+[40480747] excluded (not saved): project_too_old:148321s
+[40480739] excluded (not saved): project_too_old:148517s
+[40480732] excluded (not saved): project_too_old:148695s
+[40480720] excluded (not saved): project_too_old:149176s
+[40480709] excluded (not saved): project_too_old:149409s
+[40480710] excluded (not saved): project_too_old:149430s
+[40480705] excluded (not saved): project_too_old:149638s
+[40480681] excluded (not saved): project_too_old:149647s
+[40480700] excluded (not saved): project_too_old:149792s
+[40480687] excluded (not saved): project_too_old:150326s
+[40480683] excluded (not saved): project_too_old:150360s
+[40480672] excluded (not saved): project_too_old:150493s
+[40480673] excluded (not saved): project_too_old:150549s
+[40480669] excluded (not saved): project_too_old:150685s
+[40480654] excluded (not saved): project_too_old:151114s
+[40480618] excluded (not saved): project_too_old:151197s
+[40480647] excluded (not saved): project_too_old:151294s
+[40480643] excluded (not saved): project_too_old:151442s
+[40480639] excluded (not saved): project_too_old:151598s
+[40480612] excluded (not saved): project_too_old:151808s
+[40480624] excluded (not saved): project_too_old:152226s
+[40480610] excluded (not saved): project_too_old:152572s
+[40480609] excluded (not saved): project_too_old:152610s
+[40478700] excluded (not saved): project_too_old:152630s
+[40480591] excluded (not saved): project_too_old:153038s
+[40480555] excluded (not saved): project_too_old:153495s
+[40479793] excluded (not saved): project_too_old:197538s
+[40480530] excluded (not saved): project_too_old:154431s
+[40480540] excluded (not saved): project_too_old:155110s
+[40480522] excluded (not saved): project_too_old:155601s
+[40480520] excluded (not saved): project_too_old:155679s
+[40480515] excluded (not saved): project_too_old:155845s
+[40480514] excluded (not saved): project_too_old:155885s
+[40480500] excluded (not saved): project_too_old:156365s
+[40480494] excluded (not saved): project_too_old:156375s
+[40480497] excluded (not saved): project_too_old:156468s
+[40480482] excluded (not saved): project_too_old:156968s
+[40480485] excluded (not saved): project_too_old:157035s
+[40480481] excluded (not saved): project_too_old:157071s
+[40480480] excluded (not saved): project_too_old:157101s
+[40480479] excluded (not saved): project_too_old:157137s
+[40480476] excluded (not saved): project_too_old:157256s
+[40480451] excluded (not saved): project_too_old:157346s
+[40480463] excluded (not saved): project_too_old:157771s
+[40480454] excluded (not saved): project_too_old:158498s
+[40475905] excluded (not saved): project_too_old:159857s
+[40480433] excluded (not saved): project_too_old:159926s
+[40480423] excluded (not saved): project_too_old:160919s
+[40480415] excluded (not saved): project_too_old:161360s
+[40480408] excluded (not saved): project_too_old:161821s
+[40480405] excluded (not saved): project_too_old:161906s
+[40480396] excluded (not saved): project_too_old:162284s
+[40480389] excluded (not saved): project_too_old:162529s
+[40480386] excluded (not saved): project_too_old:162734s
+[40480376] excluded (not saved): project_too_old:163433s
+[40480355] excluded (not saved): project_too_old:164032s
+[40480367] excluded (not saved): project_too_old:164088s
+[40480361] excluded (not saved): project_too_old:164568s
+[40480354] excluded (not saved): project_too_old:164892s
+[40480351] excluded (not saved): project_too_old:165001s
+[40480346] excluded (not saved): project_too_old:165193s
+[40480318] excluded (not saved): project_too_old:165788s
+[40480336] excluded (not saved): project_too_old:165995s
+[40480335] excluded (not saved): project_too_old:166193s
+[40480333] excluded (not saved): project_too_old:166252s
+[40480331] excluded (not saved): project_too_old:166339s
+[40480313] excluded (not saved): project_too_old:167300s
+[40480298] excluded (not saved): project_too_old:167906s
+[40480295] excluded (not saved): project_too_old:168750s
+[40480279] excluded (not saved): project_too_old:170290s
+[40480268] excluded (not saved): project_too_old:171315s
+[40480264] excluded (not saved): project_too_old:171461s
+[40480259] excluded (not saved): project_too_old:171869s
+[40480240] excluded (not saved): project_too_old:173244s
+[40480230] excluded (not saved): project_too_old:174432s
+[40480225] excluded (not saved): project_too_old:174699s
+[40480221] excluded (not saved): project_too_old:175080s
+[40480220] excluded (not saved): project_too_old:175228s
+[40480217] excluded (not saved): project_too_old:175447s
+[40480206] excluded (not saved): project_too_old:176093s
+[40480202] excluded (not saved): project_too_old:176678s
+[40480182] excluded (not saved): project_too_old:177811s
+[40480178] excluded (not saved): project_too_old:178051s
+[40480173] excluded (not saved): project_too_old:178460s
+[40480169] excluded (not saved): project_too_old:178698s
+[40480168] excluded (not saved): project_too_old:178705s
+[40480158] excluded (not saved): project_too_old:179610s
+[40480148] excluded (not saved): project_too_old:180954s
+[40480136] excluded (not saved): project_too_old:181521s
+[40480122] excluded (not saved): project_too_old:182430s
+[40480118] excluded (not saved): project_too_old:182642s
+[40480116] excluded (not saved): project_too_old:182814s
+[40480114] excluded (not saved): project_too_old:182873s
+[40480105] excluded (not saved): project_too_old:183333s
+[40480097] excluded (not saved): project_too_old:183605s
+[40480096] excluded (not saved): project_too_old:183657s
+[40480071] excluded (not saved): project_too_old:185113s
+[40473709] excluded (not saved): project_too_old:185502s
+[40480062] excluded (not saved): project_too_old:186092s
+[40480056] excluded (not saved): project_too_old:186695s
+[40480028] excluded (not saved): project_too_old:186833s
+[40480044] excluded (not saved): project_too_old:187177s
+[40480034] excluded (not saved): project_too_old:187425s
+[40480038] excluded (not saved): project_too_old:187454s
+[40480032] excluded (not saved): project_too_old:187647s
+[40480029] excluded (not saved): project_too_old:187780s
+[40480024] excluded (not saved): project_too_old:187819s
+[40480023] excluded (not saved): project_too_old:187913s
+[40480016] excluded (not saved): project_too_old:188143s
+[40480015] excluded (not saved): project_too_old:188243s
+[40480008] excluded (not saved): project_too_old:188710s
+[40480004] excluded (not saved): project_too_old:189071s
+[40479983] excluded (not saved): project_too_old:190067s
+[40479974] excluded (not saved): project_too_old:190755s
+[40479954] excluded (not saved): project_too_old:190992s
+[40479965] excluded (not saved): project_too_old:191064s
+[40479948] excluded (not saved): project_too_old:191711s
+[40479947] excluded (not saved): project_too_old:191715s
+[40479945] excluded (not saved): project_too_old:191784s
+[40479941] excluded (not saved): project_too_old:191837s
+[40479937] excluded (not saved): project_too_old:191974s
+[40479935] excluded (not saved): project_too_old:192058s
+[40479896] excluded (not saved): project_too_old:192622s
+[40479920] excluded (not saved): project_too_old:192689s
+[40479912] excluded (not saved): project_too_old:192953s
+[40479909] excluded (not saved): project_too_old:193134s
+[40479888] excluded (not saved): project_too_old:193521s
+[40479886] excluded (not saved): project_too_old:193633s
+[40479874] excluded (not saved): project_too_old:193950s
+[40479859] excluded (not saved): project_too_old:194942s
+[40479833] excluded (not saved): project_too_old:196055s
+[40479828] excluded (not saved): project_too_old:196145s
+[40479820] excluded (not saved): project_too_old:196165s
+[40479822] excluded (not saved): project_too_old:196441s
+[40479804] excluded (not saved): project_too_old:197122s
+[40479803] excluded (not saved): project_too_old:197145s
+[40479800] excluded (not saved): project_too_old:197274s
+[40479796] excluded (not saved): project_too_old:197412s
+[40479786] excluded (not saved): project_too_old:197805s
+[40479775] excluded (not saved): project_too_old:198253s
+[40479756] excluded (not saved): project_too_old:198545s
+[40479749] excluded (not saved): project_too_old:198834s
+[40479745] excluded (not saved): project_too_old:198859s
+[40479739] excluded (not saved): project_too_old:199126s
+[40479741] excluded (not saved): project_too_old:199164s
+[40479731] excluded (not saved): project_too_old:199217s
+[40479730] excluded (not saved): project_too_old:199387s
+[40479681] excluded (not saved): project_too_old:200298s
+[40479703] excluded (not saved): project_too_old:200330s
+[40479670] excluded (not saved): project_too_old:200469s
+[40479693] excluded (not saved): project_too_old:200721s
+[40479661] excluded (not saved): project_too_old:200763s
+[40479691] excluded (not saved): project_too_old:200766s
+[40479680] excluded (not saved): project_too_old:201221s
+[40479676] excluded (not saved): project_too_old:201280s
+[40479674] excluded (not saved): project_too_old:201296s
+[40479666] excluded (not saved): project_too_old:201324s
+[40479660] excluded (not saved): project_too_old:201427s
+[40479650] excluded (not saved): project_too_old:201506s
+[40479657] excluded (not saved): project_too_old:201647s
+[40479656] excluded (not saved): project_too_old:201757s
+[40479645] excluded (not saved): project_too_old:202032s
+[40479652] excluded (not saved): project_too_old:202047s
+[40479648] excluded (not saved): project_too_old:202203s
+[40479647] excluded (not saved): project_too_old:202297s
+[40479646] excluded (not saved): project_too_old:202312s
+[40479644] excluded (not saved): project_too_old:202382s
+[40479640] excluded (not saved): project_too_old:202480s
+[40479638] excluded (not saved): project_too_old:202743s
+[40479636] excluded (not saved): project_too_old:202767s
+[40479628] excluded (not saved): project_too_old:203028s
+[40479625] excluded (not saved): project_too_old:203130s
+[40479618] excluded (not saved): project_too_old:203483s
+[40479598] excluded (not saved): project_too_old:204509s
+[40479595] excluded (not saved): project_too_old:204570s
+[40479591] excluded (not saved): project_too_old:204637s
+[40479590] excluded (not saved): project_too_old:204651s
+[40479587] excluded (not saved): project_too_old:204750s
+[40479586] excluded (not saved): project_too_old:204792s
+[40479581] excluded (not saved): project_too_old:204978s
+[40479571] excluded (not saved): project_too_old:205293s
+[40479562] excluded (not saved): project_too_old:205587s
+[40479563] excluded (not saved): project_too_old:205621s
+[40479543] excluded (not saved): project_too_old:206277s
+[40474510] excluded (not saved): project_too_old:402628s
+[40479532] excluded (not saved): project_too_old:206714s
+[40479523] excluded (not saved): project_too_old:206992s
+[40479509] excluded (not saved): project_too_old:207836s
+[40479495] excluded (not saved): project_too_old:207962s
+[40479499] excluded (not saved): project_too_old:208413s
+[40479497] excluded (not saved): project_too_old:208545s
+[40479490] excluded (not saved): project_too_old:208887s
+[40479478] excluded (not saved): project_too_old:209267s
+[40479475] excluded (not saved): project_too_old:209480s
+[40479469] excluded (not saved): project_too_old:209619s
+[40479443] excluded (not saved): project_too_old:209743s
+[40479467] excluded (not saved): project_too_old:209746s
+[40479466] excluded (not saved): project_too_old:209750s
+[40479463] excluded (not saved): project_too_old:209861s
+[40479454] excluded (not saved): project_too_old:210012s
+[40479451] excluded (not saved): project_too_old:210035s
+[40479455] excluded (not saved): project_too_old:210044s
+[40479447] excluded (not saved): project_too_old:210155s
+[40479439] excluded (not saved): project_too_old:210329s
+[40479425] excluded (not saved): project_too_old:211066s
+[40479423] excluded (not saved): project_too_old:211212s
+[40479418] excluded (not saved): project_too_old:211328s
+[40479411] excluded (not saved): project_too_old:211553s
+[40479407] excluded (not saved): project_too_old:211857s
+[40479377] excluded (not saved): project_too_old:212765s
+[40479382] excluded (not saved): project_too_old:212944s
+[40475714] excluded (not saved): project_too_old:213002s
+[40479362] excluded (not saved): project_too_old:213647s
+[40479352] excluded (not saved): project_too_old:214104s
+[40479304] excluded (not saved): project_too_old:215793s
+[40479279] excluded (not saved): project_too_old:215903s
+[40479297] excluded (not saved): project_too_old:216117s
+[40479292] excluded (not saved): project_too_old:216256s
+[40479265] excluded (not saved): project_too_old:216374s
+[40479290] excluded (not saved): project_too_old:216406s
+[40479253] excluded (not saved): project_too_old:216624s
+[40479271] excluded (not saved): project_too_old:216987s
+[40479269] excluded (not saved): project_too_old:217009s
+[40479267] excluded (not saved): project_too_old:217043s
+[40479263] excluded (not saved): project_too_old:217057s
+[40479254] excluded (not saved): project_too_old:217277s
+[40479237] excluded (not saved): project_too_old:218145s
+[40479233] excluded (not saved): project_too_old:218198s
+[40479234] excluded (not saved): project_too_old:218206s
+[40479223] excluded (not saved): project_too_old:218668s
+[40479219] excluded (not saved): project_too_old:218884s
+[40479200] excluded (not saved): project_too_old:219550s
+[40479192] excluded (not saved): project_too_old:219780s
+[40479191] excluded (not saved): project_too_old:219808s
+[40479181] excluded (not saved): project_too_old:220079s
+[40479172] excluded (not saved): project_too_old:220439s
+[40479165] excluded (not saved): project_too_old:220592s
+[40479148] excluded (not saved): project_too_old:221065s
+[40479140] excluded (not saved): project_too_old:221195s
+[40479139] excluded (not saved): project_too_old:221345s
+[40479134] excluded (not saved): project_too_old:221602s
+[40479128] excluded (not saved): project_too_old:221935s
+[40479104] excluded (not saved): project_too_old:223072s
+[40479102] excluded (not saved): project_too_old:223190s
+[40479100] excluded (not saved): project_too_old:223305s
+[40479096] excluded (not saved): project_too_old:223353s
+[40479085] excluded (not saved): project_too_old:223803s
+[40479063] excluded (not saved): project_too_old:224481s
+[40479062] excluded (not saved): project_too_old:224565s
+[40479056] excluded (not saved): project_too_old:224682s
+[40479055] excluded (not saved): project_too_old:224730s
+[40479048] excluded (not saved): project_too_old:225095s
+[40479046] excluded (not saved): project_too_old:225224s
+[40479044] excluded (not saved): project_too_old:225239s
+[40479041] excluded (not saved): project_too_old:225269s
+[40479027] excluded (not saved): project_too_old:225645s
+[40479008] excluded (not saved): project_too_old:225987s
+[40479016] excluded (not saved): project_too_old:226198s
+[40479014] excluded (not saved): project_too_old:226335s
+[40479004] excluded (not saved): project_too_old:226887s
+[40478991] excluded (not saved): project_too_old:227345s
+[40478988] excluded (not saved): project_too_old:227512s
+[40478984] excluded (not saved): project_too_old:227672s
+[40478983] excluded (not saved): project_too_old:227813s
+[40478928] excluded (not saved): project_too_old:228202s
+[40478964] excluded (not saved): project_too_old:228280s
+[40478955] excluded (not saved): project_too_old:228681s
+[40478914] excluded (not saved): project_too_old:229350s
+[40478935] excluded (not saved): project_too_old:229409s
+[40478933] excluded (not saved): project_too_old:229444s
+[40472378] excluded (not saved): project_too_old:229864s
+[40478920] excluded (not saved): project_too_old:229983s
+[40477888] excluded (not saved): project_too_old:230209s
+[40478898] excluded (not saved): project_too_old:231007s
+[40478894] excluded (not saved): project_too_old:231126s
+[40478889] excluded (not saved): project_too_old:231377s
+[40478888] excluded (not saved): project_too_old:231476s
+[40478883] excluded (not saved): project_too_old:231660s
+[40478876] excluded (not saved): project_too_old:231869s
+[40478872] excluded (not saved): project_too_old:231955s
+[40478866] excluded (not saved): project_too_old:232132s
+[40478855] excluded (not saved): project_too_old:232414s
+[40478851] excluded (not saved): project_too_old:232452s
+[40478845] excluded (not saved): project_too_old:232596s
+[40478834] excluded (not saved): project_too_old:232818s
+[40478826] excluded (not saved): project_too_old:233103s
+[40478819] excluded (not saved): project_too_old:233288s
+[40478805] excluded (not saved): project_too_old:233543s
+[40478810] excluded (not saved): project_too_old:233644s
+[40478790] excluded (not saved): project_too_old:233660s
+[40478806] excluded (not saved): project_too_old:233688s
+[40478791] excluded (not saved): project_too_old:234237s
+[40478784] excluded (not saved): project_too_old:234721s
+[40470365] excluded (not saved): project_too_old:235088s
+[40478774] excluded (not saved): project_too_old:235310s
+[40478761] excluded (not saved): project_too_old:235771s
+[40478745] excluded (not saved): project_too_old:235777s
+[40478743] excluded (not saved): project_too_old:235781s
+[40478744] excluded (not saved): project_too_old:235822s
+[40478737] excluded (not saved): project_too_old:236707s
+[40478730] excluded (not saved): project_too_old:236861s
+[40478734] excluded (not saved): project_too_old:236887s
+[40478728] excluded (not saved): project_too_old:237174s
+[40478716] excluded (not saved): project_too_old:237661s
+[40478702] excluded (not saved): project_too_old:237744s
+[40478701] excluded (not saved): project_too_old:237915s
+[40478711] excluded (not saved): project_too_old:238135s
+[40478697] excluded (not saved): project_too_old:238522s
+[40478293] excluded (not saved): project_too_old:238608s
+[40478691] excluded (not saved): project_too_old:238772s
+[40478659] excluded (not saved): project_too_old:239184s
+[40478683] excluded (not saved): project_too_old:239201s
+[40476474] excluded (not saved): project_too_old:239493s
+[40478661] excluded (not saved): project_too_old:239900s
+[40478660] excluded (not saved): project_too_old:239957s
+[40478653] excluded (not saved): project_too_old:240240s
+[40478632] excluded (not saved): project_too_old:241390s
+[40476418] excluded (not saved): project_too_old:241818s
+[40478622] excluded (not saved): project_too_old:242254s
+[40478608] excluded (not saved): project_too_old:242869s
+[40478588] excluded (not saved): project_too_old:243673s
+[40478547] excluded (not saved): project_too_old:245647s
+[40478532] excluded (not saved): project_too_old:246532s
+[40471018] excluded (not saved): project_too_old:534851s
+[40478508] excluded (not saved): project_too_old:247838s
+[40478491] excluded (not saved): project_too_old:249010s
+[40478469] excluded (not saved): project_too_old:250754s
+[40478427] excluded (not saved): project_too_old:253769s
+[40478425] excluded (not saved): project_too_old:253894s
+[40478413] excluded (not saved): project_too_old:254898s
+[40478412] excluded (not saved): project_too_old:255100s
+[40478398] excluded (not saved): project_too_old:256141s
+[40478393] excluded (not saved): project_too_old:256659s
+[40478384] excluded (not saved): project_too_old:257779s
+[40478380] excluded (not saved): project_too_old:258174s
+[40478377] excluded (not saved): project_too_old:258425s
+[40478359] excluded (not saved): project_too_old:260037s
+[40478354] excluded (not saved): project_too_old:260428s
+[40478346] excluded (not saved): project_too_old:261046s
+[40478336] excluded (not saved): project_too_old:261552s
+[40478335] excluded (not saved): project_too_old:261668s
+[40478333] excluded (not saved): project_too_old:261704s
+[40478329] excluded (not saved): project_too_old:262295s
+[40478302] excluded (not saved): project_too_old:262436s
+[40478325] excluded (not saved): project_too_old:262516s
+[40478310] excluded (not saved): project_too_old:263211s
+[40478168] excluded (not saved): project_too_old:263810s
+[40478300] excluded (not saved): project_too_old:263984s
+[40478274] excluded (not saved): project_too_old:265493s
+[40478272] excluded (not saved): project_too_old:265838s
+[40478268] excluded (not saved): project_too_old:266091s
+[40478258] excluded (not saved): project_too_old:266591s
+[40478255] excluded (not saved): project_too_old:266926s
+[40478254] excluded (not saved): project_too_old:266947s
+[40473301] excluded (not saved): project_too_old:266997s
+[40478247] excluded (not saved): project_too_old:267141s
+[40478240] excluded (not saved): project_too_old:267509s
+[40478241] excluded (not saved): project_too_old:268234s
+[40478224] excluded (not saved): project_too_old:268716s
+[40478233] excluded (not saved): project_too_old:268778s
+[40478220] excluded (not saved): project_too_old:269500s
+[40478215] excluded (not saved): project_too_old:269744s
+[40478216] excluded (not saved): project_too_old:269845s
+[40478208] excluded (not saved): project_too_old:270072s
+[40478203] excluded (not saved): project_too_old:270169s
+[40478195] excluded (not saved): project_too_old:270418s
+[40478196] excluded (not saved): project_too_old:270523s
+[40478192] excluded (not saved): project_too_old:270657s
+[40478189] excluded (not saved): project_too_old:270748s
+[40478182] excluded (not saved): project_too_old:271119s
+[40478175] excluded (not saved): project_too_old:271371s
+[40478173] excluded (not saved): project_too_old:271378s
+[collector] reached MAX_PAGES=20; stopped early (more unseen projects may remain this poll)
+Fetched/stored 30 new projects
+Notified 0 project(s).
+Cycle complete in 38s. Sleeping 1s...
+
+[1780356643] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780356673] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 4s. Sleeping 26s...
+
+[1780356703] Running fetch/score cycle...
+[40484756] stored (passed filters)
+Fetched/stored 1 new projects
+[40484756] score=75 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 7s. Sleeping 23s...
+
+[1780356733] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356763] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356793] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356823] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780356853] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 14s. Sleeping 16s...
+
+[1780356883] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 8s. Sleeping 22s...
+
+[1780356913] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780356943] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780356973] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780357003] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780357033] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780357063] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780357093] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780357123] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780357153] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 3s. Sleeping 27s...
+
+[1780357183] Running fetch/score cycle...
+Fetched/stored 0 new projects
+Notified 0 project(s).
+Cycle complete in 9s. Sleeping 21s...
+
+[1780357213] Running fetch/score cycle...
+[40484767] stored (passed filters)
+Fetched/stored 1 new projects
+[40484767] score=90 min_score=0 -> ALERT
+Notified 1 project(s).
+Cycle complete in 5s. Sleeping 25s...
+
+[1780357243] Running fetch/score cycle...
+Fetched/stored 0 new projects

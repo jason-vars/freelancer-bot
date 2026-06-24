@@ -1,0 +1,19 @@
+[Unit]
+Description=Freelancer bid bot - webhook listener (Telegram notifications)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust WorkingDirectory / ExecStart / User to match your machine.
+# On the VM the project is at /home/dev/10leksandr/freelancer-bot
+WorkingDirectory=/home/dev/10leksandr/freelancer-bot
+ExecStart=/home/dev/10leksandr/freelancer-bot/.venv/bin/python -m bot.cli webhook-listen --host 0.0.0.0 --port 8080
+# The app loads .env itself (python-dotenv) from WorkingDirectory, so no
+# EnvironmentFile is needed.
+Restart=on-failure
+RestartSec=5
+User=dev
+
+[Install]
+WantedBy=multi-user.target

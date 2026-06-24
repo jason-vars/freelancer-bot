@@ -1,0 +1,20 @@
+[Unit]
+Description=Freelancer bid bot - polling loop (automatic Telegram notifications)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust WorkingDirectory / ExecStart / User to match your machine.
+# On the VM the project is at /home/dev/10leksandr/freelancer-bot
+WorkingDirectory=/home/dev/10leksandr/freelancer-bot
+# Fetch new projects every 30s and notify for "great" ones.
+# Keep BOT_DRY_RUN=1 in .env so it only saves drafts + notifies (no real bids).
+ExecStart=/home/dev/10leksandr/freelancer-bot/.venv/bin/python -m bot.cli run-loop --interval-seconds 30
+# The app loads .env itself (python-dotenv) from WorkingDirectory.
+Restart=on-failure
+RestartSec=10
+User=dev
+
+[Install]
+WantedBy=multi-user.target

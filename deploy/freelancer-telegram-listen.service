@@ -1,0 +1,20 @@
+[Unit]
+Description=Freelancer bid bot - Telegram listener (handles "Mark read" button presses)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust WorkingDirectory / ExecStart / User to match your machine.
+# On the VM the project is at /home/dev/10leksandr/freelancer-bot
+WorkingDirectory=/home/dev/10leksandr/freelancer-bot
+# Long-polls Telegram getUpdates for inline-button taps and edits the alert to
+# mark it read. Run alongside freelancer-poll.service (or the webhook listener).
+ExecStart=/home/dev/10leksandr/freelancer-bot/.venv/bin/python -m bot.cli telegram-listen
+# The app loads .env itself (python-dotenv) from WorkingDirectory.
+Restart=on-failure
+RestartSec=10
+User=dev
+
+[Install]
+WantedBy=multi-user.target
