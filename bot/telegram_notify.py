@@ -74,6 +74,26 @@ def _project_link(project: dict[str, Any]) -> str | None:
     return f"https://www.freelancer.com/projects/{s}/details"
 
 
+def _job_type(project: dict[str, Any]) -> str | None:
+    """Return 'hourly' / 'fixed' (lower-cased) for the project, or None if unknown.
+
+    Freelancer marks the engagement model on the project ``type`` field. The
+    polling path hands us a DB row whose ``raw_json`` holds the full API payload,
+    so fall back to parsing that when ``type`` isn't a top-level key (it isn't a
+    stored column). The webhook path passes the extracted project dict directly,
+    which may already carry ``type``.
+    """
+    t = project.get("type")
+    if not t:
+        raw = project.get("raw_json")
+        if raw:
+            try:
+                t = (json.loads(raw) or {}).get("type")
+            except (ValueError, TypeError):
+                t = None
+    return str(t).lower() if t else None
+
+
 TELEGRAM_MAX_CHARS = 4096
 # Leave headroom below the hard limit for HTML tags / escaping expansion.
 _SAFE_MAX_CHARS = 3900
@@ -140,6 +160,7 @@ def build_project_notification(
         payment_verified = client_status.get("payment_verified")
 
     currency_raw = (project.get("currency") or "").strip()
+    job_type = _job_type(project)
     posted = _format_posted(project.get("created_at"))
     pv_text = "Yes" if payment_verified is True else ("No" if payment_verified is False else "-")
 
@@ -156,6 +177,15 @@ def build_project_notification(
     head_lines: list[str] = [f"#{_esc(pid)}", title_line]
     if url:
         head_lines.append(f"Link: <a href=\"{safe_url}\">{safe_url}</a>")
+    # Engagement model up front: the user needs to tell hourly from fixed-price at
+    # a glance. Render it as its own header line (Telegram tints nothing but links,
+    # so an emoji is the only way to make it pop visually).
+    if job_type == "hourly":
+        head_lines.append("<b>Type:</b> ⏱️ Hourly")
+    elif job_type == "fixed":
+        head_lines.append("<b>Type:</b> \U0001f4b2 Fixed-price")
+    elif job_type:
+        head_lines.append(f"<b>Type:</b> {_esc(job_type.title())}")
     skills_line = f"<b>Skills:</b> {skills_display}"
     head_lines.append(skills_line)
 
@@ -164,7 +194,12 @@ def build_project_notification(
     # also forces Telegram to render the message bubble at full width.
     cells: list[tuple[str, str]] = []
     if budget_min is not None or budget_max is not None:
-        cells.append(("Budget", f"{budget_min} - {budget_max} {currency_raw}".rstrip()))
+        budget_val = f"{budget_min} - {budget_max} {currency_raw}".rstrip()
+        # For hourly projects the budget range is the hourly rate, not a fixed
+        # total — mark it so the number isn't mistaken for a project price.
+        if job_type == "hourly":
+            budget_val += " /hr"
+        cells.append(("Budget", budget_val))
     if score is not None:
         cells.append(("Score", str(int(score))))
     if posted:
