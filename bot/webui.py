@@ -66,6 +66,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("BOT_POLL_INTERVAL_SECONDS", "Poll interval (s)", "int", "Seconds between polling cycles.", "300"),
         Field("BOT_ACTIVE_START", "Active from", "time", "Only run between these local times (blank = 24/7).", ""),
         Field("BOT_ACTIVE_END", "Active until", "time", "End of the active window (supports overnight, e.g. 22:00→06:00).", ""),
+        Field("BOT_ACTIVE_TZ_OFFSET", "Active-hours timezone (UTC offset)", "text",
+              "Hours from UTC the active window uses, e.g. 9, -5, 5.5. BLANK = the bot machine's own clock. Set this if the bot runs on a server in another timezone.", ""),
     ]),
     ("AI proposal", [
         Field("BOT_PROPOSAL_INSTRUCTIONS", "Extra instructions for ChatGPT", "textarea",
@@ -85,9 +87,9 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("BOT_PROPOSAL_TEMPLATE", "Default template (advanced)", "textarea",
               "A sample proposal the AI imitates for tone/structure. Blank = built-in style example.", ""),
         Field("BOT_PROPOSAL_PREFIX", "Text at start", "text",
-              "Literal text prepended to every proposal, e.g. \"Hello,\".", ""),
-        Field("BOT_PROPOSAL_SUFFIX", "Text at end", "text",
-              "Literal text appended to every proposal, e.g. \"Thanks!\".", ""),
+              "Literal text put at the very top of every proposal, e.g. \"Hello,\".", ""),
+        Field("BOT_PROPOSAL_SUFFIX", "Text at end (closing)", "textarea",
+              "Closing line(s) placed at the very end, just BEFORE your name. One per line, e.g. \"Hope to dive into your project asap.\" then \"Thank you.\". Your name (if Include name is On) is added on the last line after this.", ""),
     ]),
     ("AI project filtering", [
         Field("BOT_AI_FILTER_ENABLED", "Enable AI project filtering", "bool",

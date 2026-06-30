@@ -121,6 +121,13 @@ FIELD_DOCS: dict[str, str] = {
         "End of the active window (HH:MM, local). Overnight windows work: 22:00 → 06:00 "
         "means active across midnight. start == end is treated as 24h."
     ),
+    "BOT_ACTIVE_TZ_OFFSET": (
+        "Which timezone the Active-from/until window is measured in, as an offset from "
+        "UTC: e.g. 9 (Tokyo), -5 (New York), 5.5 (India). Leave BLANK to use the bot "
+        "machine's own local clock. Set this when the bot runs on a server/VM whose "
+        "timezone differs from yours — otherwise '08:00' means 08:00 on the SERVER, not "
+        "for you. The run-loop log prints the time it currently sees, so you can verify."
+    ),
     # ── AI proposal ───────────────────────────────────────────────────────────
     "BOT_PROPOSAL_INSTRUCTIONS": (
         "Free-text steering added to EVERY AI proposal as high-priority guidance (the "
@@ -236,6 +243,7 @@ FIELD_EXAMPLES: dict[str, str] = {
     "BOT_POLL_INTERVAL_SECONDS": "300",
     "BOT_ACTIVE_START": "09:00",
     "BOT_ACTIVE_END": "18:00",
+    "BOT_ACTIVE_TZ_OFFSET": "9   (e.g. 9, -5, 5.5; blank = machine time)",
     "BOT_PROPOSAL_INSTRUCTIONS": "Emphasise a 1-week delivery and ask about their deadline. Keep it under 700 characters.",
     "BOT_DEFAULT_PERIOD_DAYS": "7",
     "BOT_DEFAULT_MILESTONE_PERCENT": "50",

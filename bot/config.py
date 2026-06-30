@@ -34,6 +34,15 @@ def _csv(name: str) -> list[str]:
     v = os.getenv(name, "")
     return [x.strip() for x in v.split(",") if x.strip()]
 
+def _get_float_or_none(name: str) -> float | None:
+    v = os.getenv(name)
+    if v is None or v.strip() == "":
+        return None
+    try:
+        return float(v.strip().lstrip("+"))
+    except ValueError:
+        return None
+
 def _get_text(name: str) -> str:
     """Read a (possibly multi-line) text value.
 
@@ -84,6 +93,9 @@ class Settings:
     # Active-hours window (local time, "HH:MM"); empty = always active.
     active_start: str | None
     active_end: str | None
+    # Hours offset from UTC the active window is evaluated in (e.g. 9, -5, 5.5).
+    # None = use the bot machine's own local time.
+    active_tz_offset: float | None
 
     # Bid defaults
     default_period_days: int
@@ -211,6 +223,7 @@ def load_settings() -> Settings:
         min_bid_remaining_seconds=_get_int("BOT_MIN_BID_REMAINING_SECONDS", 0),
         active_start=(os.getenv("BOT_ACTIVE_START") or "").strip() or None,
         active_end=(os.getenv("BOT_ACTIVE_END") or "").strip() or None,
+        active_tz_offset=_get_float_or_none("BOT_ACTIVE_TZ_OFFSET"),
         default_period_days=_get_int("BOT_DEFAULT_PERIOD_DAYS", 7),
         default_milestone_percent=_get_int("BOT_DEFAULT_MILESTONE_PERCENT", 50),
         bid_rules=_get_json_list("BOT_BID_RULES"),

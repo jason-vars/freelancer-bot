@@ -29,20 +29,44 @@ def _parse_hhmm(value: str | None) -> int | None:
     return h * 60 + m
 
 
-def within_active_hours(start: str | None, end: str | None, now_minutes: int | None = None) -> bool:
-    """Is the current local time inside the [start, end) window?
+def current_minutes(tz_offset_hours: float | None = None) -> int:
+    """Minutes-since-midnight for the active-hours check.
 
-    Both bounds are "HH:MM" in the machine's local timezone. If either is empty or
-    unparseable the window is treated as DISABLED (always active). Windows that
-    wrap past midnight (e.g. 22:00–06:00) are handled. start == end means 24h.
+    With ``tz_offset_hours`` None, uses the MACHINE's local time (time.localtime).
+    When set (e.g. 9, -5, 5.5), uses UTC + that offset instead — so the window is
+    evaluated in YOUR timezone even when the bot runs on a server set to UTC."""
+    if tz_offset_hours is None:
+        lt = time.localtime()
+        return lt.tm_hour * 60 + lt.tm_min
+    u = time.gmtime()
+    return (u.tm_hour * 60 + u.tm_min + round(tz_offset_hours * 60)) % (24 * 60)
+
+
+def fmt_minutes(total: int) -> str:
+    """Render minutes-since-midnight as HH:MM (for diagnostics)."""
+    total %= 24 * 60
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def within_active_hours(
+    start: str | None,
+    end: str | None,
+    now_minutes: int | None = None,
+    tz_offset_hours: float | None = None,
+) -> bool:
+    """Is the current time inside the [start, end) window?
+
+    Bounds are "HH:MM". The "current" time is the machine's local time, unless
+    ``tz_offset_hours`` is given (then UTC + offset). If either bound is empty or
+    unparseable the window is DISABLED (always active). Windows that wrap past
+    midnight (e.g. 22:00–06:00) are handled. start == end means 24h.
     """
     a = _parse_hhmm(start)
     b = _parse_hhmm(end)
     if a is None or b is None:
         return True
     if now_minutes is None:
-        lt = time.localtime()
-        now_minutes = lt.tm_hour * 60 + lt.tm_min
+        now_minutes = current_minutes(tz_offset_hours)
     if a == b:
         return True
     if a < b:

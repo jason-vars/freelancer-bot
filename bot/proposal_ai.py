@@ -53,101 +53,105 @@ class ProposalInput:
     suffix: str = ""
 
 
-def _system_rules(*, ask_question: bool, include_name: bool, include_profile: bool) -> str:
-    """Build the proposal system prompt, toggling parts the user disabled.
+def _system_rules(*, ask_question: bool, include_profile: bool,
+                  has_template: bool, has_portfolio: bool,
+                  user_instructions: str) -> str:
+    """Build the proposal system prompt.
 
-    The three checkboxes from the FABB-style AI config change the strict format:
-    whether a question is asked, whether the name is signed, and whether the
-    profile/experience is described."""
-    parts = ["1) Skills/experience: state you have built similar projects before. Use the REAL technical keywords from this job, and say briefly how you approached the solution."]
-    if include_profile:
-        parts.append("2) Portfolio: reference ONLY the provided portfolio URLs. For the 2-4 most relevant ones, give a one-line note of what solution you built there and how you approached it, tied to this job's tech. Never invent links.")
-    parts.append("3) Plan: a concrete step-by-step approach for THIS specific job, using its tools.")
-    content_block = "\n".join(parts)
-
+    HARD RULES (length, plain text, hook, line breaks) apply to every proposal. The
+    toggles add/remove the portfolio and question. A user template drives the
+    structure, and the user's free-text instructions are the HIGHEST authority — if
+    anything conflicts, the model obeys the user. The closing line(s) and signature
+    are appended deterministically AFTER generation, so the model never writes them."""
+    lines = [
+        "You write short, human cover letters (proposals) for Freelancer.com jobs.",
+        "Output ONLY the proposal text itself — no preamble, no headings, no markdown, no code fences.",
+        "",
+        "HARD RULES (never break these):",
+        "- English only.",
+        "- Keep it UNDER 200 words AND under 1200 characters.",
+        "- Open with a strong one-line hook that immediately shows you understand THIS specific project.",
+        "- Plain text only: NO bullet points, NO numbered lists, NO markdown, NO backslash (\\) characters.",
+        "- Write one sentence per line. Do NOT use empty lines, except at most a single blank line right before the closing.",
+        "- Confident, natural, human. No emojis, no fluff, no fake claims. Use ',' never ';'.",
+    ]
+    if include_profile and has_portfolio:
+        lines.append("- You may reference ONLY the portfolio URLs listed below, each on its own line. Never invent links.")
+    elif not include_profile:
+        lines.append("- Do NOT include portfolio links or a profile/experience dump.")
     if ask_question:
-        question_rules = (
-            "- First line: a short greeting. Right after it, open with ONE short question.\n"
-            "- Before the end: ONE short question, then a closing greeting"
-        )
-        desc_questions = "If the job description contains questions, answer each with a real, simple, natural spoken answer of 1-2 sentences — the way you would actually say it.\n\n"
+        lines.append("- End with exactly ONE short, specific question to the client.")
     else:
-        question_rules = (
-            "- First line: a short greeting, then go straight into the value you bring. Do NOT ask any questions anywhere.\n"
-            "- Before the end: a closing greeting"
-        )
-        desc_questions = ""
+        lines.append("- Do NOT ask any questions.")
+    lines.append(
+        "- Do NOT write a closing salutation (no 'Best regards', 'Sincerely', etc.) and do NOT write any name or "
+        "signature. End with the last sentence of your pitch or your question — a closing and signature are added "
+        "automatically afterwards."
+    )
 
-    name_rule = ", then the name on the last line." if include_name else "."
+    if has_template:
+        lines += [
+            "",
+            "Follow the STYLE, TONE and STRUCTURE of the user's template below, adapting its wording to THIS job. "
+            "Do not copy it word-for-word, and drop any of its lines that are irrelevant to this job.",
+        ]
+    else:
+        lines += [
+            "",
+            "Structure: the hook, then 1-2 sentences on your directly-relevant experience with this job's exact stack, "
+            "then a brief concrete approach written as flowing sentences (NOT a list), then the closing.",
+        ]
 
-    return f"""You write short, humanized cover letters (proposals) for Freelancer.com jobs.
-
-Voice: a senior engineer (10+ years) who has already shipped SIMILAR projects. Confident, natural, human. No emojis, no fluff, no fake claims.
-
-Content — in this order:
-{content_block}
-
-{desc_questions}Formatting rules (STRICT):
-- English only.
-{question_rules}{name_rule}
-- Put each sentence on its own line. Do NOT add empty lines anywhere.
-- Use "," never ";".
-- Humanized and concise. Total length MUST be under 1200 characters.
-"""
+    if (user_instructions or "").strip():
+        lines += [
+            "",
+            "USER INSTRUCTIONS (HIGHEST priority — if anything above conflicts with these, obey these):",
+            user_instructions.strip(),
+        ]
+    return "\n".join(lines)
 
 
 def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> str:
     client = OpenAI(api_key=api_key)
 
-    portfolio = data.portfolio_urls or PORTFOLIO_URLS
+    portfolio = [u for u in (data.portfolio_urls or []) if str(u).strip()]
     bullets = data.your_profile_bullets or DEFAULT_PROFILE_BULLETS
-    style_example = (data.template or "").strip() or STYLE_EXAMPLE
-    signature = (data.signature_name or "").strip() or "User"
+    template = (data.template or "").strip()
+    signature = (data.signature_name or "").strip()
+    has_name = bool(signature)
+    has_portfolio = bool(portfolio)
 
-    portfolio_block = "\n".join(f"- {u}" for u in portfolio)
-    profile_block = "\n- ".join(bullets)
-    suggested_questions = "\n- ".join(data.questions) if data.questions else "(none)"
-    # User-supplied steering from the settings UI. Marked HIGH PRIORITY so the model
-    # weights it above the generic guidance, but the STRICT format rules still win.
-    extra_block = (
-        f"\nADDITIONAL INSTRUCTIONS (high priority, obey unless they break the strict format rules):\n{data.extra_instructions.strip()}\n"
-        if (data.extra_instructions or "").strip()
-        else ""
-    )
-
-    profile_prompt = (
-        f"""My proof bullets (use these, do NOT invent new ones):
-- {profile_block}
-
-My portfolio URLs (reference only these, pick the most relevant):
-{portfolio_block}
-"""
-        if data.include_profile
-        else ""
-    )
-    questions_prompt = (
-        f"""Suggested questions you may ask (choose/rewrite, keep them short):
-- {suggested_questions}
-"""
-        if data.ask_question
-        else ""
-    )
-    sign_prompt = f"Sign the letter as: {signature}\n" if data.include_name else ""
-
-    user_prompt = f"""Job title: {data.title}
-
-Job description:
-{data.description}
-
-Required skills (weave the relevant ones into the proposal naturally): {data.skills or "(none listed)"}
-
-Budget: {data.budget_min}-{data.budget_max} {data.currency}
-
-{profile_prompt}{questions_prompt}{sign_prompt}
-Reference style (for TONE and structure only — follow the STRICT formatting rules above, not this example's spacing):
-{style_example}
-{extra_block}
-Write the proposal now."""
+    blocks = [
+        f"Job title: {data.title}",
+        "",
+        "Job description:",
+        data.description or "(none)",
+        "",
+        f"Required skills (weave the relevant ones in naturally): {data.skills or '(none listed)'}",
+        f"Budget: {data.budget_min}-{data.budget_max} {data.currency}",
+    ]
+    if data.include_profile:
+        blocks += [
+            "",
+            "Facts about you (draw on these, do NOT invent others, do NOT list them verbatim):",
+            "\n".join(f"- {b}" for b in bullets),
+        ]
+        if has_portfolio:
+            blocks += [
+                "",
+                "Portfolio URLs you may reference (only these, each on its own line):",
+                "\n".join(portfolio),
+            ]
+    if data.ask_question and data.questions:
+        blocks += [
+            "",
+            "You may adapt ONE of these as your closing question (keep it short):",
+            "\n".join(f"- {q}" for q in data.questions),
+        ]
+    if template:
+        blocks += ["", "USER TEMPLATE to follow (adapt its wording to this job):", template]
+    blocks += ["", "Write the proposal now."]
+    user_prompt = "\n".join(blocks)
 
     # Responses API (recommended for new builds).
     resp = client.responses.create(
@@ -155,25 +159,55 @@ Write the proposal now."""
         input=[
             {"role": "system", "content": _system_rules(
                 ask_question=data.ask_question,
-                include_name=data.include_name,
                 include_profile=data.include_profile,
+                has_template=bool(template),
+                has_portfolio=has_portfolio,
+                user_instructions=data.extra_instructions,
             )},
             {"role": "user", "content": user_prompt},
         ],
     )
     # The SDK returns a structured response; simplest is `output_text`.
-    body = resp.output_text.strip()
-    return _wrap(body, data.prefix, data.suffix)
+    body = _sanitize(resp.output_text.strip())
+    return _assemble(
+        body,
+        prefix=data.prefix,
+        suffix=data.suffix,
+        signature=signature if data.include_name else "",
+    )
 
 
-def _wrap(body: str, prefix: str, suffix: str) -> str:
-    """Prepend/append the user's literal 'text at start' / 'text at end'."""
+def _sanitize(text: str) -> str:
+    """Enforce two of the formatting rules deterministically (models still slip):
+    drop backslash characters, and collapse runs of blank lines to at most one."""
+    text = text.replace("\\", "")
+    text = re.sub(r"\n[ \t]*\n[ \t]*\n+", "\n\n", text)  # 2+ blank lines -> 1
+    return text.strip()
+
+
+def _assemble(body: str, *, prefix: str, suffix: str, signature: str) -> str:
+    """Build the final letter: [prefix] -> body -> [closing suffix] -> [name].
+
+    The signature name is always LAST so the ending reads, e.g.::
+
+        ...your pitch...
+        Hope to dive into your project asap.
+        Thank you.
+        Anoosher
+
+    where the two closing lines come from ``suffix`` (Text at end) and ``Anoosher``
+    from the signature. The model never writes the closing/name itself."""
     out = []
     if (prefix or "").strip():
         out.append(prefix.strip())
-    out.append(body)
+    out.append(body.strip())
+    closing = []
     if (suffix or "").strip():
-        out.append(suffix.strip())
+        closing.append(suffix.strip())
+    if (signature or "").strip():
+        closing.append(signature.strip())
+    if closing:
+        out.append("\n".join(closing))
     return "\n".join(out)
 
 

@@ -28,7 +28,7 @@ from .db import (
 from .freelancer_client import make_session
 from .collector import fetch_and_store_projects
 from .filters import passes_recency
-from .util import within_active_hours
+from .util import within_active_hours, current_minutes, fmt_minutes
 from .scorer import score_project
 from .proposal_ai import (
     ai_price_and_duration,
@@ -564,8 +564,14 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
         if interval_seconds is None:
             interval = max(1, int(cur.poll_interval_seconds))
 
-        if not within_active_hours(cur.active_start, cur.active_end):
-            print(f"\n[{started}] Outside active hours ({cur.active_start}-{cur.active_end}); skipping cycle.")
+        # Evaluate the active window in the configured timezone (or machine local
+        # time when no offset is set). Logs the perceived clock so a timezone
+        # mismatch is obvious.
+        now_min = current_minutes(cur.active_tz_offset)
+        tz_label = "machine local" if cur.active_tz_offset is None else f"UTC{cur.active_tz_offset:+g}"
+        if not within_active_hours(cur.active_start, cur.active_end, now_minutes=now_min):
+            print(f"\n[{started}] Outside active hours (window {cur.active_start}-{cur.active_end}, "
+                  f"now {fmt_minutes(now_min)} {tz_label}); skipping cycle.")
             time.sleep(interval)
             continue
 
