@@ -424,7 +424,9 @@ def choose_period_days(budget_min: float | None, budget_max: float | None) -> in
 
 
 def _notify_telegram_polling(conn, settings, project: dict[str, Any], client_status: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
-    if not settings.telegram_targets:
+    # Notifications muted (master switch off): treat like "not configured" — the
+    # project is still collected and marked handled, just no alert is sent.
+    if not settings.notify_enabled or not settings.telegram_targets:
         return None
     msg = build_project_notification(project=project, client_status=client_status, result=result)
     sent_any = False
@@ -580,6 +582,36 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
         print(f"Cycle complete in {elapsed}s. Sleeping {sleep_for}s...")
         time.sleep(sleep_for)
 
+def _read_pid(path: str = "bot.pid") -> int | None:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    """True if a process with this id is currently running. Used to detect a still-
+    running bot. A stale pid (dead process) returns False so it can be overwritten."""
+    import os
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+        if not handle:
+            return False
+        kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
 def serve_app(host: str = "127.0.0.1", port: int = 8765) -> None:
     """Run the web UI and the polling loop together in ONE process.
 
@@ -588,6 +620,9 @@ def serve_app(host: str = "127.0.0.1", port: int = 8765) -> None:
     web UI owns the main thread. When launched headless (pythonw, no console),
     stdout/stderr are redirected to bot.log and the PID is written to bot.pid so the
     stop script can find this exact process.
+
+    A single-instance guard refuses to start if another bot is already running —
+    two polling loops would double-send every notification.
     """
     import os
     import threading
@@ -600,6 +635,14 @@ def serve_app(host: str = "127.0.0.1", port: int = 8765) -> None:
         sys.stderr = log
 
     pid_path = "bot.pid"
+    # Single-instance guard: a second polling loop would notify every job twice.
+    existing = _read_pid(pid_path)
+    if existing and existing != os.getpid() and _pid_alive(existing):
+        print(
+            f"A bot is already running (PID {existing}); not starting a second one. "
+            f"Open http://{host}:{port}, or run stop-bot first if you want to restart."
+        )
+        return
     try:
         with open(pid_path, "w", encoding="utf-8") as f:
             f.write(str(os.getpid()))

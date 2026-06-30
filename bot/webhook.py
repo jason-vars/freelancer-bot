@@ -240,7 +240,7 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
     event_id = insert_webhook_event(conn, "received", payload_json=payload_json)
 
     def _notify_telegram(project: dict[str, Any], client_status: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
-        if not s.telegram_targets:
+        if not s.notify_enabled or not s.telegram_targets:
             return None
         message = build_project_notification(project=project, client_status=client_status, result=result)
         keyboard = build_alert_keyboard(_project_link(project), project.get("id"))

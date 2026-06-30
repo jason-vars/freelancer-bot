@@ -91,6 +91,13 @@ FIELD_DOCS: dict[str, str] = {
         "run, the daily cap, and Save-only). The web-UI Apply/Auto-bid buttons are "
         "manual and always work regardless of this switch."
     ),
+    "BOT_NOTIFY_ENABLED": (
+        "Master on/off for Telegram alerts. On (default) = matching jobs are pushed to "
+        "your Telegram chat(s). Off = no alerts are sent, but the bot keeps fetching and "
+        "storing jobs so you can still browse them on the Jobs page. Mutes notifications "
+        "WITHOUT clearing your bot token or chat id, so flipping it back on resumes "
+        "instantly. Takes effect on the next polling cycle / webhook event."
+    ),
     "BOT_DRY_RUN": (
         "The safety switch. On = the bot NEVER places a real bid; it only saves drafts "
         "and sends alerts. Leave it On until you have reviewed proposals and pricing "

@@ -59,6 +59,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
     ("Bot behaviour", [
         Field("BOT_AUTO_APPLY", "Auto-apply (auto-bid)", "bool",
               "Master switch for AUTOMATIC bidding. OFF = bot only collects + notifies; you apply manually. ON = the webhook path can auto-bid. Manual Apply/Auto-bid buttons always work.", "0"),
+        Field("BOT_NOTIFY_ENABLED", "Send notifications", "bool",
+              "ON = send Telegram alerts for matching jobs. OFF = mute alerts but keep collecting jobs (still visible in the Jobs page). Your Telegram token/chat stay saved.", "1"),
         Field("BOT_DRY_RUN", "Dry run", "bool", "ON = never place real bids (save drafts only).", "1"),
         Field("BOT_MAX_BIDS_PER_DAY", "Max bids / day", "int", "Daily bid cap.", "20"),
         Field("BOT_POLL_INTERVAL_SECONDS", "Poll interval (s)", "int", "Seconds between polling cycles.", "300"),
