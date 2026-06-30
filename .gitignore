@@ -10,3 +10,7 @@
 # Atomic-write / editor temp files (e.g. config.py.tmp.15820.<hash>, .env.tmp)
 *.tmp
 *.tmp.*
+
+# Runtime files from the background launcher (start-bot.vbs / serve)
+bot.pid
+bot.log

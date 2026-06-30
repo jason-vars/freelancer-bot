@@ -580,6 +580,49 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
         print(f"Cycle complete in {elapsed}s. Sleeping {sleep_for}s...")
         time.sleep(sleep_for)
 
+def serve_app(host: str = "127.0.0.1", port: int = 8765) -> None:
+    """Run the web UI and the polling loop together in ONE process.
+
+    Used by the double-click launcher so there's a single thing to start/stop. The
+    polling loop runs in a daemon background thread (it dies with the process); the
+    web UI owns the main thread. When launched headless (pythonw, no console),
+    stdout/stderr are redirected to bot.log and the PID is written to bot.pid so the
+    stop script can find this exact process.
+    """
+    import os
+    import threading
+    from .webui import serve_webui
+
+    # Headless launch (pythonw) has no console: capture output to a log file.
+    if sys.stdout is None or sys.stderr is None:
+        log = open("bot.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = log
+        sys.stderr = log
+
+    pid_path = "bot.pid"
+    try:
+        with open(pid_path, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+
+    def _loop() -> None:
+        try:
+            run_loop()
+        except Exception as exc:  # never let a loop crash take down the web UI
+            print(f"[poll-loop] stopped: {type(exc).__name__}: {exc}")
+
+    threading.Thread(target=_loop, name="poll-loop", daemon=True).start()
+    print(f"Bot started. Web UI: http://{host}:{port} | polling loop running in background.")
+    try:
+        serve_webui(host=host, port=port)
+    finally:
+        try:
+            os.remove(pid_path)
+        except OSError:
+            pass
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="freelancer-bid-bot")
     sub = parser.add_subparsers(dest="cmd")
@@ -635,6 +678,10 @@ def main(argv: list[str] | None = None) -> int:
     webui_p = sub.add_parser("webui", help="Launch the local settings web UI to edit .env (filters, search, bidding)")
     webui_p.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1 = localhost only)")
     webui_p.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765)")
+
+    serve_p = sub.add_parser("serve", help="Run the web UI AND the polling loop together in one process")
+    serve_p.add_argument("--host", default="127.0.0.1", help="Web UI bind host (default: 127.0.0.1)")
+    serve_p.add_argument("--port", type=int, default=8765, help="Web UI bind port (default: 8765)")
 
     args = parser.parse_args(argv)
 
@@ -704,6 +751,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "webui":
         from .webui import serve_webui
         serve_webui(host=args.host, port=args.port)
+        return 0
+    if args.cmd == "serve":
+        serve_app(host=args.host, port=args.port)
         return 0
 
     parser.print_help()
