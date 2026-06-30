@@ -89,10 +89,15 @@ def update_env(updates: dict[str, str], path: Path | str = ENV_PATH) -> None:
             continue
         key = line.split("=", 1)[0].strip()
         if key in remaining:
+            new_val = remaining.pop(key)
             after = line.split("=", 1)[1]
             idx = _inline_comment_index(after)
-            comment = ("  " + after[idx:].strip()) if idx is not None else ""
-            out.append(f"{key}={remaining.pop(key)}{comment}")
+            # Preserve the trailing inline comment ONLY when the new value is
+            # non-empty. python-dotenv mis-reads ``KEY=  # note`` (empty value +
+            # comment) as the comment being the value, which then crashes int()/
+            # float() — so for an empty value we drop the comment entirely.
+            comment = ("  " + after[idx:].strip()) if (idx is not None and new_val != "") else ""
+            out.append(f"{key}={new_val}{comment}")
         else:
             out.append(line)
 

@@ -7,11 +7,25 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def _strip_inline_comment(v: str | None) -> str:
+    """Drop a leaked inline ``# comment`` and surrounding whitespace.
+
+    python-dotenv mis-parses a line whose value is empty but still has a trailing
+    comment (e.g. ``KEY=  # note``) and returns the COMMENT as the value. Guard
+    every scalar getter with this so such a line behaves as "unset" instead of
+    crashing int()/float()."""
+    if v is None:
+        return ""
+    return v.split("#", 1)[0].strip()
+
 def _get_int(name: str, default: int) -> int:
-    v = os.getenv(name)
-    if v is None or v.strip() == "":
+    v = _strip_inline_comment(os.getenv(name))
+    if v == "":
         return default
-    return int(v)
+    try:
+        return int(v)
+    except ValueError:
+        return default
 
 def _get_json_list(name: str) -> list[dict]:
     """Parse an env var holding a JSON array of objects; [] on empty/invalid."""
@@ -35,11 +49,11 @@ def _csv(name: str) -> list[str]:
     return [x.strip() for x in v.split(",") if x.strip()]
 
 def _get_float_or_none(name: str) -> float | None:
-    v = os.getenv(name)
-    if v is None or v.strip() == "":
+    v = _strip_inline_comment(os.getenv(name))
+    if v == "":
         return None
     try:
-        return float(v.strip().lstrip("+"))
+        return float(v.lstrip("+"))
     except ValueError:
         return None
 

@@ -930,6 +930,31 @@ def _generate_proposal(s, proj: dict) -> tuple[str | None, str | None]:
         return None, f"OpenAI generation failed: {type(exc).__name__}: {str(exc)[:200]}"
 
 
+def _format_bid_error(exc: Exception) -> str:
+    """Turn a bid failure into a clear message: include the API error_code (which the
+    SDK otherwise hides behind a cryptic message) plus a plain-English hint for the
+    common rejection reasons."""
+    code = getattr(exc, "error_code", None)
+    msg = str(exc)[:200]
+    blob = f"{msg} {code or ''}".lower()
+    hint = ""
+    if "already" in blob or "duplicate" in blob:
+        hint = "You've already bid on this project — Freelancer allows only one bid per project."
+    elif "limit" in blob or "insufficient" in blob or "exceeded" in blob:
+        hint = "Your account may be out of bids for this period (free accounts have a monthly bid limit)."
+    elif "closed" in blob or "expired" in blob or "award" in blob or "state" in blob:
+        hint = "The project may be closed, awarded, or no longer accepting bids."
+    elif "id based filter" in blob:
+        # The opaque API message we keep seeing — list the realistic causes.
+        hint = ("Freelancer refused the bid. Most often: you've already bid on this project, "
+                "the project is closed/awarded, or your account is out of bids. Open the "
+                "project on freelancer.com to check.")
+    detail = f"Failed: {type(exc).__name__}: {msg}"
+    if code:
+        detail += f" (error_code={code})"
+    return detail + (f"  {hint}" if hint else "")
+
+
 def _action_bid(project_id: int, proposal_text: str | None, auto: bool) -> tuple[bool, str]:
     """Place (or, under dry-run, draft) a bid on a stored project.
 
@@ -1004,7 +1029,7 @@ def _action_bid(project_id: int, proposal_text: str | None, auto: bool) -> tuple
         tail = f", bid id {bid_id}" if bid_id else ""
         return True, f"{label} placed on #{project_id} ({amount:g} {cur}, {int(period)}d){tail}."
     except Exception as exc:
-        return False, f"Failed: {type(exc).__name__}: {str(exc)[:200]}"
+        return False, _format_bid_error(exc)
     finally:
         conn.close()
 
