@@ -45,6 +45,11 @@ FIELD_DOCS: dict[str, str] = {
         "mode it checks the full description (fetched after the preview). Blank "
         "disables it."
     ),
+    "BOT_EXCLUDE_SKILLS": (
+        "Skill badges you never want. If a project is tagged with any of these "
+        "(case-insensitive, whole-badge or substring), it's dropped. Use for stacks "
+        "you don't do, e.g. wordpress, php, .net. Blank disables it."
+    ),
     "BOT_SKIP_CURRENCIES": (
         "Currency codes to drop entirely (never stored, never alerted). Common use is "
         "INR. Comma-separated, case-insensitive. Blank = keep all currencies."
@@ -78,6 +83,14 @@ FIELD_DOCS: dict[str, str] = {
         "dropped. Webhook-path only. Blank = block none."
     ),
     # ── Bot behaviour ─────────────────────────────────────────────────────────
+    "BOT_AUTO_APPLY": (
+        "Master start/stop for AUTOMATIC bidding. Off (default) = the bot never "
+        "submits a bid on its own — it collects jobs, generates/saves draft "
+        "proposals, and notifies you, and you apply manually from the Jobs page. "
+        "On = the webhook path may auto-bid eligible projects (still subject to Dry "
+        "run, the daily cap, and Save-only). The web-UI Apply/Auto-bid buttons are "
+        "manual and always work regardless of this switch."
+    ),
     "BOT_DRY_RUN": (
         "The safety switch. On = the bot NEVER places a real bid; it only saves drafts "
         "and sends alerts. Leave it On until you have reviewed proposals and pricing "
@@ -205,6 +218,7 @@ FIELD_EXAMPLES: dict[str, str] = {
     "BOT_MIN_SKILL_MATCHES": "2",
     "BOT_EXCLUDE_TITLE_KEYWORDS": "wordpress, casino, dating",
     "BOT_EXCLUDE_DESC_KEYWORDS": "gambling, crypto, adult",
+    "BOT_EXCLUDE_SKILLS": "wordpress, php, .net",
     "BOT_SKIP_CURRENCIES": "INR",
     "BOT_MAX_PROJECT_AGE_SECONDS": "3600",
     "BOT_MIN_BID_REMAINING_SECONDS": "0",
@@ -222,10 +236,10 @@ FIELD_EXAMPLES: dict[str, str] = {
     "FLN_URL": "https://www.freelancer-sandbox.com",
     "OPENAI_MODEL": "gpt-5.2-mini",
     "TELEGRAM_CHAT_ID": "12345678, 87654321",
-    "BOT_SIGNATURE_NAME": "Oleksandr",
+    "BOT_SIGNATURE_NAME": "User",
     "BOT_PORTFOLIO_URLS": "https://myapp.web.app, https://example.com",
     "BOT_PROFILE_BULLETS": "Senior engineer, 10+ years shipping React/Node apps\nBuilt 5 production SaaS dashboards end to end",
-    "BOT_PROPOSAL_TEMPLATE": "Dear Client,\nAre you looking for a developer who can deliver this cleanly and on time?\n...\nBest regards,\nOleksandr",
+    "BOT_PROPOSAL_TEMPLATE": "Dear Client,\nAre you looking for a developer who can deliver this cleanly and on time?\n...\nBest regards,\nUser",
     "BOT_PROPOSAL_PREFIX": "Hello,",
     "BOT_PROPOSAL_SUFFIX": "Thanks for reading!",
     "BOT_AI_FILTER_CRITERIA": "Reject crypto and gambling jobs. Prefer SaaS dashboards with a clear spec and a real budget.",

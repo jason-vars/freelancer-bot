@@ -21,11 +21,13 @@ from .filters import (
     passes_keyword_blocklist,
     passes_payment_verified,
     passes_recency,
+    passes_skill_blocklist,
 )
 from .db import (
     bid_exists_for_project,
     connect,
     count_bids_today,
+    get_project,
     init_db,
     insert_bid,
     insert_webhook_event,
@@ -121,7 +123,7 @@ def _build_proposal(s, project: dict[str, Any]) -> str:
         "My plan, clarify the must-haves, implement v1, then test and hand over with notes.\n"
         "What is your ideal deadline?\n"
         "Best regards,\n"
-        "Oleksandr"
+        "User"
     )
     if not s.openai_api_key:
         return fallback
@@ -270,10 +272,14 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
             extracted_project_json=json.dumps(project, ensure_ascii=True, sort_keys=True, default=str),
         )
 
-        # Idempotency: if we already handled this project (every notify/bid path
-        # writes a bid row first), a redelivered or duplicate webhook must not
-        # bid or notify again. The raw event is still recorded above for audit.
-        if bid_exists_for_project(conn, int(project["id"])):
+        # Idempotency: a redelivered or duplicate webhook must not bid/notify again.
+        # Most paths write a bid row first; the auto-apply-OFF collect path writes no
+        # bid (to skip OpenAI), so we also treat an already-saved 'great' project as
+        # handled. The raw event is still recorded above for audit.
+        _existing = get_project(conn, int(project["id"]))
+        if bid_exists_for_project(conn, int(project["id"])) or (
+            _existing is not None and (_existing["status"] or "") == "great"
+        ):
             result = {
                 "ok": True,
                 "project_id": project["id"],
@@ -356,11 +362,19 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
             update_webhook_event(conn, event_id, result_json=json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
             return result
 
+        sk_ok, sk_reason = passes_skill_blocklist(project.get("skills"), s.exclude_skills)
+        if not sk_ok:
+            result = {"ok": False, "project_id": project["id"], "client_status": None, "reason": sk_reason}
+            update_webhook_event(conn, event_id, result_json=json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
+            return result
+
         upsert_project(conn, {**project, "status": "webhook_new", "score": 0})
 
         client_status = get_client_status(session, project["owner_id"])
         bids_today = count_bids_today(conn)
-        if bids_today >= s.max_bids_per_day:
+        # The daily cap only constrains actual auto-bidding. When auto-apply is off
+        # the bot just collects + notifies, so the cap must not block that.
+        if s.auto_apply and bids_today >= s.max_bids_per_day:
             result = {"ok": False, "project_id": project["id"], "client_status": client_status, "reason": "daily_cap_reached"}
             update_webhook_event(conn, event_id, result_json=json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
             return result
@@ -497,10 +511,30 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
                 amount = _choose_bid_amount(project["budget_min"], project["budget_max"])
                 period_days = _choose_period_days(project["budget_min"], project["budget_max"])
 
-        # Great project: a high-scoring, fully eligible match. By default
-        # (BOT_WEBHOOK_SAVE_ONLY=true) we generate the proposal and SAVE it as a
-        # draft bid instead of placing a real bid — useful for testing. The draft
-        # row holds the proposal, amount, and budget-based period; query it via:
+        # Auto-apply OFF (master switch): the bot only COLLECTS the great project and
+        # notifies you — no proposal is generated (so no OpenAI spend) and no draft
+        # bid is created. You apply manually from the Jobs page, which generates the
+        # proposal on demand. The 'great' status is what makes a redelivery idempotent.
+        if not s.auto_apply:
+            set_project_score_and_status(conn, int(project["id"]), int(score_result.score), "great")
+            result = {
+                "ok": True,
+                "project_id": project["id"],
+                "client_status": client_status,
+                "saved": True,
+                "status": "great",
+                "score": score_result.score,
+                "reasons": score_result.reasons,
+                "auto_apply": False,
+            }
+            tg_status = _notify_telegram(project, client_status, result)
+            if tg_status is not None:
+                result["telegram"] = tg_status
+            update_webhook_event(conn, event_id, result_json=json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
+            return result
+
+        # Auto-apply ON + save-only: a high-scoring, fully eligible match. We generate
+        # the proposal and SAVE it as a draft bid instead of placing a real bid. Query:
         #   sqlite3 bot.sqlite3 "SELECT proposal, period_days FROM bids WHERE status='webhook_proposal_saved';"
         # Set BOT_WEBHOOK_SAVE_ONLY=false to fall through to the auto-bid pipeline.
         if s.webhook_save_only:

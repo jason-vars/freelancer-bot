@@ -47,6 +47,7 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("BOT_MIN_SKILL_MATCHES", "Min skill matches", "int", "How many of your skills must match.", "2"),
         Field("BOT_EXCLUDE_TITLE_KEYWORDS", "Exclude if title contains", "csv", "Skip projects whose TITLE contains any of these words (case-insensitive).", ""),
         Field("BOT_EXCLUDE_DESC_KEYWORDS", "Exclude if description contains", "csv", "Skip projects whose DESCRIPTION contains any of these words (case-insensitive).", ""),
+        Field("BOT_EXCLUDE_SKILLS", "Exclude skills", "csv", "Skip projects tagged with any of these skill badges (case-insensitive).", ""),
         Field("BOT_SKIP_CURRENCIES", "Skip currencies", "csv", "Currency codes to drop entirely, e.g. INR.", "INR"),
         Field("BOT_MAX_PROJECT_AGE_SECONDS", "Max project age (s)", "int", "Only keep projects newer than N seconds (0 = any). 3600 = 1h.", "3600"),
         Field("BOT_MIN_BID_REMAINING_SECONDS", "Min bid time left (s)", "int", "Skip if bidding closes within N seconds (0 = off).", "0"),
@@ -56,6 +57,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("BOT_SKIP_COUNTRIES", "Skip countries", "csv", "Block these client countries (empty = none).", ""),
     ]),
     ("Bot behaviour", [
+        Field("BOT_AUTO_APPLY", "Auto-apply (auto-bid)", "bool",
+              "Master switch for AUTOMATIC bidding. OFF = bot only collects + notifies; you apply manually. ON = the webhook path can auto-bid. Manual Apply/Auto-bid buttons always work.", "0"),
         Field("BOT_DRY_RUN", "Dry run", "bool", "ON = never place real bids (save drafts only).", "1"),
         Field("BOT_MAX_BIDS_PER_DAY", "Max bids / day", "int", "Daily bid cap.", "20"),
         Field("BOT_POLL_INTERVAL_SECONDS", "Poll interval (s)", "int", "Seconds between polling cycles.", "300"),
@@ -66,7 +69,7 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("BOT_PROPOSAL_INSTRUCTIONS", "Extra instructions for ChatGPT", "textarea",
               "Free-text steering added to every AI proposal (e.g. emphasise timelines, mention a specific stack).", ""),
         Field("BOT_SIGNATURE_NAME", "Your name (signature)", "text",
-              "Name signed at the end of proposals. Blank = built-in default.", "Oleksandr"),
+              "Name signed at the end of proposals. Blank = built-in default.", "User"),
         Field("BOT_PROFILE_BULLETS", "Profile description (one per line)", "textarea",
               "Proof bullets about you the AI may use (never invents others). One per line. Blank = built-in default.", ""),
         Field("BOT_PORTFOLIO_URLS", "Portfolio URLs", "csv",
@@ -195,6 +198,22 @@ _PAGE_JS = """
 })();
 """
 
+# Tab switching: show one settings panel at a time. Kept as its own constant so the
+# (brace-heavy) JS doesn't fight the f-string used to assemble the page.
+_TABS_JS = """
+(function () {
+  var tabs = document.querySelectorAll('.tab');
+  if (!tabs.length) return;
+  function activate(id) {
+    document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.toggle('active', p.id === id); });
+    tabs.forEach(function (t) { t.classList.toggle('active', t.getAttribute('data-target') === id); });
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { activate(t.getAttribute('data-target')); window.scrollTo(0, 0); });
+  });
+})();
+"""
+
 # Column specs for the dynamic tables.
 _BID_COLS = [
     {"key": "currencies", "label": "Currency code(s)", "ph": "USD,AUD (blank = any)", "type": "csv"},
@@ -246,9 +265,16 @@ def _render(values: dict[str, str], *, saved: bool, errors: dict[str, str]) -> s
     elif saved:
         banner = '<div class="banner ok">Saved. Changes apply on the next polling cycle.</div>'
 
+    # Tabs: show one group at a time so the (now long) form is easy to navigate.
+    # All panels live in the single <form>, so hidden ones still submit normally.
+    # On a validation error, open the first group that contains an errored field.
+    error_keys = set(errors)
+    active_idx = next((i for i, (_t, fs) in enumerate(GROUPS) if any(f.key in error_keys for f in fs)), 0)
     sections = []
-    for title, fields in GROUPS:
+    tabs = []
+    for gi, (title, fields) in enumerate(GROUPS):
         rows = []
+        group_has_err = any(f.key in error_keys for f in fields)
         for f in fields:
             cur = values.get(f.key, "")
             err = errors.get(f.key)
@@ -307,7 +333,12 @@ def _render(values: dict[str, str], *, saved: bool, errors: dict[str, str]) -> s
                 f'<div class="control">{control}<div class="help">{esc(f.help)}</div>{doc_html}{err_html}</div>'
                 f"</div>"
             )
-        sections.append(f'<section><h2>{esc(title)}</h2>{"".join(rows)}</section>')
+        active = " active" if gi == active_idx else ""
+        sections.append(f'<section id="tab{gi}" class="tab-panel{active}"><h2>{esc(title)}</h2>{"".join(rows)}</section>')
+        dot = '<span class="tabdot" title="has an error"></span>' if group_has_err else ""
+        tabs.append(f'<button type="button" class="tab{active}" data-target="tab{gi}">{esc(title)}{dot}</button>')
+
+    tabbar = f'<div class="tabs">{"".join(tabs)}</div>'
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -354,11 +385,19 @@ def _render(values: dict[str, str], *, saved: bool, errors: dict[str, str]) -> s
   button {{ background: #3b82f6; color: #fff; border: 0; padding: 11px 22px; border-radius: 9px; font: inherit; font-weight: 700; cursor: pointer; }}
   button:hover {{ background: #2f6fe0; }}
   .note {{ color: #7a85a6; font-size: 12.5px; }}
+  .tabs {{ display: flex; flex-wrap: wrap; gap: 6px; position: sticky; top: 62px; background: #0f1320; padding: 12px 0; margin: 0 0 8px; z-index: 4; }}
+  .tab {{ background: #161c2c; color: #9aa4c0; border: 1px solid #232a40; padding: 8px 13px; border-radius: 8px; font: inherit; font-weight: 600; font-size: 13px; cursor: pointer; }}
+  .tab:hover {{ color: #e6e8ef; background: #1b2236; }}
+  .tab.active {{ background: #3b82f6; border-color: #3b82f6; color: #fff; }}
+  .tabdot {{ display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #ef4444; margin-left: 7px; vertical-align: middle; }}
+  .tab-panel {{ display: none; }}
+  .tab-panel.active {{ display: block; }}
 </style></head>
 <body>
 <header><h1>⚙️ Freelancer Bot — Settings</h1>{_nav("settings")}</header>
 <div class="wrap">
   {banner}
+  {tabbar}
   <form method="post" action="/save">
     {''.join(sections)}
     <div class="actions"><button type="submit">Save settings</button>
@@ -367,6 +406,7 @@ def _render(values: dict[str, str], *, saved: bool, errors: dict[str, str]) -> s
   </form>
 </div>
 <script>{_PAGE_JS}</script>
+<script>{_TABS_JS}</script>
 </body></html>"""
 
 
@@ -418,13 +458,13 @@ _JOBS_STYLE = """
   .modal .sub { color: #cdd5ee; font-size: 13.5px; margin-bottom: 8px; font-weight: 600; }
   .jobmeta { color: #8ea0c8; font-size: 12px; margin-bottom: 8px; display: flex; gap: 14px; flex-wrap: wrap; }
   .jobmeta a { color: #8ec5ff; text-decoration: none; }
-  .jobdetail { background: #0f1320; border: 1px solid #232a40; border-radius: 9px; padding: 11px 13px; max-height: 190px; overflow: auto; margin-bottom: 14px; white-space: pre-wrap; color: #c4ccdf; font-size: 13px; line-height: 1.55; }
   .plabel { display: block; font-weight: 600; font-size: 12px; color: #9aa4c0; margin-bottom: 6px; text-transform: uppercase; letter-spacing: .03em; }
   .bidmeta { color: #7ee2a8; font-size: 12px; margin-bottom: 6px; }
   .pnote { color: #f2c08a; font-size: 12px; margin-top: 6px; }
   .modal textarea { width: 100%; min-height: 210px; resize: vertical; padding: 10px 12px; border-radius: 9px; border: 1px solid #2c3550; background: #0f1320; color: #e6e8ef; font: inherit; }
   .modal textarea[readonly] { opacity: .85; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .btn.gen { margin-right: auto; border-color: #2c4a7a; color: #9cc3ff; }
   .result { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: 760px; padding: 12px 18px; border-radius: 10px; font-weight: 600; z-index: 30; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
   .result.ok { background: #10341f; color: #7ee2a8; border: 1px solid #1c5a37; }
   .result.err { background: #3a1717; color: #f8a3a3; border: 1px solid #6b2626; }
@@ -441,10 +481,10 @@ _JOBS_JS = """
   var mTitle = document.getElementById('m_title');
   var mSub = document.getElementById('m_sub');
   var mMeta = document.getElementById('m_meta');
-  var mDetail = document.getElementById('m_detail');
   var mLabel = document.getElementById('m_plabel');
   var mBidMeta = document.getElementById('m_bidmeta');
   var mNote = document.getElementById('m_note');
+  var mGenerate = document.getElementById('m_generate');
   var mSubmit = document.getElementById('m_submit');
   var mCancel = document.getElementById('m_cancel');
   var currentId = null;
@@ -480,11 +520,11 @@ _JOBS_JS = """
     mSub.textContent = '';
     mMeta.innerHTML = '';
     mBidMeta.textContent = '';
-    mNote.textContent = '';
-    mDetail.textContent = 'Loading job details…';
+    mNote.textContent = 'Loading…';
     mText.value = '';
     mText.readOnly = true;
     mLabel.textContent = 'Proposal';
+    mGenerate.style.display = 'none';
     mSubmit.style.display = 'none';
     mSubmit.disabled = true;
     mCancel.textContent = 'Cancel';
@@ -493,7 +533,7 @@ _JOBS_JS = """
     fetch('/jobs/detail?id=' + encodeURIComponent(id))
       .then(function (r) { return r.json(); })
       .then(function (d) {
-        if (!d.ok) { mDetail.textContent = d.message || 'Could not load job.'; return; }
+        if (!d.ok) { mNote.textContent = d.message || 'Could not load job.'; return; }
         mSub.textContent = d.title;
         var bits = [];
         if (d.budget) bits.push('<span>💰 ' + d.budget + '</span>');
@@ -501,25 +541,27 @@ _JOBS_JS = """
         if (d.skills) bits.push('<span>' + d.skills + '</span>');
         if (d.url) bits.push('<a href="' + d.url + '" target="_blank" rel="noopener">open on Freelancer ↗</a>');
         mMeta.innerHTML = bits.join('');
-        mDetail.textContent = d.description || '';
-        if (d.note) mNote.textContent = d.note;
+        mNote.textContent = d.note || '';
         if (d.mode === 'sent') {
           mLabel.textContent = 'Proposal you sent';
           mText.value = d.proposal || '';
           mText.readOnly = true;
           if (d.bid_info) mBidMeta.textContent = '✓ ' + d.bid_info;
+          mGenerate.style.display = 'none';
           mSubmit.style.display = 'none';
           mCancel.textContent = 'Close';
         } else {
-          mLabel.textContent = 'Proposal (generated from your settings — edit before sending)';
+          mLabel.textContent = 'Proposal — write it yourself, or click Generate with AI';
           mText.value = d.proposal || '';
           mText.readOnly = false;
+          mGenerate.style.display = '';
+          mGenerate.disabled = false;
           mSubmit.style.display = '';
           mSubmit.disabled = false;
           mText.focus();
         }
       })
-      .catch(function (e) { mDetail.textContent = 'Request failed: ' + e; });
+      .catch(function (e) { mNote.textContent = 'Request failed: ' + e; });
   }
 
   document.querySelectorAll('button.apply, button.view').forEach(function (b) {
@@ -533,6 +575,21 @@ _JOBS_JS = """
       if (!confirm('Generate a proposal with OpenAI and submit a bid to:\\n\\n' + t + ' ?')) return;
       post('/jobs/auto-bid', b.getAttribute('data-id'), null, b);
     });
+  });
+
+  // On-demand generation: only spends an OpenAI call when the user clicks it.
+  mGenerate.addEventListener('click', function () {
+    if (!currentId) return;
+    mGenerate.disabled = true;
+    mNote.textContent = 'Generating with AI…';
+    fetch('/jobs/generate?id=' + encodeURIComponent(currentId))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) { mText.value = d.proposal || ''; mNote.textContent = ''; mText.focus(); }
+        else { mNote.textContent = d.message || 'Generation failed.'; }
+        mGenerate.disabled = false;
+      })
+      .catch(function (e) { mNote.textContent = 'Generation failed: ' + e; mGenerate.disabled = false; });
   });
 
   mCancel.addEventListener('click', closeModal);
@@ -564,15 +621,21 @@ FREELANCER_WEB_BASE = "https://www.freelancer.com"
 
 
 def _job_url(raw: Any) -> str:
-    """Absolute project URL. The API stores ``seo_url`` as a relative path
-    (e.g. ``backend-development/Foo``); without a domain the browser resolves it
-    against the local web UI host, so we prefix the Freelancer base."""
+    """Absolute project URL. The API stores ``seo_url`` as a bare category/slug
+    path (e.g. ``ui-design/app-application``). The public project page lives at
+    ``/projects/<seo_url>/details``, so we add the ``projects/`` prefix and the
+    ``/details`` suffix (idempotently) on top of the Freelancer base."""
     u = ("" if raw is None else str(raw)).strip()
     if not u:
         return ""
     if u.startswith(("http://", "https://")):
         return u
-    return f"{FREELANCER_WEB_BASE}/{u.lstrip('/')}"
+    u = u.strip("/")
+    if not u.startswith("projects/"):
+        u = "projects/" + u
+    if not u.endswith("/details"):
+        u = u + "/details"
+    return f"{FREELANCER_WEB_BASE}/{u}"
 
 
 def _fmt_budget(row: Any) -> str:
@@ -673,12 +736,12 @@ def _render_jobs(rows: list, counts: list, active_status: str | None) -> str:
   <h3 id="m_title">Apply</h3>
   <div class="sub" id="m_sub"></div>
   <div class="jobmeta" id="m_meta"></div>
-  <div class="jobdetail" id="m_detail"></div>
   <label class="plabel" id="m_plabel" for="m_text">Proposal</label>
   <div class="bidmeta" id="m_bidmeta"></div>
   <textarea id="m_text" placeholder="Write your proposal here…"></textarea>
   <div class="pnote" id="m_note"></div>
   <div class="modal-actions">
+    <button class="btn gen" id="m_generate" type="button">✨ Generate with AI</button>
     <button class="btn" id="m_cancel" type="button">Cancel</button>
     <button class="btn primary" id="m_submit" type="button">Submit bid</button>
   </div>
@@ -943,10 +1006,11 @@ def _action_bid(project_id: int, proposal_text: str | None, auto: bool) -> tuple
 
 
 def _job_detail(project_id: int) -> tuple[int, dict]:
-    """Detail for the Apply/View modal: the job's full description plus either the
-    proposal already sent (mode='sent', read-only) or a fresh proposal generated
-    from the user's settings to pre-fill the Apply box (mode='draft')."""
-    from .config import load_settings
+    """Detail for the Apply/View modal. For an already-bid project it returns the
+    proposal that was sent (mode='sent', read-only). For a fresh project it returns
+    an EMPTY draft (mode='draft') — no OpenAI call. Generation is on-demand via
+    :func:`_generate_for_job` (the 'Generate with AI' button), so opening Apply and
+    closing without submitting never spends an API credit."""
     from .db import connect, get_latest_bid, get_project, init_db
 
     conn = connect()
@@ -983,19 +1047,35 @@ def _job_detail(project_id: int) -> tuple[int, dict]:
         ]).strip(" ·")
         return 200, detail
 
-    # No bid yet — generate a proposal following settings to pre-fill the Apply box.
     detail["mode"] = "draft"
+    detail["proposal"] = ""
+    return 200, detail
+
+
+def _generate_for_job(project_id: int) -> tuple[int, dict]:
+    """On-demand proposal generation for the Apply modal's 'Generate with AI'
+    button. Returns ``(code, {ok, proposal})`` or an error payload. This is the
+    ONLY place the Apply flow spends an OpenAI call."""
+    from .config import load_settings
+    from .db import connect, get_project, init_db
+
     try:
         s = load_settings()
     except Exception as exc:
-        detail["proposal"] = ""
-        detail["note"] = f"Config error: {exc}"
-        return 200, detail
+        return 400, {"ok": False, "message": f"Config error: {exc}"}
+    conn = connect()
+    try:
+        init_db(conn)
+        row = get_project(conn, project_id)
+        if row is None:
+            return 404, {"ok": False, "message": f"Project {project_id} not found."}
+        proj = {k: row[k] for k in row.keys()}
+    finally:
+        conn.close()
     text, err = _generate_proposal(s, proj)
-    detail["proposal"] = text or ""
     if err:
-        detail["note"] = err
-    return 200, detail
+        return 400, {"ok": False, "message": err}
+    return 200, {"ok": True, "proposal": text}
 
 
 def serve_webui(host: str, port: int) -> None:
@@ -1024,13 +1104,13 @@ def serve_webui(host: str, port: int) -> None:
         def do_GET(self) -> None:  # noqa: N802
             path = self.path.split("?")[0]
             query = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
-            if path == "/jobs/detail":
+            if path in ("/jobs/detail", "/jobs/generate"):
                 try:
                     pid = int((query.get("id", [""])[0] or "").strip())
                 except (TypeError, ValueError):
                     self._send_json(400, {"ok": False, "message": "Bad or missing project id."})
                     return
-                code, payload = _job_detail(pid)
+                code, payload = (_generate_for_job(pid) if path == "/jobs/generate" else _job_detail(pid))
                 self._send_json(code, payload)
                 return
             if path == "/jobs":

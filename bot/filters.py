@@ -263,6 +263,30 @@ def passes_keyword_blocklist(
     return True, None
 
 
+def passes_skill_blocklist(
+    skills_csv: str | None,
+    exclude_skills: list[str],
+) -> tuple[bool, str | None]:
+    """Reject a project tagged with any blocked skill.
+
+    ``skills_csv`` is the project's comma-separated skill badges. Matching is
+    case-insensitive on the whole badge name OR as a substring (so "wordpress"
+    blocks the "WordPress" badge and "WordPress Plugin"). Empty list disables it.
+    """
+    if not exclude_skills:
+        return True, None
+    badges = [b.strip().lower() for b in (skills_csv or "").split(",") if b.strip()]
+    if not badges:
+        return True, None
+    for ex in exclude_skills:
+        e = (ex or "").strip().lower()
+        if not e:
+            continue
+        if any(e == b or e in b for b in badges):
+            return False, f"skill_blocked:{e}"
+    return True, None
+
+
 def passes_budget(
     budget_min: float | None,
     budget_max: float | None,
@@ -364,6 +388,10 @@ def evaluate_project(session, project: dict[str, Any], settings) -> tuple[bool, 
         settings.exclude_title_keywords,
         settings.exclude_desc_keywords,
     )
+    if not ok:
+        return False, reason, {}
+
+    ok, reason = passes_skill_blocklist(project.get("skills"), settings.exclude_skills)
     if not ok:
         return False, reason, {}
 

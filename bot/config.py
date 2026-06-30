@@ -55,6 +55,10 @@ class Settings:
 
     # Bot
     dry_run: bool
+    # Master switch for AUTOMATIC bidding. When False, the bot never auto-submits a
+    # bid (the webhook path is forced to save-only); manual web-UI Apply/Auto-bid
+    # are unaffected. Lets you stop/run auto-applying without touching other knobs.
+    auto_apply: bool
     max_bids_per_day: int
     poll_interval_seconds: int
     min_score: int
@@ -64,6 +68,7 @@ class Settings:
     skills: list[str]
     exclude_title_keywords: list[str]
     exclude_desc_keywords: list[str]
+    exclude_skills: list[str]
     allow_countries: list[str]
     skip_countries: list[str]
     skip_currencies: list[str]
@@ -173,6 +178,8 @@ def load_settings() -> Settings:
         fln_oauth_token=token,
         fln_url=os.getenv("FLN_URL"),
         dry_run=_get_bool("BOT_DRY_RUN", True),
+        # Default OFF: the bot does not auto-apply until you turn this on.
+        auto_apply=_get_bool("BOT_AUTO_APPLY", False),
         max_bids_per_day=_get_int("BOT_MAX_BIDS_PER_DAY", 20),
         poll_interval_seconds=_get_int("BOT_POLL_INTERVAL_SECONDS", 300),
         min_score=_get_int("BOT_MIN_SCORE", 70),
@@ -182,6 +189,7 @@ def load_settings() -> Settings:
         skills=_csv("BOT_SKILLS"),
         exclude_title_keywords=_csv("BOT_EXCLUDE_TITLE_KEYWORDS"),
         exclude_desc_keywords=_csv("BOT_EXCLUDE_DESC_KEYWORDS"),
+        exclude_skills=_csv("BOT_EXCLUDE_SKILLS"),
         allow_countries=_csv("BOT_ALLOW_COUNTRIES"),
         skip_countries=_csv("BOT_SKIP_COUNTRIES"),
         skip_currencies=_csv("BOT_SKIP_CURRENCIES") or ["INR"],

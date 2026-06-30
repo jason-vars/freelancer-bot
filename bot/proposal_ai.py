@@ -7,34 +7,27 @@ from typing import Optional
 
 from openai import OpenAI
 
-# Oleksandr's real portfolio — the model may only reference these links, never invent new ones.
-PORTFOLIO_URLS = [
-    "https://vr-arena-16303.web.app/en",
-    "https://agrinp.com/",
-    "https://hearmoremedical.com/",
-    "https://hartwell.no/",
-    "https://www.tripshock.com/",
-    "https://verholy.com/",
-]
+
+# Generic fallbacks used only when the matching Settings field is blank. They carry
+# no personal identity — set BOT_PORTFOLIO_URLS / BOT_PROFILE_BULLETS /
+# BOT_PROPOSAL_TEMPLATE / BOT_SIGNATURE_NAME to make proposals your own.
+PORTFOLIO_URLS: list[str] = []
 
 DEFAULT_PROFILE_BULLETS = [
-    "Senior engineer, 10+ years, who has shipped many similar production projects end to end.",
-    "Strong in the job's stack — serverless/Firebase, Node.js, APIs, plus modern web (React/Next.js) and mobile.",
-    "I build modular, environment-driven, well-documented solutions and communicate daily.",
+    "Senior engineer who has shipped many similar production projects end to end.",
+    "Strong across the job's stack — modern web, APIs, mobile, and integrations.",
+    "I build clean, modular, well-documented solutions and communicate daily.",
 ]
 
-# Oleksandr's own template — used as a style/tone reference for the model.
+# Tone/structure example the model imitates when no custom template is set.
 STYLE_EXAMPLE = """Dear Client,
-Are you looking for a Firebase expert who can cleanly connect your JavaScript Cloud Functions to SendGrid or Mailgun for automated transactional and promotional emails?
-I am a Senior Backend Engineer with over 10 years specializing in serverless architectures, Firebase Extensions, Node.js, and secure API integrations.
-While many write hard-coded scripts, I build modular, environment-driven Cloud Functions that pull dynamic Firestore data.
-On vr-arena-16303.web.app I wired Firestore-triggered Cloud Functions for real-time updates, and on tripshock.com I integrated third-party booking APIs with secure key handling.
-For your project I will configure a reusable Node.js Cloud Function triggered by Firestore writes or Auth events for both email types.
-I will integrate SendGrid or Mailgun via official SDKs, keeping API keys in Google Cloud Secret Manager.
-Then I will build dynamic HTML templates that inject user-specific Firestore data, with a short README for deployment.
-Shall I start with the transactional flow first?
+Are you looking for an engineer who can deliver this cleanly and on time?
+I am a senior developer with years of experience shipping similar projects end to end.
+While many write throwaway scripts, I build modular, maintainable solutions tailored to your stack.
+For your project I will map the requirements, implement a reliable first version, then test and hand over with clear notes.
+Shall I start with the core feature first?
 Best regards,
-Oleksandr"""
+User"""
 
 
 @dataclass(frozen=True)
@@ -48,7 +41,7 @@ class ProposalInput:
     questions: list[str]
     skills: str = ""
     portfolio_urls: list[str] = field(default_factory=lambda: list(PORTFOLIO_URLS))
-    signature_name: str = "Oleksandr"
+    signature_name: str = "User"
     extra_instructions: str = ""
     # Personalization toggles / overrides (mirror the settings UI). Empty string
     # template falls back to the built-in STYLE_EXAMPLE.
@@ -109,7 +102,7 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     portfolio = data.portfolio_urls or PORTFOLIO_URLS
     bullets = data.your_profile_bullets or DEFAULT_PROFILE_BULLETS
     style_example = (data.template or "").strip() or STYLE_EXAMPLE
-    signature = (data.signature_name or "").strip() or "Oleksandr"
+    signature = (data.signature_name or "").strip() or "User"
 
     portfolio_block = "\n".join(f"- {u}" for u in portfolio)
     profile_block = "\n- ".join(bullets)
