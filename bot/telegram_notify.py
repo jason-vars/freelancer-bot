@@ -1,11 +1,37 @@
 from __future__ import annotations
 
 import json
+import os
+import ssl
 import time
 from datetime import datetime, timezone
 from typing import Any
 from urllib import request
 from urllib.error import HTTPError, URLError
+
+_TRUE = {"1", "true", "yes", "y", "on"}
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """SSL context for outbound Telegram calls, resilient to HTTPS interception.
+
+    Order of preference:
+      1. BOT_INSECURE_SSL truthy -> verification OFF (last-resort for users behind a
+         proxy/antivirus that injects a self-signed root; trusts any cert).
+      2. ``truststore`` installed -> use the OS trust store, which DOES include the
+         antivirus/corporate root your browser already trusts (the secure fix).
+      3. Python's default CA bundle.
+    """
+    if (os.getenv("BOT_INSECURE_SSL") or "").strip().lower() in _TRUE:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        return ctx
+    try:
+        import truststore  # optional; uses the Windows/macOS system trust store
+        return truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    except Exception:
+        return ssl.create_default_context()
 
 
 def _parse_epoch(value: Any) -> float | None:
@@ -282,7 +308,7 @@ def _telegram_api(bot_token: str, method: str, payload: dict[str, Any], timeout:
     data = json.dumps(payload).encode("utf-8")
     req = request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
     try:
-        with request.urlopen(req, timeout=timeout) as resp:
+        with request.urlopen(req, timeout=timeout, context=_ssl_context()) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
@@ -293,7 +319,11 @@ def _telegram_api(bot_token: str, method: str, payload: dict[str, Any], timeout:
             pass
         raise TelegramAPIError(f"Telegram HTTP {exc.code}: {body}", status=exc.code, retry_after=retry_after) from exc
     except URLError as exc:
-        raise TelegramAPIError(f"Telegram request failed: {exc}", is_network=True) from exc
+        msg = f"Telegram request failed: {exc}"
+        if "CERTIFICATE_VERIFY_FAILED" in str(exc) or isinstance(getattr(exc, "reason", None), ssl.SSLError):
+            msg += (" — HTTPS interception detected (antivirus/proxy self-signed root). "
+                    "Fix: `pip install truststore`, or set BOT_INSECURE_SSL=1 in Settings to bypass verification.")
+        raise TelegramAPIError(msg, is_network=True) from exc
 
 
 def send_telegram_message(

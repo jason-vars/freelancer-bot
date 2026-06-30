@@ -125,6 +125,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("TELEGRAM_CHAT_ID", "Telegram chat id(s)", "csv", "Chat id(s) for the PRIMARY bot. Comma-separate for several chats, e.g. 12345,67890.", ""),
         Field("TELEGRAM_BOTS", "Extra bots (token + chat)", "telegrambots",
               "Additional bots, each with its OWN token and chat id. Every alert is sent to the primary bot AND each of these.", ""),
+        Field("BOT_INSECURE_SSL", "Disable SSL verification", "bool",
+              "Only if Telegram fails with CERTIFICATE_VERIFY_FAILED behind an antivirus/proxy. ON skips HTTPS cert checks for Telegram (less secure). Prefer `pip install truststore` instead.", "0"),
     ]),
 ]
 
@@ -944,11 +946,14 @@ def _format_bid_error(exc: Exception) -> str:
         hint = "Your account may be out of bids for this period (free accounts have a monthly bid limit)."
     elif "closed" in blob or "expired" in blob or "award" in blob or "state" in blob:
         hint = "The project may be closed, awarded, or no longer accepting bids."
-    elif "id based filter" in blob:
-        # The opaque API message we keep seeing — list the realistic causes.
-        hint = ("Freelancer refused the bid. Most often: you've already bid on this project, "
-                "the project is closed/awarded, or your account is out of bids. Open the "
-                "project on freelancer.com to check.")
+    elif "dao_exception" in blob or "id based filter" in blob:
+        # Freelancer's generic catch-all — the message is uninformative, so list the
+        # realistic causes in likelihood order.
+        hint = ("Freelancer returned a generic error (DAO_EXCEPTION). Likely causes, in order: "
+                "(1) you've already bid on this project; (2) your account is OUT OF BIDS for the "
+                "month (free accounts get a small limit); (3) your API token lacks bid/write "
+                "permission — regenerate it with full scope; (4) the project is closed/awarded. "
+                "Open the project on freelancer.com and check your bid balance.")
     detail = f"Failed: {type(exc).__name__}: {msg}"
     if code:
         detail += f" (error_code={code})"

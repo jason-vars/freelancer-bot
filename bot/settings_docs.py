@@ -197,6 +197,14 @@ FIELD_DOCS: dict[str, str] = {
         "with ONE bot, e.g. 12345,67890. Find ids via "
         "https://api.telegram.org/bot<TOKEN>/getUpdates."
     ),
+    "BOT_INSECURE_SSL": (
+        "Turn ON only if Telegram sends fail with 'CERTIFICATE_VERIFY_FAILED / self-signed "
+        "certificate in certificate chain'. That means an antivirus or corporate proxy on "
+        "this machine intercepts HTTPS with its own root cert that Python doesn't trust. ON "
+        "skips certificate verification for the Telegram calls — quick but less secure. The "
+        "SECURE fix is to run `pip install truststore` (the bot then uses the OS trust store, "
+        "which already trusts that root) and leave this OFF."
+    ),
     "TELEGRAM_BOTS": (
         "Additional bots, each with its OWN token AND chat id. Every alert goes to the "
         "primary bot above PLUS every row here — use this when recipients must receive "
