@@ -10,6 +10,7 @@ from freelancersdk.resources.users import users as fln_users
 
 from .config import load_settings
 from .db import (
+    bid_exists_for_project,
     connect,
     count_bids_today,
     count_projects_by_filter_reason,
@@ -27,15 +28,20 @@ from .db import (
 from .freelancer_client import make_session
 from .collector import fetch_and_store_projects
 from .filters import passes_recency
+from .util import within_active_hours
 from .scorer import score_project
-from .proposal_ai import DEFAULT_PROFILE_BULLETS, ProposalInput, generate_proposal_openai
+from .proposal_ai import (
+    ai_price_and_duration,
+    build_proposal_input,
+    generate_proposal_openai,
+)
 from .bidder import BidRequest, place_bid
 from .telegram_notify import (
     build_project_notification,
     send_telegram_message,
 )
 from .telegram_listener import run_telegram_listener
-from .webhook import process_webhook_file, serve_webhook
+from .webhook import process_webhook_file, serve_webhook, _build_proposal, choose_bid_from_rules
 
 
 def _print_json_block(label: str, raw: str | None) -> None:
@@ -183,12 +189,12 @@ def _gen_one_proposal(s, conn, project: dict, save: bool) -> None:
         proposal = generate_proposal_openai(
             api_key=s.openai_api_key,
             model=s.openai_model,
-            data=ProposalInput(
+            data=build_proposal_input(
+                s,
                 title=title, description=description,
                 budget_min=budget_min, budget_max=budget_max, currency=currency,
-                your_profile_bullets=DEFAULT_PROFILE_BULLETS,
-                questions=["What is your ideal deadline?"],
                 skills=skills,
+                questions=["What is your ideal deadline?"],
             ),
         )
     except Exception as exc:
@@ -200,8 +206,18 @@ def _gen_one_proposal(s, conn, project: dict, save: bool) -> None:
     print(f"\n=== CHECKS === chars: {len(proposal)} (<1200: {len(proposal) < 1200}) | has ';': {';' in proposal} | empty-line: {chr(10)+chr(10) in proposal}")
 
     if save and project_id is not None:
-        amount = choose_bid_amount(budget_min, budget_max)
-        period = choose_period_days(budget_min, budget_max)
+        priced = None
+        if s.ai_pricing_enabled and s.ai_pricing_rules.strip():
+            priced = ai_price_and_duration(
+                s.openai_api_key, s.openai_model, s.ai_pricing_rules,
+                title=title, description=description, skills=skills,
+                budget_min=budget_min, budget_max=budget_max, currency=currency,
+            )
+        if priced is not None:
+            amount, period = priced
+        else:
+            amount = choose_bid_amount(budget_min, budget_max)
+            period = choose_period_days(budget_min, budget_max)
         insert_bid(conn, int(project_id), None, float(amount), period, s.default_milestone_percent, proposal, status="proposal_test")
         print(f"Saved to DB: bids row (project_id={project_id}, status='proposal_test', amount={amount}, period_days={period})")
 
@@ -286,11 +302,12 @@ def test_telegram(text: str | None = None, project_id: int | None = None, query:
     notification layout (expandable description + skills + full-copy block).
     """
     s = load_settings()
-    if not s.telegram_bot_token or not s.telegram_chat_id:
+    if not s.telegram_targets:
         print(
             "Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.\n"
             f"  TELEGRAM_BOT_TOKEN set: {bool(s.telegram_bot_token)}\n"
-            f"  TELEGRAM_CHAT_ID set:   {bool(s.telegram_chat_id)}"
+            f"  TELEGRAM_CHAT_ID set:   {bool(s.telegram_chat_ids)}\n"
+            f"  delivery targets:       {len(s.telegram_targets)}"
         )
         return
 
@@ -343,11 +360,16 @@ def test_telegram(text: str | None = None, project_id: int | None = None, query:
     else:
         message = text or "<b>freelancer-bot</b>\nTest notification — Telegram is working."
 
-    try:
-        resp = send_telegram_message(s.telegram_bot_token, s.telegram_chat_id, message)
-        print(f"Sent. ok={resp.get('ok')} | chat_id={s.telegram_chat_id} | chars={len(message)}")
-    except Exception as exc:
-        print(f"Failed to send: {exc}")
+    sent, failed = 0, 0
+    for token, chat_id in s.telegram_targets:
+        try:
+            resp = send_telegram_message(token, chat_id, message)
+            print(f"Sent. ok={resp.get('ok')} | chat_id={chat_id} | chars={len(message)}")
+            sent += 1
+        except Exception as exc:
+            print(f"Failed to send to {chat_id}: {exc}")
+            failed += 1
+    print(f"Done. {sent} sent, {failed} failed across {len(s.telegram_targets)} target(s).")
 
 
 def reset_seen() -> None:
@@ -402,14 +424,49 @@ def choose_period_days(budget_min: float | None, budget_max: float | None) -> in
 
 
 def _notify_telegram_polling(conn, settings, project: dict[str, Any], client_status: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
-    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+    if not settings.telegram_targets:
         return None
+    msg = build_project_notification(project=project, client_status=client_status, result=result)
+    sent_any = False
+    last_err: str | None = None
+    for token, chat_id in settings.telegram_targets:
+        try:
+            send_telegram_message(token, chat_id, msg)
+            sent_any = True
+        except Exception as exc:
+            last_err = str(exc)
+            print(f"[telegram] send to {chat_id} failed: {exc}")
+    # Sent if it reached at least one chat. Only when ALL chats fail do we report a
+    # failure so the row retries (avoids re-spamming chats that already got it).
+    if sent_any:
+        return {"sent": True, "ok": True}
+    return {"sent": False, "error": last_err}
+
+def _maybe_save_proposal(conn, settings, p) -> None:
+    """When BOT_SAVE_PROPOSALS is on, generate a proposal for a matching project and
+    save it to the bids table (status 'proposal_saved') for review — no bid placed.
+
+    Idempotent: skips projects that already have any bid/draft row, so each project
+    is only generated once even though polling re-scans every cycle. Failures are
+    logged but never abort the polling cycle."""
+    if not settings.save_proposals:
+        return
+    pid = int(p["id"])
+    if bid_exists_for_project(conn, pid):
+        return
     try:
-        msg = build_project_notification(project=project, client_status=client_status, result=result)
-        resp = send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, msg)
-        return {"sent": True, "ok": resp.get("ok", True)}
+        project = dict(p)
+        proposal = _build_proposal(settings, project)
+        ruled = choose_bid_from_rules(project.get("currency"), project.get("budget_min"), project.get("budget_max"), settings.bid_rules)
+        if ruled is not None:
+            amount, period = ruled
+        else:
+            amount = choose_bid_amount(project.get("budget_min"), project.get("budget_max"))
+            period = choose_period_days(project.get("budget_min"), project.get("budget_max"))
+        insert_bid(conn, pid, None, float(amount), int(period), settings.default_milestone_percent, proposal, status="proposal_saved")
+        print(f"[{pid}] proposal saved to DB (status='proposal_saved', amount={amount}, period_days={period})")
     except Exception as exc:
-        return {"sent": False, "error": str(exc)}
+        print(f"[{pid}] proposal save FAILED: {exc}")
 
 def run(dry_run_override: bool | None = None) -> None:
     s = load_settings()
@@ -465,6 +522,10 @@ def run(dry_run_override: bool | None = None) -> None:
             print(f"[{p['id']}] score={res.score} min_score={s.min_score} -> skip")
             continue
 
+        # Optionally generate + save a proposal draft to the DB for review (testing
+        # before enabling real bids). Guarded by BOT_SAVE_PROPOSALS; idempotent.
+        _maybe_save_proposal(conn, s, p)
+
         # Mark the final status by the SEND OUTCOME, not before attempting it, so a
         # failed delivery can never masquerade as 'alerted'. send_telegram_message
         # already retries transient errors; if it still fails we record
@@ -495,6 +556,17 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
     print(f"Auto polling started. interval={interval}s dry_run={'yes' if dry_run_override else 'env/default'}")
     while True:
         started = int(time.time())
+        # Reload settings each cycle so interval / active-hours edits made in the
+        # web UI take effect without a restart.
+        cur = load_settings()
+        if interval_seconds is None:
+            interval = max(1, int(cur.poll_interval_seconds))
+
+        if not within_active_hours(cur.active_start, cur.active_end):
+            print(f"\n[{started}] Outside active hours ({cur.active_start}-{cur.active_end}); skipping cycle.")
+            time.sleep(interval)
+            continue
+
         print(f"\n[{started}] Running fetch/score cycle...")
         try:
             run(dry_run_override=dry_run_override)
@@ -560,6 +632,10 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("telegram-listen", help="Long-poll Telegram for 'Mark read' button presses (run alongside run-loop)")
 
+    webui_p = sub.add_parser("webui", help="Launch the local settings web UI to edit .env (filters, search, bidding)")
+    webui_p.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1 = localhost only)")
+    webui_p.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765)")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "run":
@@ -624,6 +700,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "telegram-listen":
         run_telegram_listener()
+        return 0
+    if args.cmd == "webui":
+        from .webui import serve_webui
+        serve_webui(host=args.host, port=args.port)
         return 0
 
     parser.print_help()

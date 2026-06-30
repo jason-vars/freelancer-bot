@@ -238,6 +238,31 @@ def passes_bid_remaining(
     return True, None
 
 
+def passes_keyword_blocklist(
+    title: str | None,
+    description: str | None,
+    exclude_title_keywords: list[str],
+    exclude_desc_keywords: list[str],
+) -> tuple[bool, str | None]:
+    """Reject a project if a blocked keyword appears in its title or description.
+
+    Matching is case-insensitive substring (so ``wordpress`` also matches
+    ``WordPress`` and ``wordpress-plugin``). Empty lists disable the respective
+    check. Title and description have independent blocklists.
+    """
+    title_l = (title or "").lower()
+    for kw in exclude_title_keywords:
+        k = (kw or "").strip().lower()
+        if k and k in title_l:
+            return False, f"title_keyword_blocked:{k}"
+    desc_l = (description or "").lower()
+    for kw in exclude_desc_keywords:
+        k = (kw or "").strip().lower()
+        if k and k in desc_l:
+            return False, f"desc_keyword_blocked:{k}"
+    return True, None
+
+
 def passes_budget(
     budget_min: float | None,
     budget_max: float | None,
@@ -330,6 +355,15 @@ def evaluate_project(session, project: dict[str, Any], settings) -> tuple[bool, 
         return False, reason, {}
 
     ok, reason = passes_currency(project.get("currency"), settings.skip_currencies)
+    if not ok:
+        return False, reason, {}
+
+    ok, reason = passes_keyword_blocklist(
+        project.get("title"),
+        project.get("description"),
+        settings.exclude_title_keywords,
+        settings.exclude_desc_keywords,
+    )
     if not ok:
         return False, reason, {}
 

@@ -7,6 +7,7 @@ from freelancersdk.resources.projects import projects as fln_projects
 
 from .db import upsert_project, is_project_seen, mark_project_seen
 from .filters import evaluate_project
+from .proposal_ai import ai_filter_project
 from .util import safe_get
 
 
@@ -121,6 +122,26 @@ def fetch_and_store_projects(session, conn, settings, limit: int = 50) -> int:
                 upsert_project(conn, {**row, "status": "filtered", "score": 0, "filter_reason": reason})
                 print(f"[{pid}] filtered: {reason}")
                 continue
+
+            # Optional natural-language AI gate (BOT_AI_FILTER_*). Runs only on
+            # projects that already passed the cheap deterministic filters, so the
+            # OpenAI cost is bounded. Fails open inside ai_filter_project.
+            if settings.ai_filter_enabled and settings.openai_api_key and settings.ai_filter_criteria.strip():
+                should_bid, ai_reason = ai_filter_project(
+                    settings.openai_api_key,
+                    settings.openai_model,
+                    settings.ai_filter_criteria,
+                    title=row["title"],
+                    description=row["description"],
+                    skills=row["skills"],
+                    budget_min=row["budget_min"],
+                    budget_max=row["budget_max"],
+                    currency=row["currency"],
+                )
+                if not should_bid:
+                    upsert_project(conn, {**row, "status": "filtered", "score": 0, "filter_reason": ai_reason})
+                    print(f"[{pid}] filtered by AI: {ai_reason}")
+                    continue
 
             upsert_project(conn, {**row, "status": "new", "score": 0, "filter_reason": None})
             new_count += 1

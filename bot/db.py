@@ -267,6 +267,11 @@ def upsert_project(conn: sqlite3.Connection, p: dict) -> None:
     )
     conn.commit()
 
+def get_project(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM projects WHERE id=?", (int(project_id),)
+    ).fetchone()
+
 def set_project_score_and_status(conn: sqlite3.Connection, project_id: int, score: int, status: str) -> None:
     conn.execute(
         "UPDATE projects SET score=?, status=? WHERE id=?",
@@ -282,6 +287,27 @@ def list_projects_by_status(conn: sqlite3.Connection, status: str, limit: int = 
     return conn.execute(
         "SELECT * FROM projects WHERE status=? ORDER BY created_at DESC LIMIT ?",
         (status, limit),
+    ).fetchall()
+
+
+def list_all_projects(conn: sqlite3.Connection, status: str | None = None, limit: int = 500) -> list[sqlite3.Row]:
+    """Every stored project, newest first. Pass ``status`` to restrict to one
+    status (e.g. 'new', 'filtered', 'bid'); None returns all statuses."""
+    if status:
+        return conn.execute(
+            "SELECT * FROM projects WHERE status=? ORDER BY COALESCE(created_at, '') DESC, id DESC LIMIT ?",
+            (status, limit),
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM projects ORDER BY COALESCE(created_at, '') DESC, id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+
+
+def count_projects_by_status(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT COALESCE(status, 'new') AS status, COUNT(*) AS c FROM projects "
+        "GROUP BY COALESCE(status, 'new') ORDER BY c DESC",
     ).fetchall()
 
 
@@ -334,6 +360,15 @@ def insert_bid(conn: sqlite3.Connection, project_id: int, bid_id: int | None, am
         (project_id, bid_id, amount, period_days, milestone_percent, proposal, utc_now_str(), status),
     )
     conn.commit()
+
+def get_latest_bid(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row | None:
+    """The most recent bid/draft row for a project (the proposal that was sent),
+    or None if none exists. Used by the web UI to show what was submitted."""
+    return conn.execute(
+        "SELECT bid_id, amount, period_days, milestone_percent, proposal, status, created_at "
+        "FROM bids WHERE project_id=? ORDER BY id DESC LIMIT 1",
+        (int(project_id),),
+    ).fetchone()
 
 def bid_exists_for_project(conn: sqlite3.Connection, project_id: int) -> bool:
     """True if any bid row (real, dry-run, or saved draft) already exists for this

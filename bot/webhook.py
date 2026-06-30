@@ -18,6 +18,7 @@ from .filters import (
     passes_budget,
     passes_client_history,
     passes_currency,
+    passes_keyword_blocklist,
     passes_payment_verified,
     passes_recency,
 )
@@ -35,7 +36,12 @@ from .db import (
     upsert_project,
 )
 from .freelancer_client import make_session
-from .proposal_ai import DEFAULT_PROFILE_BULLETS, ProposalInput, generate_proposal_openai
+from .proposal_ai import (
+    ai_filter_project,
+    ai_price_and_duration,
+    build_proposal_input,
+    generate_proposal_openai,
+)
 from .scorer import score_project
 from .telegram_notify import build_alert_keyboard, build_project_notification, send_telegram_message
 from .telegram_notify import _project_link
@@ -60,6 +66,48 @@ def _choose_period_days(budget_min: float | None, budget_max: float | None) -> i
     return 7
 
 
+def choose_bid_from_rules(
+    currency: str | None,
+    budget_min: float | None,
+    budget_max: float | None,
+    rules: list[dict],
+) -> tuple[float, int] | None:
+    """First matching bid rule -> (amount, delivery_days), else None.
+
+    A rule matches when the project currency is in the rule's ``currencies`` list
+    (empty list = any currency) AND the project's budget falls within the rule's
+    ``min``..``max`` range. The representative budget is ``budget_max`` (falling
+    back to ``budget_min``). Returns None when no rule matches or the budget is
+    unknown, so the caller can fall back to its heuristic.
+    """
+    if not rules:
+        return None
+    budget = budget_max if budget_max is not None else budget_min
+    if budget is None:
+        return None
+    try:
+        budget = float(budget)
+    except (TypeError, ValueError):
+        return None
+    code = (currency or "").strip().upper()
+    for rule in rules:
+        if not isinstance(rule, dict):
+            continue
+        codes = {str(c).strip().upper() for c in (rule.get("currencies") or []) if str(c).strip()}
+        if codes and code and code not in codes:
+            continue
+        try:
+            lo = float(rule.get("min"))
+            hi = float(rule.get("max"))
+            bid = float(rule.get("bid"))
+            delivery = int(float(rule.get("delivery")))
+        except (TypeError, ValueError):
+            continue
+        if lo <= budget <= hi:
+            return bid, max(1, delivery)
+    return None
+
+
 def _build_proposal(s, project: dict[str, Any]) -> str:
     questions = [
         "Do you already have designs/wireframes, or should I propose a simple UI?",
@@ -81,15 +129,15 @@ def _build_proposal(s, project: dict[str, Any]) -> str:
         return generate_proposal_openai(
             api_key=s.openai_api_key,
             model=s.openai_model,
-            data=ProposalInput(
+            data=build_proposal_input(
+                s,
                 title=project["title"],
                 description=project["description"] or "",
                 budget_min=project["budget_min"],
                 budget_max=project["budget_max"],
                 currency=project["currency"],
-                your_profile_bullets=DEFAULT_PROFILE_BULLETS,
-                questions=questions,
                 skills=project.get("skills") or "",
+                questions=questions,
             ),
         )
     except Exception as exc:
@@ -190,18 +238,28 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
     event_id = insert_webhook_event(conn, "received", payload_json=payload_json)
 
     def _notify_telegram(project: dict[str, Any], client_status: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
-        if not s.telegram_bot_token or not s.telegram_chat_id:
+        if not s.telegram_targets:
             return None
         message = build_project_notification(project=project, client_status=client_status, result=result)
         keyboard = build_alert_keyboard(_project_link(project), project.get("id"))
-        try:
-            tg_resp = send_telegram_message(s.telegram_bot_token, s.telegram_chat_id, message, reply_markup=keyboard)
-            message_id = (tg_resp.get("result") or {}).get("message_id") if isinstance(tg_resp, dict) else None
-            if message_id is not None:
-                record_sent_message(conn, int(message_id), str(s.telegram_chat_id), project.get("id"), message)
-            return {"sent": True, "ok": tg_resp.get("ok", True)}
-        except Exception as exc:
-            return {"sent": False, "error": str(exc)}
+        sent_any = False
+        last_err: str | None = None
+        for token, chat_id in s.telegram_targets:
+            try:
+                tg_resp = send_telegram_message(token, chat_id, message, reply_markup=keyboard)
+                # Record per-chat so each recipient's Mark-read button works. NOTE:
+                # the telegram-listener long-polls only the PRIMARY bot token, so
+                # Mark-read taps on an extra bot's message won't be processed.
+                message_id = (tg_resp.get("result") or {}).get("message_id") if isinstance(tg_resp, dict) else None
+                if message_id is not None:
+                    record_sent_message(conn, int(message_id), str(chat_id), project.get("id"), message)
+                sent_any = True
+            except Exception as exc:
+                last_err = str(exc)
+                print(f"[telegram] send to {chat_id} failed: {exc}")
+        if sent_any:
+            return {"sent": True, "ok": True}
+        return {"sent": False, "error": last_err}
 
     try:
         project = _extract_project(payload)
@@ -284,6 +342,20 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
                 detail_skills = _detail_skills(project_detail)
                 if detail_skills:
                     project["skills"] = detail_skills
+
+        # Negative-keyword filter: drop projects whose title/description contain a
+        # blocked term. Done after the detail fetch so the description blocklist is
+        # matched against the FULL text, not the truncated webhook preview. Excluded
+        # entirely (like currency/recency) — not written to the projects table.
+        kw_ok, kw_reason = passes_keyword_blocklist(
+            project["title"], project["description"],
+            s.exclude_title_keywords, s.exclude_desc_keywords,
+        )
+        if not kw_ok:
+            result = {"ok": False, "project_id": project["id"], "client_status": None, "reason": kw_reason}
+            update_webhook_event(conn, event_id, result_json=json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
+            return result
+
         upsert_project(conn, {**project, "status": "webhook_new", "score": 0})
 
         client_status = get_client_status(session, project["owner_id"])
@@ -373,8 +445,57 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
             update_webhook_event(conn, event_id, result_json=json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
             return result
 
-        amount = _choose_bid_amount(project["budget_min"], project["budget_max"])
-        period_days = _choose_period_days(project["budget_min"], project["budget_max"])
+        # Optional natural-language AI gate (BOT_AI_FILTER_*). Only runs on great,
+        # eligible projects so the OpenAI cost is bounded. Fails open.
+        if s.ai_filter_enabled and s.openai_api_key and s.ai_filter_criteria.strip():
+            should_bid, ai_reason = ai_filter_project(
+                s.openai_api_key,
+                s.openai_model,
+                s.ai_filter_criteria,
+                title=project["title"],
+                description=project["description"] or "",
+                skills=project.get("skills") or "",
+                budget_min=project["budget_min"],
+                budget_max=project["budget_max"],
+                currency=project["currency"],
+            )
+            if not should_bid:
+                set_project_filtered(conn, int(project["id"]), ai_reason)
+                result = {
+                    "ok": False,
+                    "project_id": project["id"],
+                    "client_status": client_status,
+                    "reason": "ai_filter_reject",
+                    "ai_reason": ai_reason,
+                    "score": score_result.score,
+                }
+                update_webhook_event(conn, event_id, result_json=json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
+                return result
+
+        # Pricing precedence: AI auto-pricing (if enabled) -> structured per-currency
+        # bid rules -> budget-based heuristic. Each falls back to the next on miss.
+        priced = None
+        if s.ai_pricing_enabled and s.openai_api_key and s.ai_pricing_rules.strip():
+            priced = ai_price_and_duration(
+                s.openai_api_key,
+                s.openai_model,
+                s.ai_pricing_rules,
+                title=project["title"],
+                description=project["description"] or "",
+                skills=project.get("skills") or "",
+                budget_min=project["budget_min"],
+                budget_max=project["budget_max"],
+                currency=project["currency"],
+            )
+        if priced is not None:
+            amount, period_days = priced
+        else:
+            ruled = choose_bid_from_rules(project["currency"], project["budget_min"], project["budget_max"], s.bid_rules)
+            if ruled is not None:
+                amount, period_days = ruled
+            else:
+                amount = _choose_bid_amount(project["budget_min"], project["budget_max"])
+                period_days = _choose_period_days(project["budget_min"], project["budget_max"])
 
         # Great project: a high-scoring, fully eligible match. By default
         # (BOT_WEBHOOK_SAVE_ONLY=true) we generate the proposal and SAVE it as a
