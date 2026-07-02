@@ -108,8 +108,29 @@ class Settings:
     active_start: str | None
     active_end: str | None
     # Hours offset from UTC the active window is evaluated in (e.g. 9, -5, 5.5).
-    # None = use the bot machine's own local time.
+    # None = use the bot machine's own local time. Shared by all the windows below.
     active_tz_offset: float | None
+
+    # Per-feature sub-windows (local time, "HH:MM"), evaluated in active_tz_offset.
+    # Empty bounds = that feature runs whenever the bot is active (no extra gate).
+    # Notifications are only SENT inside [notify_start, notify_end); auto-apply only
+    # BIDS inside [autoapply_start, autoapply_end). Overnight windows are supported.
+    notify_start: str | None
+    notify_end: str | None
+    autoapply_start: str | None
+    autoapply_end: str | None
+
+    def notify_window_open(self, now_minutes: int | None = None) -> bool:
+        """Whether Telegram alerts may be sent right now (empty bounds = always)."""
+        from .util import current_minutes, within_active_hours
+        nm = current_minutes(self.active_tz_offset) if now_minutes is None else now_minutes
+        return within_active_hours(self.notify_start, self.notify_end, now_minutes=nm)
+
+    def autoapply_window_open(self, now_minutes: int | None = None) -> bool:
+        """Whether auto-apply may place bids right now (empty bounds = always)."""
+        from .util import current_minutes, within_active_hours
+        nm = current_minutes(self.active_tz_offset) if now_minutes is None else now_minutes
+        return within_active_hours(self.autoapply_start, self.autoapply_end, now_minutes=nm)
 
     # Bid defaults
     default_period_days: int
@@ -238,6 +259,10 @@ def load_settings() -> Settings:
         active_start=(os.getenv("BOT_ACTIVE_START") or "").strip() or None,
         active_end=(os.getenv("BOT_ACTIVE_END") or "").strip() or None,
         active_tz_offset=_get_float_or_none("BOT_ACTIVE_TZ_OFFSET"),
+        notify_start=(os.getenv("BOT_NOTIFY_START") or "").strip() or None,
+        notify_end=(os.getenv("BOT_NOTIFY_END") or "").strip() or None,
+        autoapply_start=(os.getenv("BOT_AUTOAPPLY_START") or "").strip() or None,
+        autoapply_end=(os.getenv("BOT_AUTOAPPLY_END") or "").strip() or None,
         default_period_days=_get_int("BOT_DEFAULT_PERIOD_DAYS", 7),
         default_milestone_percent=_get_int("BOT_DEFAULT_MILESTONE_PERCENT", 50),
         bid_rules=_get_json_list("BOT_BID_RULES"),

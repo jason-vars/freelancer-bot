@@ -128,6 +128,33 @@ FIELD_DOCS: dict[str, str] = {
         "timezone differs from yours — otherwise '08:00' means 08:00 on the SERVER, not "
         "for you. The run-loop log prints the time it currently sees, so you can verify."
     ),
+    "BOT_NOTIFY_START": (
+        "Start of the window in which Telegram alerts are SENT (HH:MM, in the active-hours "
+        "timezone). A sub-window of the Active hours: the bot still fetches/scores outside "
+        "it, but holds alerts. In the polling loop a held alert is DEFERRED — the job keeps "
+        "its 'new' status and is sent on the first in-window cycle (still subject to the "
+        "max-project-age recency check, so very old held jobs may expire). Blank start AND "
+        "end = notify whenever active."
+    ),
+    "BOT_NOTIFY_END": (
+        "End of the notification window (HH:MM). Overnight works: 22:00 → 08:00 sends across "
+        "midnight. start == end is treated as 24h. Note: webhook-path alerts can't be "
+        "deferred (a webhook is one-shot), so an out-of-window webhook match is collected "
+        "and browsable on the Jobs page but not alerted."
+    ),
+    "BOT_AUTOAPPLY_START": (
+        "Start of the window in which auto-apply may place bids (HH:MM, active-hours "
+        "timezone). Only relevant when Auto-apply is ON. Outside the window the webhook "
+        "path behaves as if Auto-apply were OFF: the great match is collected and notified, "
+        "but no proposal is generated and no bid is placed. Blank start AND end = auto-bid "
+        "whenever active."
+    ),
+    "BOT_AUTOAPPLY_END": (
+        "End of the auto-apply window (HH:MM). Overnight works (e.g. 09:00 → 22:00 within a "
+        "day, or 22:00 → 06:00 across midnight). start == end is treated as 24h. Lets you "
+        "confine automatic bidding to hours you can monitor while still collecting leads "
+        "round the clock."
+    ),
     # ── AI proposal ───────────────────────────────────────────────────────────
     "BOT_PROPOSAL_INSTRUCTIONS": (
         "Free-text steering added to EVERY AI proposal as high-priority guidance (the "

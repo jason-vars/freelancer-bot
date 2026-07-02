@@ -428,6 +428,11 @@ def _notify_telegram_polling(conn, settings, project: dict[str, Any], client_sta
     # project is still collected and marked handled, just no alert is sent.
     if not settings.notify_enabled or not settings.telegram_targets:
         return None
+    # Outside the notification window: defer rather than drop. The project keeps its
+    # 'new' status so a later cycle (once the window opens) can alert it, subject to
+    # the usual recency re-check. Returned as a distinct outcome the caller honours.
+    if not settings.notify_window_open():
+        return {"sent": False, "deferred": True}
     msg = build_project_notification(project=project, client_status=client_status, result=result)
     sent_any = False
     last_err: str | None = None
@@ -536,6 +541,11 @@ def run(dry_run_override: bool | None = None) -> None:
             conn, s, dict(p), None,
             {"ok": True, "project_id": int(p["id"]), "score": int(res.score)},
         )
+        if outcome is not None and outcome.get("deferred"):
+            # Outside the notification window: leave the row 'new' so a later cycle
+            # (once the window opens) can send it. Not counted as notified or failed.
+            print(f"[{p['id']}] score={res.score} -> ALERT deferred (outside notification window)")
+            continue
         if outcome is None or outcome.get("sent"):
             # None => Telegram not configured (notifications disabled): treat as
             # handled so it isn't retried forever.

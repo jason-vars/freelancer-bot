@@ -242,6 +242,11 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
     def _notify_telegram(project: dict[str, Any], client_status: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
         if not s.notify_enabled or not s.telegram_targets:
             return None
+        # Outside the notification window: skip the alert. Unlike the polling path a
+        # webhook is one-shot (the project is marked handled), so there is nothing to
+        # defer to — the job is still collected and browsable on the Jobs page.
+        if not s.notify_window_open():
+            return {"sent": False, "skipped": "outside notification window"}
         message = build_project_notification(project=project, client_status=client_status, result=result)
         keyboard = build_alert_keyboard(_project_link(project), project.get("id"))
         sent_any = False
@@ -511,11 +516,13 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
                 amount = _choose_bid_amount(project["budget_min"], project["budget_max"])
                 period_days = _choose_period_days(project["budget_min"], project["budget_max"])
 
-        # Auto-apply OFF (master switch): the bot only COLLECTS the great project and
-        # notifies you — no proposal is generated (so no OpenAI spend) and no draft
-        # bid is created. You apply manually from the Jobs page, which generates the
-        # proposal on demand. The 'great' status is what makes a redelivery idempotent.
-        if not s.auto_apply:
+        # Auto-apply OFF (master switch) OR outside the auto-apply window: the bot
+        # only COLLECTS the great project and notifies you — no proposal is generated
+        # (so no OpenAI spend) and no draft bid is created. You apply manually from the
+        # Jobs page, which generates the proposal on demand. The 'great' status is what
+        # makes a redelivery idempotent. The window lets you auto-bid only during set
+        # hours while still collecting (and, in-window, notifying) round the clock.
+        if not s.auto_apply or not s.autoapply_window_open():
             set_project_score_and_status(conn, int(project["id"]), int(score_result.score), "great")
             result = {
                 "ok": True,
