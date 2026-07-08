@@ -1094,10 +1094,28 @@ def _job_detail(project_id: int) -> tuple[int, dict]:
     return 200, detail
 
 
+def _resolve_pid_by_seo(seo: str) -> int | None:
+    """Map a freelancer ``category/slug`` seo path to a stored project id, or None.
+
+    The browser userscript derives ``seo`` from the freelancer project page URL
+    (``/projects/<category>/<slug>/details`` → ``<category>/<slug>``); we stored the
+    same string as the project's ``url`` at collection time."""
+    from .db import connect, get_project_by_url, init_db
+    conn = connect()
+    try:
+        init_db(conn)
+        row = get_project_by_url(conn, seo)
+        return int(row["id"]) if row is not None else None
+    finally:
+        conn.close()
+
+
 def _generate_for_job(project_id: int) -> tuple[int, dict]:
-    """On-demand proposal generation for the Apply modal's 'Generate with AI'
-    button. Returns ``(code, {ok, proposal})`` or an error payload. This is the
-    ONLY place the Apply flow spends an OpenAI call."""
+    """On-demand proposal generation for the Apply modal's 'Generate with AI' button
+    and the browser userscript. Returns ``(code, {ok, proposal, amount, period,
+    currency})`` or an error payload. This is the ONLY place the Apply/userscript flow
+    spends an OpenAI call. Pricing (amount + delivery days) mirrors the bid precedence
+    via :func:`_resolve_pricing` so the userscript can fill those fields too."""
     from .config import load_settings
     from .db import connect, get_project, init_db
 
@@ -1117,7 +1135,15 @@ def _generate_for_job(project_id: int) -> tuple[int, dict]:
     text, err = _generate_proposal(s, proj)
     if err:
         return 400, {"ok": False, "message": err}
-    return 200, {"ok": True, "proposal": text}
+    amount, period = _resolve_pricing(s, proj)
+    return 200, {
+        "ok": True,
+        "id": int(proj["id"]),
+        "proposal": text,
+        "amount": float(amount),
+        "period": int(period),
+        "currency": proj["currency"] or "",
+    }
 
 
 def serve_webui(host: str, port: int) -> None:
@@ -1135,6 +1161,10 @@ def serve_webui(host: str, port: int) -> None:
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            # Allow the freelancer.com userscript (a different origin) to read these
+            # JSON endpoints. Harmless: the server binds to localhost and exposes only
+            # your own already-collected jobs.
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(data)
 
@@ -1147,10 +1177,23 @@ def serve_webui(host: str, port: int) -> None:
             path = self.path.split("?")[0]
             query = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
             if path in ("/jobs/detail", "/jobs/generate"):
-                try:
-                    pid = int((query.get("id", [""])[0] or "").strip())
-                except (TypeError, ValueError):
-                    self._send_json(400, {"ok": False, "message": "Bad or missing project id."})
+                # Accept either a numeric ?id= (Jobs page) or a ?seo=<category/slug>
+                # (browser userscript, derived from the freelancer project URL).
+                pid_raw = (query.get("id", [""])[0] or "").strip()
+                seo = (query.get("seo", [""])[0] or "").strip()
+                if pid_raw:
+                    try:
+                        pid = int(pid_raw)
+                    except (TypeError, ValueError):
+                        self._send_json(400, {"ok": False, "message": "Bad project id."})
+                        return
+                elif seo:
+                    pid = _resolve_pid_by_seo(seo)
+                    if pid is None:
+                        self._send_json(404, {"ok": False, "message": f"No collected project matches '{seo}'. The bot must have alerted you about it first."})
+                        return
+                else:
+                    self._send_json(400, {"ok": False, "message": "Missing project id or seo."})
                     return
                 code, payload = (_generate_for_job(pid) if path == "/jobs/generate" else _job_detail(pid))
                 self._send_json(code, payload)

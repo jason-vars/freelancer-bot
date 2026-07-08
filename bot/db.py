@@ -272,6 +272,19 @@ def get_project(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row | None
         "SELECT * FROM projects WHERE id=?", (int(project_id),)
     ).fetchone()
 
+def get_project_by_url(conn: sqlite3.Connection, url: str) -> sqlite3.Row | None:
+    """Look up a project by its stored ``seo_url`` (the bare ``category/slug`` path
+    Freelancer uses, e.g. ``ui-design/app-application``). Used by the browser
+    userscript, which derives the slug from the freelancer project page URL. Matches
+    with or without a trailing slash; newest row wins if somehow duplicated."""
+    u = (url or "").strip().strip("/")
+    if not u:
+        return None
+    return conn.execute(
+        "SELECT * FROM projects WHERE url=? OR url=? ORDER BY created_at DESC LIMIT 1",
+        (u, u + "/"),
+    ).fetchone()
+
 def set_project_score_and_status(conn: sqlite3.Connection, project_id: int, score: int, status: str) -> None:
     conn.execute(
         "UPDATE projects SET score=?, status=? WHERE id=?",
