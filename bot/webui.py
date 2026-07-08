@@ -68,7 +68,7 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("BOT_NOTIFY_START", "Notify from", "time",
               "Only SEND alerts after this local time (blank = whenever the bot is active). Uses the active-hours timezone below.", ""),
         Field("BOT_NOTIFY_END", "Notify until", "time",
-              "Stop sending alerts after this time (supports overnight, e.g. 09:00→22:00). Blank = no end. Jobs found outside the window are still collected; polling defers their alert to the next in-window cycle.", ""),
+              "Stop sending alerts after this time (supports overnight, e.g. 09:00→22:00). Blank = no end. Jobs found OUTSIDE the window are still collected but never alerted — so when the window opens you get only fresh jobs, not a backlog.", ""),
         Field("BOT_DRY_RUN", "Dry run", "bool", "ON = never place real bids (save drafts only).", "1"),
         Field("BOT_MAX_BIDS_PER_DAY", "Max bids / day", "int", "Daily bid cap.", "20"),
         Field("BOT_POLL_INTERVAL_SECONDS", "Poll interval (s)", "int", "Seconds between polling cycles.", "300"),

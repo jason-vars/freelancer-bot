@@ -115,6 +115,8 @@ class Settings:
     # Empty bounds = that feature runs whenever the bot is active (no extra gate).
     # Notifications are only SENT inside [notify_start, notify_end); auto-apply only
     # BIDS inside [autoapply_start, autoapply_end). Overnight windows are supported.
+    # Out-of-window jobs are collected but NOT alerted (dropped, not deferred), so
+    # alerts start fresh at the window edge rather than replaying a backlog.
     notify_start: str | None
     notify_end: str | None
     autoapply_start: str | None

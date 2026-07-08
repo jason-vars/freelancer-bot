@@ -131,16 +131,15 @@ FIELD_DOCS: dict[str, str] = {
     "BOT_NOTIFY_START": (
         "Start of the window in which Telegram alerts are SENT (HH:MM, in the active-hours "
         "timezone). A sub-window of the Active hours: the bot still fetches/scores outside "
-        "it, but holds alerts. In the polling loop a held alert is DEFERRED — the job keeps "
-        "its 'new' status and is sent on the first in-window cycle (still subject to the "
-        "max-project-age recency check, so very old held jobs may expire). Blank start AND "
-        "end = notify whenever active."
+        "it, but does NOT alert. Jobs found while the window is closed are collected and "
+        "marked 'notify_skipped' — they are NOT held and replayed when the window opens, so "
+        "at the window edge you get only genuinely fresh jobs, never a backlog from before. "
+        "Blank start AND end = notify whenever active."
     ),
     "BOT_NOTIFY_END": (
         "End of the notification window (HH:MM). Overnight works: 22:00 → 08:00 sends across "
-        "midnight. start == end is treated as 24h. Note: webhook-path alerts can't be "
-        "deferred (a webhook is one-shot), so an out-of-window webhook match is collected "
-        "and browsable on the Jobs page but not alerted."
+        "midnight. start == end is treated as 24h. Out-of-window jobs (polling or webhook) "
+        "are collected and browsable on the Jobs page but never alerted."
     ),
     "BOT_AUTOAPPLY_START": (
         "Start of the window in which auto-apply may place bids (HH:MM, active-hours "

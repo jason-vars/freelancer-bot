@@ -428,11 +428,13 @@ def _notify_telegram_polling(conn, settings, project: dict[str, Any], client_sta
     # project is still collected and marked handled, just no alert is sent.
     if not settings.notify_enabled or not settings.telegram_targets:
         return None
-    # Outside the notification window: defer rather than drop. The project keeps its
-    # 'new' status so a later cycle (once the window opens) can alert it, subject to
-    # the usual recency re-check. Returned as a distinct outcome the caller honours.
+    # Outside the notification window: DROP the alert (don't defer). The project is
+    # still collected/browsable, but it is not alerted now and never later — the user
+    # wants alerts only for jobs found from the window start onward, not a backlog
+    # replayed when the window opens. Returned as a distinct outcome the caller marks
+    # handled so it isn't retried.
     if not settings.notify_window_open():
-        return {"sent": False, "deferred": True}
+        return {"sent": False, "out_of_window": True}
     msg = build_project_notification(project=project, client_status=client_status, result=result)
     sent_any = False
     last_err: str | None = None
@@ -541,10 +543,13 @@ def run(dry_run_override: bool | None = None) -> None:
             conn, s, dict(p), None,
             {"ok": True, "project_id": int(p["id"]), "score": int(res.score)},
         )
-        if outcome is not None and outcome.get("deferred"):
-            # Outside the notification window: leave the row 'new' so a later cycle
-            # (once the window opens) can send it. Not counted as notified or failed.
-            print(f"[{p['id']}] score={res.score} -> ALERT deferred (outside notification window)")
+        if outcome is not None and outcome.get("out_of_window"):
+            # Outside the notification window: collect but DON'T alert, and mark it
+            # handled ('notify_skipped') so it is never alerted later either. This is
+            # what makes alerts start fresh at the window edge instead of replaying a
+            # backlog of jobs found while the window was closed.
+            set_project_score_and_status(conn, int(p["id"]), int(res.score), "notify_skipped")
+            print(f"[{p['id']}] score={res.score} -> alert skipped (outside notification window)")
             continue
         if outcome is None or outcome.get("sent"):
             # None => Telegram not configured (notifications disabled): treat as
