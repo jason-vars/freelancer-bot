@@ -9,6 +9,7 @@ from urllib.parse import parse_qs, urlencode
 
 from . import db
 from .env_store import read_env, update_env
+from .filters import SKIPPABLE_UPGRADES
 from .settings_docs import FIELD_DOCS, FIELD_EXAMPLES
 
 
@@ -55,6 +56,14 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("BOT_REQUIRE_PAYMENT_VERIFIED", "Require payment verified", "bool", "Only payment-verified clients (webhook path only).", "1"),
         Field("BOT_ALLOW_COUNTRIES", "Allow countries", "csv", "Only these client countries (empty = any).", ""),
         Field("BOT_SKIP_COUNTRIES", "Skip countries", "csv", "Block these client countries (empty = none).", ""),
+    ]),
+    ("Skip by project type", [
+        # Generated from the single SKIPPABLE_UPGRADES source of truth so the toggle,
+        # the env var, and the filter never drift. Each ON skips projects carrying
+        # that Freelancer "upgrade" flag (e.g. NDA-required, Preferred-Freelancer-only).
+        Field(f"BOT_SKIP_{suffix}", f"Skip: {label}", "bool",
+              f"ON = skip projects flagged “{label}” (upgrades.{key}).", "0")
+        for suffix, key, label in SKIPPABLE_UPGRADES
     ]),
     ("Bot behaviour", [
         Field("BOT_AUTO_APPLY", "Auto-apply (auto-bid)", "bool",
@@ -1110,12 +1119,82 @@ def _resolve_pid_by_seo(seo: str) -> int | None:
         conn.close()
 
 
+def _owner_id_from_project(proj: dict) -> int | None:
+    """The project owner's user id — needed for the country lookup. Stored only in
+    ``raw_json`` (there is no dedicated column), so fall back to parsing it."""
+    oid = proj.get("owner_id")
+    if oid:
+        try:
+            return int(oid)
+        except (TypeError, ValueError):
+            pass
+    raw = proj.get("raw_json")
+    if raw:
+        try:
+            d = json.loads(raw)
+            v = d.get("owner_id") or d.get("user_id")
+            return int(v) if v else None
+        except (ValueError, TypeError):
+            return None
+    return None
+
+
+def _upgrades_from_project(proj: dict) -> dict | None:
+    """The project's ``upgrades`` flags. Not a column, so read them out of the stored
+    ``raw_json`` (the polling collector persists the full payload)."""
+    raw = proj.get("raw_json")
+    if not raw:
+        return None
+    try:
+        d = json.loads(raw)
+    except (ValueError, TypeError):
+        return None
+    up = d.get("upgrades")
+    return up if isinstance(up, dict) else None
+
+
+def _filter_skip_reason(s, proj: dict) -> str | None:
+    """If this project matches a SKIP filter (currency, project-type upgrade, or
+    country), return a short human reason; otherwise None. Used to refuse proposal
+    generation for jobs you don't want to bid on — mirrors the fetch-time filters so
+    'open a project' honours the same rules. Currency + upgrades are cheap local
+    checks; country needs one Freelancer API call and is only attempted when an
+    allow/skip-country filter is actually set."""
+    from .filters import country_allowed, get_client_status, passes_currency, passes_upgrades
+
+    ok, reason = passes_currency(proj.get("currency"), s.skip_currencies)
+    if not ok:
+        return reason
+    ok, reason = passes_upgrades(_upgrades_from_project(proj), s.skip_upgrades)
+    if not ok:
+        return reason
+    if s.allow_countries or s.skip_countries:
+        owner_id = _owner_id_from_project(proj)
+        if owner_id is not None:
+            try:
+                from .freelancer_client import make_session
+                session = make_session(s.fln_oauth_token, s.fln_url)
+                client_status = get_client_status(session, owner_id)
+                ok, reason = country_allowed(client_status, s.allow_countries, s.skip_countries)
+                if not ok:
+                    return reason
+            except Exception as exc:
+                # Don't block generation on a lookup failure — fail open (same spirit
+                # as the polling path when client data is unavailable).
+                print(f"[webui] country filter lookup failed for {proj.get('id')}: {exc}")
+    return None
+
+
 def _generate_for_job(project_id: int) -> tuple[int, dict]:
     """On-demand proposal generation for the Apply modal's 'Generate with AI' button
     and the browser userscript. Returns ``(code, {ok, proposal, amount, period,
     currency})`` or an error payload. This is the ONLY place the Apply/userscript flow
     spends an OpenAI call. Pricing (amount + delivery days) mirrors the bid precedence
-    via :func:`_resolve_pricing` so the userscript can fill those fields too."""
+    via :func:`_resolve_pricing` so the userscript can fill those fields too.
+
+    Before spending an OpenAI call it re-applies the currency/country SKIP filters and
+    returns ``{ok:False, skipped:True}`` for a filtered project, so opening a job you
+    don't want to bid on costs nothing."""
     from .config import load_settings
     from .db import connect, get_project, init_db
 
@@ -1132,6 +1211,9 @@ def _generate_for_job(project_id: int) -> tuple[int, dict]:
         proj = {k: row[k] for k in row.keys()}
     finally:
         conn.close()
+    skip = _filter_skip_reason(s, proj)
+    if skip:
+        return 200, {"ok": False, "skipped": True, "message": f"Skipped — matches your filter ({skip}); no proposal generated."}
     text, err = _generate_proposal(s, proj)
     if err:
         return 400, {"ok": False, "message": err}

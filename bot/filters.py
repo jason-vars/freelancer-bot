@@ -165,6 +165,41 @@ def get_client_status(session, owner_id: int | None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Individual filters — each returns (passed, reason_if_failed)
 # ---------------------------------------------------------------------------
+# Project "upgrade" flags a bidder may want to avoid, mapped to the API's
+# ``upgrades`` object keys. Single source of truth for the config env vars
+# (``BOT_SKIP_<suffix>``), the settings-UI toggles, and the filter below — add a
+# row here and it surfaces in all three. ``(env_suffix, upgrades_key, label)``.
+SKIPPABLE_UPGRADES: list[tuple[str, str, str]] = [
+    ("NDA", "NDA", "NDA required"),
+    ("PREFERRED", "pf_only", "Preferred Freelancer only"),
+    ("SEALED", "sealed", "Sealed bids"),
+    ("QUALIFIED", "qualified", "Qualified / verified-freelancer required"),
+    ("IP_CONTRACT", "ip_contract", "IP / ownership agreement"),
+    ("NON_COMPETE", "non_compete", "Non-compete agreement"),
+    ("NONPUBLIC", "nonpublic", "Private / non-public project"),
+    ("FULLTIME", "fulltime", "Full-time project"),
+    ("RECRUITER", "recruiter", "Recruiter project"),
+]
+
+
+def passes_upgrades(
+    upgrades: Any,
+    skip_upgrades: frozenset[str] | set[str],
+) -> tuple[bool, str | None]:
+    """Reject a project carrying any of the ``skip_upgrades`` upgrade flags.
+
+    ``upgrades`` is the project's ``upgrades`` object (a dict of flag -> bool/None).
+    Empty ``skip_upgrades`` or a missing/!dict ``upgrades`` disables the check. The
+    reject reason names the first matched flag, e.g. ``upgrade_blocked:NDA``.
+    """
+    if not skip_upgrades or not isinstance(upgrades, dict):
+        return True, None
+    for key in skip_upgrades:
+        if bool(upgrades.get(key)):
+            return False, f"upgrade_blocked:{key}"
+    return True, None
+
+
 def passes_currency(
     currency: str | None,
     skip_currencies: list[str],
@@ -379,6 +414,10 @@ def evaluate_project(session, project: dict[str, Any], settings) -> tuple[bool, 
         return False, reason, {}
 
     ok, reason = passes_currency(project.get("currency"), settings.skip_currencies)
+    if not ok:
+        return False, reason, {}
+
+    ok, reason = passes_upgrades(project.get("upgrades"), settings.skip_upgrades)
     if not ok:
         return False, reason, {}
 

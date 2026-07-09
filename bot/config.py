@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
+from .filters import SKIPPABLE_UPGRADES
+
 load_dotenv()
 
 def _strip_inline_comment(v: str | None) -> str:
@@ -99,6 +101,9 @@ class Settings:
     allow_countries: list[str]
     skip_countries: list[str]
     skip_currencies: list[str]
+    # Project upgrade flags to skip (e.g. {"NDA", "pf_only", "sealed"}), resolved
+    # from the BOT_SKIP_<suffix> toggles. Empty = keep every project type.
+    skip_upgrades: frozenset[str]
     min_client_completed_jobs: int
     require_payment_verified: bool
     max_project_age_seconds: int
@@ -248,6 +253,10 @@ def load_settings() -> Settings:
         allow_countries=_csv("BOT_ALLOW_COUNTRIES"),
         skip_countries=_csv("BOT_SKIP_COUNTRIES"),
         skip_currencies=_csv("BOT_SKIP_CURRENCIES") or ["INR"],
+        skip_upgrades=frozenset(
+            key for suffix, key, _label in SKIPPABLE_UPGRADES
+            if _get_bool(f"BOT_SKIP_{suffix}", False)
+        ),
         min_client_completed_jobs=_get_int("BOT_MIN_CLIENT_COMPLETED_JOBS", 1),
         # Only save/bid projects whose client has a verified payment method.
         require_payment_verified=_get_bool("BOT_REQUIRE_PAYMENT_VERIFIED", True),

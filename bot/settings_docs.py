@@ -253,6 +253,18 @@ FIELD_DOCS: dict[str, str] = {
     "BOT_AI_PRICING_RULES": "Plain-English pricing guidance, e.g. 'Logo = $50, 2 days; full web app = $1500, 14 days'.",
 }
 
+# Project-type skip toggles (BOT_SKIP_NDA, BOT_SKIP_PREFERRED, ...) generated from the
+# same SKIPPABLE_UPGRADES list that drives the config + UI, so the docs never drift.
+from .filters import SKIPPABLE_UPGRADES as _SKIPPABLE_UPGRADES  # noqa: E402
+
+for _suffix, _key, _label in _SKIPPABLE_UPGRADES:
+    FIELD_DOCS[f"BOT_SKIP_{_suffix}"] = (
+        f"On = drop projects that carry the Freelancer '{_label}' flag "
+        f"(the API's upgrades.{_key}). These are filtered out at fetch time (shown as "
+        f"'filtered' with reason upgrade_blocked:{_key}) and opening one never spends "
+        f"an OpenAI call. Off = keep them."
+    )
+
 
 # Sample values shown as the input PLACEHOLDER (greyed-out, not saved) so users see
 # the expected format at a glance. Used only when a field has no explicit default

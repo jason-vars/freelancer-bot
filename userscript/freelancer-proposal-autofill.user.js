@@ -117,6 +117,8 @@
   }
 
   // ── Talk to the bot (GM_xmlhttpRequest bypasses CORS + mixed-content) ──────
+  // Resolves with the parsed JSON for any well-formed response (including a
+  // {ok:false, skipped:true} filter-skip); rejects only on transport/parse errors.
   function fetchProposal(seo) {
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
@@ -126,7 +128,7 @@
         onload: (r) => {
           let d;
           try { d = JSON.parse(r.responseText); } catch (e) { return reject("Bad response from bot."); }
-          if (r.status >= 200 && r.status < 300 && d.ok) resolve(d);
+          if (r.status >= 200 && r.status < 300) resolve(d);
           else reject(d.message || ("Bot returned HTTP " + r.status));
         },
         onerror: () => reject("Cannot reach the bot at " + BOT_BASE + " — is `python -m bot serve` running?"),
@@ -169,8 +171,17 @@
       } else {
         badge("Generating proposal…", "info");
         data = await fetchProposal(seo);
-        CACHE.setItem(cacheKey, JSON.stringify(data));
       }
+      // Project matched a currency/country skip filter — don't fill, don't cache.
+      if (data && data.skipped) {
+        badge(data.message || "Skipped by filter.", "info");
+        return;
+      }
+      if (!data || !data.ok) {
+        badge((data && data.message) || "Bot could not generate a proposal.", "err");
+        return;
+      }
+      if (!cached) CACHE.setItem(cacheKey, JSON.stringify(data));
       const filled = fillForm(data);
       if (filled.includes("proposal")) badge("Filled: " + filled.join(", "), "ok");
       else badge("Got proposal but couldn't find the bid box.", "err");

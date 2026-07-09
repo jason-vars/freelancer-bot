@@ -37,6 +37,8 @@ def _project_to_row(p: dict[str, Any]) -> dict[str, Any]:
         "created_at": p.get("time_submitted") or p.get("date_submitted") or p.get("time_created"),
         "bidperiod": p.get("bidperiod"),
         "owner_id": p.get("owner_id") or p.get("user_id"),
+        # Project upgrade flags (NDA, pf_only, sealed, ...) for the upgrade filter.
+        "upgrades": p.get("upgrades"),
         # Keep the full API payload so we can inspect every field the API returns
         # and discover new filtering signals from real data.
         "raw_json": json.dumps(p, ensure_ascii=True, sort_keys=True, default=str),

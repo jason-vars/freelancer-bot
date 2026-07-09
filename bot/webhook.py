@@ -22,6 +22,7 @@ from .filters import (
     passes_payment_verified,
     passes_recency,
     passes_skill_blocklist,
+    passes_upgrades,
 )
 from .db import (
     bid_exists_for_project,
@@ -189,6 +190,8 @@ def _extract_project(payload: dict[str, Any]) -> dict[str, Any]:
         "created_at": src.get("time_submitted") or src.get("date_submitted") or src.get("time_created") or payload.get("created_at"),
         "bidperiod": src.get("bidperiod"),
         "owner_id": src.get("owner_id") or src.get("user_id") or payload.get("owner_id") or payload.get("user_id"),
+        # Project upgrade flags (NDA, pf_only, sealed, ...) for the upgrade filter.
+        "upgrades": src.get("upgrades"),
         # Keep the full source payload so every available API field is inspectable.
         "raw_json": json.dumps(src, ensure_ascii=True, sort_keys=True, default=str),
     }
@@ -331,6 +334,18 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
                 "project_id": project["id"],
                 "client_status": None,
                 "reason": currency_reason,
+            }
+            update_webhook_event(conn, event_id, result_json=json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
+            return result
+
+        upg_ok, upg_reason = passes_upgrades(project.get("upgrades"), s.skip_upgrades)
+        if not upg_ok:
+            set_project_filtered(conn, int(project["id"]), upg_reason)
+            result = {
+                "ok": False,
+                "project_id": project["id"],
+                "client_status": None,
+                "reason": upg_reason,
             }
             update_webhook_event(conn, event_id, result_json=json.dumps(result, ensure_ascii=True, sort_keys=True, default=str))
             return result
