@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlencode
 
 from . import db
 from .env_store import read_env, update_env
-from .filters import SKIPPABLE_UPGRADES
+from .filters import SKIPPABLE_UPGRADES, active_upgrade_labels
 from .settings_docs import FIELD_DOCS, FIELD_EXAMPLES
 
 
@@ -462,6 +462,8 @@ _JOBS_STYLE = """
   .meta { color: #7a85a6; font-size: 12px; margin-top: 3px; }
   .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
+  .utags { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; }
+  .utag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; }
   .empty { color: #7a85a6; padding: 40px 0; text-align: center; }
   .note { color: #7a85a6; font-size: 12.5px; }
   .actions { white-space: nowrap; text-align: right; }
@@ -679,6 +681,33 @@ def _fmt_budget(row: Any) -> str:
     return f"{amount} {cur}".strip()
 
 
+# Accent colours for the most decision-relevant upgrade badges; the rest are neutral.
+_UPGRADE_BADGE_COLORS: dict[str, tuple[str, str]] = {
+    "NDA": ("#3a1717", "#f8a3a3"),
+    "Preferred": ("#3a2f10", "#f2c66a"),
+    "Verified": ("#10341f", "#7ee2a8"),
+    "Sealed": ("#2a1f3a", "#c8a3f8"),
+    "Urgent": ("#3a2417", "#f2a86a"),
+}
+
+
+def _row_upgrade_badges(raw_json: Any) -> str:
+    """Small pills for a project's active upgrade flags (NDA, Preferred, ...), parsed
+    from the stored raw payload. Empty string when the project has none."""
+    try:
+        upgrades = json.loads(raw_json).get("upgrades") if raw_json else None
+    except (ValueError, TypeError):
+        upgrades = None
+    labels = active_upgrade_labels(upgrades)
+    if not labels:
+        return ""
+    pills = []
+    for lbl in labels:
+        bg, fg = _UPGRADE_BADGE_COLORS.get(lbl, ("#20283e", "#aab6d8"))
+        pills.append(f'<span class="utag" style="background:{bg};color:{fg}">{html.escape(lbl)}</span>')
+    return '<div class="utags">' + "".join(pills) + "</div>"
+
+
 def _render_jobs(rows: list, counts: list, active_status: str | None) -> str:
     def esc(x: Any) -> str:
         return html.escape("" if x is None else str(x), quote=True)
@@ -722,9 +751,10 @@ def _render_jobs(rows: list, counts: list, active_status: str | None) -> str:
                     f'<button class="btn apply" data-id="{esc(r["id"])}" data-title="{title}">Apply</button>'
                     f'<button class="btn auto" data-id="{esc(r["id"])}" data-title="{title}">Auto-bid</button>'
                 )
+            badges = _row_upgrade_badges(r["raw_json"])
             body.append(
                 "<tr>"
-                f'<td class="title">{title_html}<div class="meta">{" · ".join(meta_bits)}</div></td>'
+                f'<td class="title">{title_html}<div class="meta">{" · ".join(meta_bits)}</div>{badges}</td>'
                 f'<td><span class="pill" style="background:{bg};color:{fg}">{esc(st)}</span></td>'
                 f'<td class="num">{esc(score)}</td>'
                 f'<td class="num">{esc(_fmt_budget(r))}</td>'

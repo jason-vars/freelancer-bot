@@ -182,6 +182,31 @@ SKIPPABLE_UPGRADES: list[tuple[str, str, str]] = [
 ]
 
 
+# Notable upgrade flags to DISPLAY on a job (a superset of the skippable set — also
+# includes purely informational badges like Urgent/Featured). ``(upgrades_key, label)``.
+DISPLAY_UPGRADES: list[tuple[str, str]] = [
+    ("NDA", "NDA"),
+    ("pf_only", "Preferred"),
+    ("sealed", "Sealed"),
+    ("qualified", "Verified"),
+    ("ip_contract", "IP"),
+    ("non_compete", "Non-compete"),
+    ("nonpublic", "Private"),
+    ("urgent", "Urgent"),
+    ("featured", "Featured"),
+    ("fulltime", "Full-time"),
+    ("recruiter", "Recruiter"),
+]
+
+
+def active_upgrade_labels(upgrades: Any) -> list[str]:
+    """Short labels for the upgrade flags that are truthy on a project — used to show
+    badges on the Jobs page and in the Telegram alert. Empty list if none/!dict."""
+    if not isinstance(upgrades, dict):
+        return []
+    return [label for key, label in DISPLAY_UPGRADES if bool(upgrades.get(key))]
+
+
 def passes_upgrades(
     upgrades: Any,
     skip_upgrades: frozenset[str] | set[str],

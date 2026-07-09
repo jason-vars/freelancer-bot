@@ -120,6 +120,22 @@ def _job_type(project: dict[str, Any]) -> str | None:
     return str(t).lower() if t else None
 
 
+def _upgrade_flags(project: dict[str, Any]) -> list[str]:
+    """Active upgrade badges (NDA, Preferred, Verified, ...) for the alert. Reads the
+    ``upgrades`` object from the extracted project (webhook path) or from ``raw_json``
+    (polling path), mirroring :func:`_job_type`."""
+    from .filters import active_upgrade_labels
+    upgrades = project.get("upgrades")
+    if not isinstance(upgrades, dict):
+        raw = project.get("raw_json")
+        if raw:
+            try:
+                upgrades = (json.loads(raw) or {}).get("upgrades")
+            except (ValueError, TypeError):
+                upgrades = None
+    return active_upgrade_labels(upgrades)
+
+
 TELEGRAM_MAX_CHARS = 4096
 # Leave headroom below the hard limit for HTML tags / escaping expansion.
 _SAFE_MAX_CHARS = 3900
@@ -214,6 +230,11 @@ def build_project_notification(
         head_lines.append(f"<b>Type:</b> {_esc(job_type.title())}")
     skills_line = f"<b>Skills:</b> {skills_display}"
     head_lines.append(skills_line)
+    # Highlight project flags the bidder cares about (NDA / Preferred-only / verified-
+    # freelancer required / sealed / urgent ...) so they're visible before opening it.
+    flags = _upgrade_flags(project)
+    if flags:
+        head_lines.append(f"<b>Flags:</b> \U0001f3f7️ {_esc(', '.join(flags))}")
 
     # Metadata as a horizontal table: a header row of column names above a single
     # row of values, column-aligned in a monospace <pre> block. The <pre> block
