@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.0.0
+// @version      1.2.0
 // @description  When you open a Freelancer project the bot already collected, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
@@ -30,26 +30,50 @@
     return p || null;
   }
 
-  // ── Small floating status badge so you can see what happened ──────────────
-  let badgeEl = null;
+  // ── Floating control panel: status + manual buttons (always available, even
+  // when auto-fill couldn't find the bid box on a slow page) ─────────────────
+  let statusEl = null;
+  function mkBtn(label, color, onClick) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.style.cssText =
+      "flex:1;cursor:pointer;border:0;border-radius:8px;padding:8px 6px;color:#fff;" +
+      "font:600 12px system-ui,sans-serif;background:" + color + ";";
+    b.addEventListener("click", (e) => { e.preventDefault(); onClick(); });
+    return b;
+  }
+  function buildPanel() {
+    if (statusEl) return;
+    const panel = document.createElement("div");
+    panel.style.cssText =
+      "position:fixed;z-index:2147483647;right:16px;bottom:16px;display:flex;flex-direction:column;" +
+      "gap:8px;width:250px;padding:12px;border-radius:12px;background:#12172a;border:1px solid #2c3550;" +
+      "box-shadow:0 8px 30px rgba(0,0,0,.45);font:600 13px system-ui,sans-serif;color:#cdd5ee;";
+    statusEl = document.createElement("div");
+    statusEl.style.cssText = "padding:6px 8px;border-radius:8px;background:#1e2740;line-height:1.35;";
+    statusEl.textContent = "🤖 Bid bot ready";
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;gap:8px;";
+    row.appendChild(mkBtn("✨ Generate", "#3b82f6", () => run(true)));
+    row.appendChild(mkBtn("🚀 Place bid", "#e0218a", () => placeBid()));
+    const hint = document.createElement("div");
+    hint.style.cssText = "font-weight:400;font-size:11px;color:#7a85a6;";
+    hint.textContent = "Alt+G generate · Alt+B place bid · Alt+S seal";
+    panel.appendChild(statusEl);
+    panel.appendChild(row);
+    panel.appendChild(hint);
+    document.body.appendChild(panel);
+  }
   function badge(text, kind) {
-    if (!badgeEl) {
-      badgeEl = document.createElement("div");
-      badgeEl.style.cssText =
-        "position:fixed;z-index:2147483647;right:16px;bottom:16px;padding:9px 14px;" +
-        "border-radius:9px;font:600 13px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.35);" +
-        "cursor:pointer;max-width:340px;";
-      badgeEl.title = "Click to re-fill from the bot";
-      badgeEl.addEventListener("click", () => run(true));
-      document.body.appendChild(badgeEl);
-    }
+    if (!statusEl) buildPanel();
     const colors = {
-      ok: "background:#10341f;color:#7ee2a8;border:1px solid #1c5a37;",
-      err: "background:#3a1717;color:#f8a3a3;border:1px solid #6b2626;",
-      info: "background:#1e2740;color:#cdd5ee;border:1px solid #2c3550;",
+      ok: "background:#10341f;color:#7ee2a8;",
+      err: "background:#3a1717;color:#f8a3a3;",
+      info: "background:#1e2740;color:#cdd5ee;",
     };
-    badgeEl.style.cssText += colors[kind] || colors.info;
-    badgeEl.textContent = "🤖 " + text;
+    statusEl.style.cssText =
+      "padding:6px 8px;border-radius:8px;line-height:1.35;" + (colors[kind] || colors.info);
+    statusEl.textContent = "🤖 " + text;
   }
 
   // ── Value setter that frameworks (Angular/React) actually notice ──────────
@@ -98,6 +122,48 @@
     );
   }
 
+  // The free "Sealed" upgrade checkbox (hides your bid from other freelancers).
+  // Locate the row whose leaf text is exactly "SEALED", climb to a container that
+  // also holds a checkbox, and (defensively) require the row to read "free".
+  function findSealedCheckbox() {
+    const leaves = Array.from(document.querySelectorAll("*")).filter(
+      (el) => !el.children.length && /^\s*sealed\s*$/i.test(el.textContent || "")
+    );
+    for (const leaf of leaves) {
+      let row = leaf;
+      for (let i = 0; i < 6 && row; i++) {
+        const cb = row.querySelector ? row.querySelector('input[type="checkbox"]') : null;
+        const txt = (row.textContent || "").toLowerCase();
+        if (cb && txt.includes("sealed") && txt.includes("free")) return cb;
+        row = row.parentElement;
+      }
+    }
+    return null;
+  }
+  function checkSealed() {
+    const cb = findSealedCheckbox();
+    if (!cb) return false;
+    if (!cb.checked) cb.click(); // click (not .checked=) so freelancer's handler fires
+    return cb.checked;
+  }
+
+  // Freelancer's submit button is "Place Bid" or "Create Bid" (never "Write my bid",
+  // which is their own AI writer — excluded by the verb list).
+  function findPlaceBidButton() {
+    const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    return (
+      btns.find(
+        (b) => b.offsetParent !== null && /(place|create|submit)\s*bid/i.test((b.textContent || "").trim())
+      ) || null
+    );
+  }
+  function placeBid() {
+    const btn = findPlaceBidButton();
+    if (!btn) { badge("Place-bid button not found (is the bid form open?).", "err"); return; }
+    btn.click();
+    badge("Clicked Place Bid.", "ok");
+  }
+
   function fillForm(data) {
     let filled = [];
     const ta = findProposalTextarea();
@@ -113,6 +179,8 @@
       const per = findNumberInput(/period|day|deliver|duration/i);
       if (per) { setNativeValue(per, String(data.period)); filled.push("period"); }
     }
+    // Auto-enable the free Sealed upgrade whenever it's offered.
+    if (checkSealed()) filled.push("sealed");
     return filled;
   }
 
@@ -137,16 +205,32 @@
     });
   }
 
-  // ── Wait for the bid form to render (freelancer is a SPA) ──────────────────
+  // ── Wait for the bid form to render (freelancer is a slow SPA) ─────────────
+  // Resolves the instant the textarea appears via a MutationObserver (so a slow
+  // page still works the moment it finishes), with a polling fallback and a
+  // generous hard timeout. Much more reliable than a short fixed-poll window.
   function waitForTextarea(timeoutMs) {
     return new Promise((resolve) => {
-      const t0 = Date.now();
-      const tick = () => {
-        if (findProposalTextarea()) return resolve(true);
-        if (Date.now() - t0 > timeoutMs) return resolve(false);
-        setTimeout(tick, 400);
+      if (findProposalTextarea()) return resolve(true);
+      let done = false;
+      const finish = (val) => {
+        if (done) return;
+        done = true;
+        try { obs.disconnect(); } catch (e) {}
+        clearInterval(poll);
+        clearTimeout(timer);
+        resolve(val);
       };
-      tick();
+      const obs = new MutationObserver(() => {
+        if (findProposalTextarea()) finish(true);
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+      // Belt-and-suspenders: some frameworks reveal the box without a mutation the
+      // observer surfaces (e.g. an existing node un-hidden via CSS).
+      const poll = setInterval(() => {
+        if (findProposalTextarea()) finish(true);
+      }, 600);
+      const timer = setTimeout(() => finish(false), timeoutMs);
     });
   }
 
@@ -157,8 +241,11 @@
     if (!force && seo === lastSeo) return; // already handled this project in-tab
     lastSeo = seo;
 
-    if (!(await waitForTextarea(15000))) {
-      badge("No bid box found on this page.", "info");
+    if (!(await waitForTextarea(90000))) {
+      // 90s and still nothing — either you can't bid here (already bid / closed /
+      // NDA not accepted) or the page is extremely slow. Use the Generate button
+      // (or Alt+G) to retry once the bid form is visible.
+      badge("No bid box yet — press Generate / Alt+G to retry.", "info");
       return;
     }
 
@@ -190,7 +277,18 @@
     }
   }
 
-  // Initial run, plus a light watch for SPA navigations between projects.
+  // ── Keyboard shortcuts (Alt+letter so they don't fire while typing a bid) ──
+  document.addEventListener("keydown", (e) => {
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    const k = (e.key || "").toLowerCase();
+    if (k === "g") { e.preventDefault(); run(true); }
+    else if (k === "b") { e.preventDefault(); placeBid(); }
+    else if (k === "s") { e.preventDefault(); badge(checkSealed() ? "Sealed checked." : "Sealed option not found.", "info"); }
+  });
+
+  // Build the panel immediately so the buttons exist even if the bid box never
+  // loads, then run once. A light watcher re-runs on SPA navigation to a new project.
+  buildPanel();
   run(false);
   let lastPath = location.pathname;
   setInterval(() => {

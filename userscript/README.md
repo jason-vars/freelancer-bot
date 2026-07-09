@@ -33,6 +33,29 @@ lightest way to do that (no extension to package/sign).
    (or `python -m bot webui`).
 4. Open a project the bot alerted you about — the proposal fills in automatically.
 
+## Controls (floating panel, bottom-right)
+
+A small panel is always shown on a project page, so the actions work even when
+auto-fill couldn't find the bid box (e.g. a slow page, or you opened the form late):
+
+| Action | Button | Shortcut | What it does |
+|---|---|---|---|
+| Generate & fill | ✨ Generate | **Alt+G** | Re-fetch the proposal from the bot and fill the bid form (proposal + amount + period). |
+| Place bid | 🚀 Place bid | **Alt+B** | Clicks Freelancer's own **Place Bid** / **Create Bid** button. |
+| Seal | — | **Alt+S** | Toggles the free **Sealed** upgrade checkbox. |
+
+The status line at the top of the panel shows what happened (filled fields, skip
+reason, or errors).
+
+### Auto-behaviours on fill
+- **Sealed upgrade** — when Freelancer offers the free *Sealed* entry (hide your bid
+  from other freelancers), it's checked automatically. Only the *free* Sealed option
+  is touched — paid upgrades (Sponsored, Highlight) are never enabled.
+
+> **Place Bid is a real action.** Alt+B / the button submits the bid on Freelancer
+> (subject to Freelancer's own confirmation, if any). The shortcut uses **Alt** so it
+> can't fire while you're typing in the proposal box.
+
 ## Requirements / notes
 
 - The project must already be **in the bot's DB** (i.e. the bot collected/alerted
