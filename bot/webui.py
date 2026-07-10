@@ -1215,6 +1215,80 @@ def _filter_skip_reason(s, proj: dict) -> str | None:
     return None
 
 
+def _fetch_live_project_row(s, project_id: int) -> dict | None:
+    """Fetch a single project straight from Freelancer and shape it like a stored row.
+
+    Used when the userscript opens a project the bot never collected: instead of a
+    404, we pull it live so it can still be filtered + generated. Returns None if the
+    project can't be fetched.
+
+    NOTE: the public project-fetch API does NOT expose ``owner_id`` (it is null for
+    every non-webhook project), so the client-based filters (country / completed-jobs
+    / payment-verified) cannot run here and fail open — exactly the same limitation as
+    the polling path. Only the WEBHOOK flow has the owner id for those checks."""
+    from freelancersdk.resources.projects import projects as fln_projects
+
+    from .collector import _project_to_row
+    from .freelancer_client import make_session
+
+    try:
+        session = make_session(s.fln_oauth_token, s.fln_url)
+        resp = fln_projects.get_project_by_id(
+            session, int(project_id),
+            project_details={"full_description": True, "job_details": True, "upgrade_details": True},
+        )
+    except Exception as exc:
+        print(f"[webui] live project fetch failed for {project_id}: {exc}")
+        return None
+    p = resp
+    if isinstance(resp, dict) and "id" not in resp and isinstance(resp.get("result"), dict):
+        p = resp["result"]
+    if not isinstance(p, dict) or not p.get("id"):
+        return None
+    return _project_to_row(p)
+
+
+def _live_filter_skip_reason(s, proj: dict) -> str | None:
+    """Filter check for a live-fetched (never-collected) project. Returns a short skip
+    reason, or None if the project passes.
+
+    Runs ONLY the filters that can be judged from the project payload itself — currency,
+    project-type upgrades, budget, skill blocklist, keyword blocklist. It deliberately
+    skips two groups of filters:
+      * client-based (country / completed-jobs / payment-verified): the project-fetch
+        API returns no ``owner_id``, so client data is unknowable and these would fail
+        CLOSED (reject every project). Only the WEBHOOK flow can evaluate them.
+      * discovery-only (recency / bid-ending-soon): these gate what the poller ALERTS
+        on; they're irrelevant when you deliberately open a specific project."""
+    from .filters import (
+        passes_budget,
+        passes_currency,
+        passes_keyword_blocklist,
+        passes_skill_blocklist,
+        passes_upgrades,
+    )
+
+    ok, reason = passes_currency(proj.get("currency"), s.skip_currencies)
+    if not ok:
+        return reason
+    ok, reason = passes_upgrades(proj.get("upgrades"), s.skip_upgrades)
+    if not ok:
+        return reason
+    ok, reason = passes_budget(proj.get("budget_min"), proj.get("budget_max"), proj.get("currency"), s.min_budget_usd)
+    if not ok:
+        return reason
+    ok, reason = passes_skill_blocklist(proj.get("skills"), s.exclude_skills)
+    if not ok:
+        return reason
+    ok, reason = passes_keyword_blocklist(
+        proj.get("title"), proj.get("description"),
+        s.exclude_title_keywords, s.exclude_desc_keywords,
+    )
+    if not ok:
+        return reason
+    return None
+
+
 def _generate_for_job(project_id: int) -> tuple[int, dict]:
     """On-demand proposal generation for the Apply modal's 'Generate with AI' button
     and the browser userscript. Returns ``(code, {ok, proposal, amount, period,
@@ -1222,9 +1296,13 @@ def _generate_for_job(project_id: int) -> tuple[int, dict]:
     spends an OpenAI call. Pricing (amount + delivery days) mirrors the bid precedence
     via :func:`_resolve_pricing` so the userscript can fill those fields too.
 
-    Before spending an OpenAI call it re-applies the currency/country SKIP filters and
-    returns ``{ok:False, skipped:True}`` for a filtered project, so opening a job you
-    don't want to bid on costs nothing."""
+    Before spending an OpenAI call it re-applies the SKIP filters and returns
+    ``{ok:False, skipped:True}`` for a filtered project, so opening a job you don't want
+    to bid on costs nothing:
+      * collected project  -> re-check the cheap currency/upgrade/country skip filters
+        (the full filter set already ran at fetch time when it was stored);
+      * uncollected project -> fetch it live and run the FULL bot filter, so opening
+        any project you merely browsed to still honours your filters."""
     from .config import load_settings
     from .db import connect, get_project, init_db
 
@@ -1236,14 +1314,27 @@ def _generate_for_job(project_id: int) -> tuple[int, dict]:
     try:
         init_db(conn)
         row = get_project(conn, project_id)
-        if row is None:
-            return 404, {"ok": False, "message": f"Project {project_id} not found."}
-        proj = {k: row[k] for k in row.keys()}
+        proj = {k: row[k] for k in row.keys()} if row is not None else None
     finally:
         conn.close()
-    skip = _filter_skip_reason(s, proj)
-    if skip:
-        return 200, {"ok": False, "skipped": True, "message": f"Skipped — matches your filter ({skip}); no proposal generated."}
+
+    if proj is not None:
+        # Already collected: it passed the full filter at fetch time, so only re-apply
+        # the cheap currency/upgrade/country skip checks here.
+        skip = _filter_skip_reason(s, proj)
+        if skip:
+            return 200, {"ok": False, "skipped": True, "message": f"Skipped — matches your filter ({skip}); no proposal generated."}
+    else:
+        # Never collected (browsed directly): fetch it live and run the filters that can
+        # be judged from the project payload alone. See _live_filter_skip_reason for why
+        # the client-based checks (country/completed-jobs/payment) can't run here.
+        proj = _fetch_live_project_row(s, project_id)
+        if proj is None:
+            return 404, {"ok": False, "message": f"Project {project_id} not found on Freelancer."}
+        skip = _live_filter_skip_reason(s, proj)
+        if skip:
+            return 200, {"ok": False, "skipped": True, "message": f"Skipped — matches your filter ({skip}); no proposal generated."}
+
     text, err = _generate_proposal(s, proj)
     if err:
         return 400, {"ok": False, "message": err}
@@ -1289,8 +1380,11 @@ def serve_webui(host: str, port: int) -> None:
             path = self.path.split("?")[0]
             query = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
             if path in ("/jobs/detail", "/jobs/generate"):
-                # Accept either a numeric ?id= (Jobs page) or a ?seo=<category/slug>
-                # (browser userscript, derived from the freelancer project URL).
+                # Accept a numeric ?id= (Jobs page, or the userscript-scraped project
+                # id) and/or a ?seo=<category/slug> (userscript, derived from the URL).
+                # The numeric id wins: with it, /jobs/generate works even for a project
+                # the bot never collected (it's fetched live). seo alone only resolves
+                # already-collected projects.
                 pid_raw = (query.get("id", [""])[0] or "").strip()
                 seo = (query.get("seo", [""])[0] or "").strip()
                 if pid_raw:
@@ -1302,7 +1396,7 @@ def serve_webui(host: str, port: int) -> None:
                 elif seo:
                     pid = _resolve_pid_by_seo(seo)
                     if pid is None:
-                        self._send_json(404, {"ok": False, "message": f"No collected project matches '{seo}'. The bot must have alerted you about it first."})
+                        self._send_json(404, {"ok": False, "message": f"Couldn't read the Project ID from the page for '{seo}', and the bot hasn't collected it. Reload the project page and try again."})
                         return
                 else:
                     self._send_json(400, {"ok": False, "message": "Missing project id or seo."})

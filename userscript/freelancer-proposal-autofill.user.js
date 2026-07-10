@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.2.0
-// @description  When you open a Freelancer project the bot already collected, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically.
+// @version      1.4.0
+// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered before generating.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -23,11 +23,35 @@
   // ── Derive the project's seo slug from the page URL ───────────────────────
   // /projects/<category>/<slug>/details  ->  <category>/<slug>
   // That is exactly the string the bot stored as the project's `url`, so it can
-  // look the project up without us scraping the numeric id out of the DOM.
+  // look up an already-collected project without the numeric id.
   function currentSeo() {
     let p = location.pathname.replace(/^\/+/, "").replace(/\/+$/, "");
     p = p.replace(/^projects\//, "").replace(/\/details$/, "");
     return p || null;
+  }
+
+  // ── Scrape the numeric project id from the page ───────────────────────────
+  // The seo slug only finds projects the bot ALREADY collected. To also generate
+  // for projects you merely browsed to (which the backend fetches live), we send
+  // the numeric id too. Freelancer renders it as a "Project ID: 40572991" label;
+  // we fall back to canonical/og URLs and the SPA's embedded state. Returns a
+  // string of digits or null (in which case only collected projects will resolve).
+  function currentProjectId() {
+    const txt = (document.body && document.body.innerText) || "";
+    let m = txt.match(/project\s*id[\s:#]*([0-9]{5,})/i);
+    if (m) return m[1];
+    const metas = document.querySelectorAll(
+      'link[rel="canonical"], meta[property="og:url"], meta[name="twitter:url"]'
+    );
+    for (const el of metas) {
+      const v = el.getAttribute("href") || el.getAttribute("content") || "";
+      m = v.match(/[?&]project[_-]?id=(\d{5,})/i) || v.match(/-(\d{6,})(?:[/?#]|$)/);
+      if (m) return m[1];
+    }
+    const html = (document.documentElement && document.documentElement.innerHTML) || "";
+    m = html.match(/"project[_]?[iI]d"\s*:\s*(\d{5,})/);
+    if (m) return m[1];
+    return null;
   }
 
   // ── Floating control panel: status + manual buttons (always available, even
@@ -90,22 +114,16 @@
   }
 
   // ── Field locators (freelancer's DOM changes; edit these if it stops working) ──
+  // The bid proposal box is specifically <textarea id="descriptionTextArea">. We
+  // require THIS element: it's the only thing that means "you can bid here", so the
+  // script never generates a proposal (spends OpenAI) on pages without a real bid
+  // form, and never fills an unrelated textarea (e.g. the Clarification Board box).
   function findProposalTextarea() {
-    const candidates = Array.from(document.querySelectorAll("textarea")).filter(
-      (t) => t.offsetParent !== null && !t.readOnly && !t.disabled
-    );
-    if (!candidates.length) return null;
-    // Prefer one whose placeholder/label hints at a proposal/description.
-    const hinted = candidates.find((t) =>
-      /proposal|describe|cover|why.*hire|pitch/i.test(
-        (t.placeholder || "") + " " + (t.getAttribute("name") || "") + " " + (t.id || "")
-      )
-    );
-    // Otherwise the largest visible textarea — the bid box is the big one.
-    return (
-      hinted ||
-      candidates.sort((a, b) => b.clientHeight - a.clientHeight)[0]
-    );
+    const ta =
+      document.querySelector("textarea#descriptionTextArea") ||
+      document.querySelector('textarea[name="descriptionTextArea"]');
+    if (!ta || ta.offsetParent === null || ta.readOnly || ta.disabled) return null;
+    return ta;
   }
 
   function findNumberInput(hintRe) {
@@ -187,11 +205,13 @@
   // ── Talk to the bot (GM_xmlhttpRequest bypasses CORS + mixed-content) ──────
   // Resolves with the parsed JSON for any well-formed response (including a
   // {ok:false, skipped:true} filter-skip); rejects only on transport/parse errors.
-  function fetchProposal(seo) {
+  function fetchProposal(seo, pid) {
+    const params =
+      "seo=" + encodeURIComponent(seo) + (pid ? "&id=" + encodeURIComponent(pid) : "");
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: "GET",
-        url: BOT_BASE + "/jobs/generate?seo=" + encodeURIComponent(seo),
+        url: BOT_BASE + "/jobs/generate?" + params,
         timeout: 60000,
         onload: (r) => {
           let d;
@@ -257,7 +277,7 @@
         data = JSON.parse(cached);
       } else {
         badge("Generating proposal…", "info");
-        data = await fetchProposal(seo);
+        data = await fetchProposal(seo, currentProjectId());
       }
       // Project matched a currency/country skip filter — don't fill, don't cache.
       if (data && data.skipped) {
