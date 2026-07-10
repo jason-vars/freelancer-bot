@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.7.0
+// @version      1.7.1
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
@@ -110,13 +110,20 @@
   }
 
   // ── Detect that YOU have already bid on this project ──────────────────────
-  // Freelancer replaces the bid form with a "revise / retract your bid" UI once
-  // you've bid. We use conservative markers (retract, revise your bid, already
-  // bid) so we don't mis-flag a fresh project. Used to mark the job "applied" in
-  // the bot even when you placed the bid manually (not via this panel).
+  // Freelancer replaces the bid form with a "retract / revise your bid" UI once
+  // you've bid. We match ONLY phrases that appear AFTER you've bid — never text
+  // shown on a fresh bid form. (In particular NOT "edit your bid": the fresh form
+  // says "You will be able to edit your bid until the project is awarded", which
+  // used to false-flag every open project.) If the proposal textarea is present
+  // we treat the page as biddable regardless — see waitForBidState.
   function hasAlreadyBid() {
+    const ta = findProposalTextarea();
+    // An EMPTY proposal box means the fresh bid form is open => you haven't bid yet.
+    // (A box pre-filled with your existing proposal, or no box at all, may mean you
+    // have — so fall through to the text check in that case.)
+    if (ta && !(ta.value || "").trim()) return false;
     const txt = (document.body && document.body.innerText) || "";
-    return /(retract\s+bid|revise\s+(your\s+)?bid|you(?:'ve| have)?\s+already\s+(?:placed\s+a\s+)?bid|your\s+active\s+bid|edit\s+your\s+bid)/i.test(txt);
+    return /(retract\s+(your\s+)?bid|revise\s+(your\s+)?bid|you(?:'ve| have)?\s+already\s+(?:placed\s+a\s+)?bid|your\s+active\s+bid)/i.test(txt);
   }
 
   // ── Floating control panel: status + manual buttons (always available, even
@@ -317,7 +324,7 @@
   // via a MutationObserver with a polling fallback and a hard timeout ("timeout").
   function waitForBidState(timeoutMs) {
     const check = () =>
-      findProposalTextarea() ? "textarea" : (hasAlreadyBid() ? "alreadybid" : null);
+      hasAlreadyBid() ? "alreadybid" : (findProposalTextarea() ? "textarea" : null);
     return new Promise((resolve) => {
       const first = check();
       if (first) return resolve(first);
