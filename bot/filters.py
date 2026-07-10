@@ -367,29 +367,38 @@ def country_allowed(
     allow_countries: list[str],
     skip_countries: list[str],
 ) -> tuple[bool, str | None]:
-    raw_country = client_status.get("country")
     code = (client_status.get("country_code") or "").strip().upper()
-    name = (client_status.get("country_name") or "").strip().lower()
-
-    def _norm(vals: list[str]) -> set[str]:
-        out: set[str] = set()
-        for v in vals:
-            s = (v or "").strip()
-            if s:
-                out.add(s.upper())
-                out.add(s.lower())
-        return out
-
-    allow = _norm(allow_countries)
-    skip = _norm(skip_countries)
-    hay = {code, name}
+    names = {(client_status.get("country_name") or "").strip().lower()}
+    codes = {code}
+    raw_country = client_status.get("country")
     if isinstance(raw_country, str):
-        hay.add(raw_country.strip().upper())
-        hay.add(raw_country.strip().lower())
+        rc = raw_country.strip()
+        # A bare 2-letter value is an ISO code; anything longer is a country name.
+        (codes if len(rc) == 2 else names).add(rc.upper() if len(rc) == 2 else rc.lower())
+    names = {n for n in names if n}
+    codes = {c for c in codes if c}
 
-    if allow and not any(x in allow for x in hay if x):
+    def _matches(configured: list[str]) -> bool:
+        """A configured entry matches the client's country if it equals the ISO code,
+        equals the country name, or (for entries of 4+ chars) is contained in the name
+        or vice-versa — so 'korea' matches 'South Korea' and 'united states' matches
+        'United States of America'. Short entries only match exactly (avoids 'in'
+        blocking every country)."""
+        for v in configured:
+            s = (v or "").strip()
+            if not s:
+                continue
+            if s.upper() in codes:
+                return True
+            sl = s.lower()
+            for n in names:
+                if sl == n or (len(sl) >= 4 and (sl in n or n in sl)):
+                    return True
+        return False
+
+    if allow_countries and not _matches(allow_countries):
         return False, "country_not_allowed"
-    if skip and any(x in skip for x in hay if x):
+    if skip_countries and _matches(skip_countries):
         return False, "country_blocked"
     return True, None
 

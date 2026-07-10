@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.5.0
+// @version      1.6.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
@@ -62,32 +62,49 @@
   // applied and the proposal generates as before). Freelancer renders the country
   // next to a flag whose alt/title is the country name.
   function currentClientCountry() {
+    const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
+    const looksLikeCountry = (s) =>
+      /^[a-z][a-z .'()-]{2,39}$/i.test(s) && !/^flag$/i.test(s) &&
+      !/(about|client|member|since|rating|review|project|verified)/i.test(s);
+
     // Scope to the "About the Client" card so we read the client's country, not
     // some other flag elsewhere on the page.
     let scope = null;
     const heads = document.querySelectorAll("h1,h2,h3,h4,h5,strong,span,div");
     for (const el of heads) {
-      const t = (el.textContent || "").trim();
+      const t = clean(el.textContent);
       if (t.length < 40 && /about the client/i.test(t)) {
         let c = el;
-        for (let i = 0; i < 6 && c.parentElement; i++) c = c.parentElement;
+        for (let i = 0; i < 8 && c.parentElement; i++) c = c.parentElement;
         scope = c;
         break;
       }
     }
     const root = scope || document;
-    const flags = root.querySelectorAll(
-      "fl-flag, img[src*='flag'], img[alt], [class*='flag'] img, [class*='Flag']"
+    const flags = Array.from(
+      root.querySelectorAll(
+        "fl-flag, img[src*='flag'], img[alt], [class*='flag'], [class*='Flag']"
+      )
     );
+    // 1) The country name is often the flag element's own alt/title/aria-label.
     for (const f of flags) {
-      const name = (
-        f.getAttribute("title") ||
-        f.getAttribute("alt") ||
-        f.getAttribute("aria-label") ||
-        ""
-      ).trim();
-      // Country-name-like (letters/spaces), and not the literal word "flag".
-      if (name && !/^flag$/i.test(name) && /^[a-z][a-z .'()-]{2,39}$/i.test(name)) return name;
+      for (const attr of ["title", "alt", "aria-label"]) {
+        const v = clean(f.getAttribute && f.getAttribute(attr));
+        if (looksLikeCountry(v)) return v;
+      }
+    }
+    // 2) Otherwise it's the visible text sitting right next to the flag.
+    for (const f of flags) {
+      const cands = [
+        f.nextElementSibling && f.nextElementSibling.textContent,
+        f.parentElement && f.parentElement.textContent,
+        f.getAttribute && f.getAttribute("code"),
+        f.getAttribute && f.getAttribute("flagcode"),
+      ];
+      for (const c of cands) {
+        const v = clean(c);
+        if (looksLikeCountry(v)) return v;
+      }
     }
     return null;
   }
@@ -316,8 +333,12 @@
       if (cached) {
         data = JSON.parse(cached);
       } else {
-        badge("Generating proposal…", "info");
-        data = await fetchProposal(seo, currentProjectId(), currentClientCountry());
+        const country = currentClientCountry();
+        // Surface what we scraped so a country-filter miss is diagnosable at a glance:
+        // "(client: India)" means the filter got a country; "(client: ?)" means the
+        // scraper couldn't read it, so BOT_SKIP_COUNTRIES can't apply.
+        badge("Generating proposal… (client: " + (country || "?") + ")", "info");
+        data = await fetchProposal(seo, currentProjectId(), country);
       }
       // Project matched a currency/country skip filter — don't fill, don't cache.
       if (data && data.skipped) {
