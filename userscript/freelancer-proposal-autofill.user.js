@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.4.0
-// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered before generating.
+// @version      1.5.0
+// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -51,6 +51,44 @@
     const html = (document.documentElement && document.documentElement.innerHTML) || "";
     m = html.match(/"project[_]?[iI]d"\s*:\s*(\d{5,})/);
     if (m) return m[1];
+    return null;
+  }
+
+  // ── Scrape the CLIENT's country from the "About the Client" panel ──────────
+  // The bot's country filter needs a country, but Freelancer's API hides the
+  // project owner's id/location from our token — so we read the country the page
+  // already shows you and send it to the bot to match against BOT_SKIP_COUNTRIES.
+  // Best-effort: returns a country name string, or null (then no country filter is
+  // applied and the proposal generates as before). Freelancer renders the country
+  // next to a flag whose alt/title is the country name.
+  function currentClientCountry() {
+    // Scope to the "About the Client" card so we read the client's country, not
+    // some other flag elsewhere on the page.
+    let scope = null;
+    const heads = document.querySelectorAll("h1,h2,h3,h4,h5,strong,span,div");
+    for (const el of heads) {
+      const t = (el.textContent || "").trim();
+      if (t.length < 40 && /about the client/i.test(t)) {
+        let c = el;
+        for (let i = 0; i < 6 && c.parentElement; i++) c = c.parentElement;
+        scope = c;
+        break;
+      }
+    }
+    const root = scope || document;
+    const flags = root.querySelectorAll(
+      "fl-flag, img[src*='flag'], img[alt], [class*='flag'] img, [class*='Flag']"
+    );
+    for (const f of flags) {
+      const name = (
+        f.getAttribute("title") ||
+        f.getAttribute("alt") ||
+        f.getAttribute("aria-label") ||
+        ""
+      ).trim();
+      // Country-name-like (letters/spaces), and not the literal word "flag".
+      if (name && !/^flag$/i.test(name) && /^[a-z][a-z .'()-]{2,39}$/i.test(name)) return name;
+    }
     return null;
   }
 
@@ -205,9 +243,11 @@
   // ── Talk to the bot (GM_xmlhttpRequest bypasses CORS + mixed-content) ──────
   // Resolves with the parsed JSON for any well-formed response (including a
   // {ok:false, skipped:true} filter-skip); rejects only on transport/parse errors.
-  function fetchProposal(seo, pid) {
+  function fetchProposal(seo, pid, country) {
     const params =
-      "seo=" + encodeURIComponent(seo) + (pid ? "&id=" + encodeURIComponent(pid) : "");
+      "seo=" + encodeURIComponent(seo) +
+      (pid ? "&id=" + encodeURIComponent(pid) : "") +
+      (country ? "&country=" + encodeURIComponent(country) : "");
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: "GET",
@@ -277,7 +317,7 @@
         data = JSON.parse(cached);
       } else {
         badge("Generating proposal…", "info");
-        data = await fetchProposal(seo, currentProjectId());
+        data = await fetchProposal(seo, currentProjectId(), currentClientCountry());
       }
       // Project matched a currency/country skip filter — don't fill, don't cache.
       if (data && data.skipped) {

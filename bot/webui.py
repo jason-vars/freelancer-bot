@@ -1183,14 +1183,47 @@ def _upgrades_from_project(proj: dict) -> dict | None:
     return up if isinstance(up, dict) else None
 
 
-def _filter_skip_reason(s, proj: dict) -> str | None:
+def _country_skip_reason(s, proj: dict, client_country: str | None) -> str | None:
+    """Return a skip reason if the client's country violates the allow/skip lists,
+    else None. No-op unless an allow/skip-country filter is set.
+
+    Country is resolved in this order:
+      1. A live Freelancer client lookup via the project's ``owner_id`` — but the
+         project-fetch/search APIs hide ``owner_id`` (it's null for everything except
+         webhook-delivered projects), so this rarely yields anything.
+      2. ``client_country`` — the country the browser userscript scraped straight from
+         the "About the Client" panel on the page you opened. This is what actually
+         makes the country filter work for browsed/collected projects."""
+    from .filters import country_allowed, get_client_status
+
+    if not (s.allow_countries or s.skip_countries):
+        return None
+    cs: dict | None = None
+    owner_id = _owner_id_from_project(proj)
+    if owner_id is not None:
+        try:
+            from .freelancer_client import make_session
+            session = make_session(s.fln_oauth_token, s.fln_url)
+            cs = get_client_status(session, owner_id)
+        except Exception as exc:
+            print(f"[webui] country filter lookup failed for {proj.get('id')}: {exc}")
+    # Fall back to the page-scraped country when the API gave us no country.
+    if (cs is None or not (cs.get("country") or cs.get("country_name"))) and client_country:
+        cs = {"country": client_country, "country_name": client_country, "country_code": None}
+    if cs is None:
+        return None
+    ok, reason = country_allowed(cs, s.allow_countries, s.skip_countries)
+    return None if ok else reason
+
+
+def _filter_skip_reason(s, proj: dict, client_country: str | None = None) -> str | None:
     """If this project matches a SKIP filter (currency, project-type upgrade, or
     country), return a short human reason; otherwise None. Used to refuse proposal
     generation for jobs you don't want to bid on — mirrors the fetch-time filters so
     'open a project' honours the same rules. Currency + upgrades are cheap local
-    checks; country needs one Freelancer API call and is only attempted when an
-    allow/skip-country filter is actually set."""
-    from .filters import country_allowed, get_client_status, passes_currency, passes_upgrades
+    checks; country uses the page-scraped country (or an owner_id lookup when
+    available) and only runs when an allow/skip-country filter is set."""
+    from .filters import passes_currency, passes_upgrades
 
     ok, reason = passes_currency(proj.get("currency"), s.skip_currencies)
     if not ok:
@@ -1198,21 +1231,7 @@ def _filter_skip_reason(s, proj: dict) -> str | None:
     ok, reason = passes_upgrades(_upgrades_from_project(proj), s.skip_upgrades)
     if not ok:
         return reason
-    if s.allow_countries or s.skip_countries:
-        owner_id = _owner_id_from_project(proj)
-        if owner_id is not None:
-            try:
-                from .freelancer_client import make_session
-                session = make_session(s.fln_oauth_token, s.fln_url)
-                client_status = get_client_status(session, owner_id)
-                ok, reason = country_allowed(client_status, s.allow_countries, s.skip_countries)
-                if not ok:
-                    return reason
-            except Exception as exc:
-                # Don't block generation on a lookup failure — fail open (same spirit
-                # as the polling path when client data is unavailable).
-                print(f"[webui] country filter lookup failed for {proj.get('id')}: {exc}")
-    return None
+    return _country_skip_reason(s, proj, client_country)
 
 
 def _fetch_live_project_row(s, project_id: int) -> dict | None:
@@ -1248,16 +1267,16 @@ def _fetch_live_project_row(s, project_id: int) -> dict | None:
     return _project_to_row(p)
 
 
-def _live_filter_skip_reason(s, proj: dict) -> str | None:
+def _live_filter_skip_reason(s, proj: dict, client_country: str | None = None) -> str | None:
     """Filter check for a live-fetched (never-collected) project. Returns a short skip
     reason, or None if the project passes.
 
-    Runs ONLY the filters that can be judged from the project payload itself — currency,
-    project-type upgrades, budget, skill blocklist, keyword blocklist. It deliberately
-    skips two groups of filters:
-      * client-based (country / completed-jobs / payment-verified): the project-fetch
-        API returns no ``owner_id``, so client data is unknowable and these would fail
-        CLOSED (reject every project). Only the WEBHOOK flow can evaluate them.
+    Runs the filters that can be judged from the project payload itself — currency,
+    project-type upgrades, budget, skill blocklist, keyword blocklist — PLUS the country
+    filter when the browser userscript scraped a ``client_country`` off the page (the
+    project-fetch API can't supply it). It deliberately skips:
+      * client-history / payment-verified: need ``owner_id`` (unavailable here), so they
+        would fail CLOSED and reject every project. Only the WEBHOOK flow can judge them.
       * discovery-only (recency / bid-ending-soon): these gate what the poller ALERTS
         on; they're irrelevant when you deliberately open a specific project."""
     from .filters import (
@@ -1286,23 +1305,26 @@ def _live_filter_skip_reason(s, proj: dict) -> str | None:
     )
     if not ok:
         return reason
-    return None
+    return _country_skip_reason(s, proj, client_country)
 
 
-def _generate_for_job(project_id: int) -> tuple[int, dict]:
+def _generate_for_job(project_id: int, client_country: str | None = None) -> tuple[int, dict]:
     """On-demand proposal generation for the Apply modal's 'Generate with AI' button
     and the browser userscript. Returns ``(code, {ok, proposal, amount, period,
     currency})`` or an error payload. This is the ONLY place the Apply/userscript flow
     spends an OpenAI call. Pricing (amount + delivery days) mirrors the bid precedence
     via :func:`_resolve_pricing` so the userscript can fill those fields too.
 
+    ``client_country`` is the client's country scraped off the project page by the
+    userscript; it lets the country filter work despite the API hiding ``owner_id``.
+
     Before spending an OpenAI call it re-applies the SKIP filters and returns
     ``{ok:False, skipped:True}`` for a filtered project, so opening a job you don't want
     to bid on costs nothing:
       * collected project  -> re-check the cheap currency/upgrade/country skip filters
         (the full filter set already ran at fetch time when it was stored);
-      * uncollected project -> fetch it live and run the FULL bot filter, so opening
-        any project you merely browsed to still honours your filters."""
+      * uncollected project -> fetch it live and run the payload + country filters, so
+        opening any project you merely browsed to still honours your filters."""
     from .config import load_settings
     from .db import connect, get_project, init_db
 
@@ -1321,17 +1343,17 @@ def _generate_for_job(project_id: int) -> tuple[int, dict]:
     if proj is not None:
         # Already collected: it passed the full filter at fetch time, so only re-apply
         # the cheap currency/upgrade/country skip checks here.
-        skip = _filter_skip_reason(s, proj)
+        skip = _filter_skip_reason(s, proj, client_country)
         if skip:
             return 200, {"ok": False, "skipped": True, "message": f"Skipped — matches your filter ({skip}); no proposal generated."}
     else:
         # Never collected (browsed directly): fetch it live and run the filters that can
-        # be judged from the project payload alone. See _live_filter_skip_reason for why
-        # the client-based checks (country/completed-jobs/payment) can't run here.
+        # be judged from the project payload + the page-scraped country. See
+        # _live_filter_skip_reason for why the other client filters can't run here.
         proj = _fetch_live_project_row(s, project_id)
         if proj is None:
             return 404, {"ok": False, "message": f"Project {project_id} not found on Freelancer."}
-        skip = _live_filter_skip_reason(s, proj)
+        skip = _live_filter_skip_reason(s, proj, client_country)
         if skip:
             return 200, {"ok": False, "skipped": True, "message": f"Skipped — matches your filter ({skip}); no proposal generated."}
 
@@ -1401,7 +1423,12 @@ def serve_webui(host: str, port: int) -> None:
                 else:
                     self._send_json(400, {"ok": False, "message": "Missing project id or seo."})
                     return
-                code, payload = (_generate_for_job(pid) if path == "/jobs/generate" else _job_detail(pid))
+                # Client country scraped off the page by the userscript (the API hides
+                # owner_id, so this is how the country filter gets a country to match).
+                country = (query.get("country", [""])[0] or "").strip() or None
+                code, payload = (
+                    _generate_for_job(pid, country) if path == "/jobs/generate" else _job_detail(pid)
+                )
                 self._send_json(code, payload)
                 return
             if path == "/jobs":
