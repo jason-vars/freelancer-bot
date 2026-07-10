@@ -747,6 +747,8 @@ def main(argv: list[str] | None = None) -> int:
     serve_p.add_argument("--host", default="127.0.0.1", help="Web UI bind host (default: 127.0.0.1)")
     serve_p.add_argument("--port", type=int, default=8765, help="Web UI bind port (default: 8765)")
 
+    sub.add_parser("sync-applied", help="Mark every project you have a live bid on (from the Freelancer API) as applied")
+
     args = parser.parse_args(argv)
 
     if args.cmd == "run":
@@ -818,6 +820,17 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "serve":
         serve_app(host=args.host, port=args.port)
+        return 0
+
+    if args.cmd == "sync-applied":
+        from .webui import _sync_applied_from_freelancer
+        _code, res = _sync_applied_from_freelancer()
+        if not res.get("ok"):
+            print(f"Sync failed: {res.get('message')}")
+            return 1
+        n = int(res.get("marked_existing", 0)) + int(res.get("stored_new", 0))
+        print(f"Synced {res.get('bids_projects', 0)} bid(s): {n} marked applied "
+              f"({res.get('stored_new', 0)} newly stored, {res.get('already_marked', 0)} already).")
         return 0
 
     parser.print_help()

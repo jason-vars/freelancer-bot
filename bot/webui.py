@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, quote, urlencode
 
 from . import db
 from .env_store import read_env, update_env
@@ -454,9 +454,13 @@ _JOBS_STYLE = """
   nav a { color: #9aa4c0; text-decoration: none; font-size: 14px; font-weight: 600; margin-left: 18px; }
   nav a.active, nav a:hover { color: #e6e8ef; }
   .wrap { max-width: 1100px; margin: 0 auto; padding: 24px; }
-  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 18px; }
+  .filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 18px; }
   .filters a { text-decoration: none; padding: 6px 13px; border-radius: 999px; border: 1px solid #2c3550; color: #cdd5ee; font-size: 13px; font-weight: 600; }
   .filters a.on { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+  .filters form { margin: 0 0 0 auto; }
+  .syncbtn { cursor: pointer; padding: 6px 13px; border-radius: 999px; border: 1px solid #2f7d4f; background: #10341f; color: #7ee2a8; font-size: 13px; font-weight: 600; }
+  .syncbtn:hover { background: #164a2b; }
+  .banner { margin-bottom: 14px; padding: 10px 14px; border-radius: 9px; background: #10341f; border: 1px solid #2f7d4f; color: #b8f0d0; font-size: 13.5px; }
   table { width: 100%; border-collapse: collapse; }
   th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; color: #9aa4c0; font-weight: 600; padding: 8px 10px; border-bottom: 1px solid #232a40; }
   td { padding: 10px; border-bottom: 1px solid #1d2438; vertical-align: top; }
@@ -712,7 +716,7 @@ def _row_upgrade_badges(raw_json: Any) -> str:
     return '<div class="utags">' + "".join(pills) + "</div>"
 
 
-def _render_jobs(rows: list, counts: list, active_status: str | None) -> str:
+def _render_jobs(rows: list, counts: list, active_status: str | None, msg: str | None = None) -> str:
     def esc(x: Any) -> str:
         return html.escape("" if x is None else str(x), quote=True)
 
@@ -725,6 +729,15 @@ def _render_jobs(rows: list, counts: list, active_status: str | None) -> str:
         sel = "on" if active_status == st else ""
         q = urlencode({"status": st})
         chips.append(f'<a href="/jobs?{q}" class="{sel}">{esc(st)} ({int(c["c"])})</a>')
+
+    # Pull your real bids from Freelancer and mark those projects applied — catches
+    # bids placed directly on freelancer.com / before tracking existed / on another device.
+    sync_btn = (
+        '<form method="post" action="/jobs/sync-applied" style="margin-left:auto">'
+        '<button type="submit" class="syncbtn" title="Read your bids from Freelancer and mark them applied">'
+        '🔄 Sync applied from Freelancer</button></form>'
+    )
+    banner = f'<div class="banner">{esc(msg)}</div>' if msg else ""
 
     if rows:
         body = []
@@ -795,9 +808,10 @@ def _render_jobs(rows: list, counts: list, active_status: str | None) -> str:
 <body>
 <header><h1>📋 Freelancer Bot — Jobs</h1>{_nav("jobs")}</header>
 <div class="wrap">
-  <div class="filters">{''.join(chips)}</div>
+  {banner}
+  <div class="filters">{''.join(chips)}{sync_btn}</div>
   {table}
-  <p class="note">Showing up to 500 most recent projects. Times are UTC. <b>Apply</b> submits a proposal you write; <b>Auto-bid</b> generates one with OpenAI and submits it. While <b>Dry run</b> is ON (Settings) both only save a draft — no real bid is placed.</p>
+  <p class="note">Showing up to 500 most recent projects. Times are UTC. <b>Apply</b> submits a proposal you write; <b>Auto-bid</b> generates one with OpenAI and submits it. While <b>Dry run</b> is ON (Settings) both only save a draft — no real bid is placed. <b>Sync applied</b> reads your real bids from Freelancer and marks them applied.</p>
 </div>
 <div id="overlay" class="overlay"><div class="modal">
   <h3 id="m_title">Apply</h3>
@@ -1423,6 +1437,105 @@ def _mark_applied(project_id: int) -> tuple[int, dict]:
         conn.close()
 
 
+def _sync_applied_from_freelancer() -> tuple[int, dict]:
+    """Mark every project YOU have an active bid on as 'applied', by reading your real
+    bids from the Freelancer API (ground truth). Catches applications placed directly on
+    freelancer.com, before this feature existed, or on another device — things the
+    userscript can't see.
+
+    Projects already stored get their status set to 'applied'; projects the bot never
+    collected are fetched (batched) and stored so they appear in the Jobs list. Retracted
+    bids and rows already marked bid/applied are left alone. Returns counts."""
+    from freelancersdk.resources.users.users import get_self_user_id
+
+    from .collector import _project_to_row
+    from .config import load_settings
+    from .db import connect, get_project, init_db, set_project_score_and_status, upsert_project
+    from .freelancer_client import make_session
+
+    try:
+        s = load_settings()
+    except Exception as exc:
+        return 400, {"ok": False, "message": f"Config error: {exc}"}
+
+    try:
+        session = make_session(s.fln_oauth_token, s.fln_url)
+        uid = get_self_user_id(session)
+    except Exception as exc:
+        return 400, {"ok": False, "message": f"Couldn't reach Freelancer: {exc}"}
+
+    base = (s.fln_url or "https://www.freelancer.com").rstrip("/")
+    # 1) Collect every project id you have a non-retracted bid on (paged).
+    project_ids: list[int] = []
+    seen: set[int] = set()
+    offset = 0
+    try:
+        while True:
+            r = session.session.get(
+                base + "/api/projects/0.1/bids/",
+                params={"bidders[]": uid, "limit": 100, "offset": offset},
+            )
+            bids = (r.json().get("result") or {}).get("bids") or []
+            if not bids:
+                break
+            for b in bids:
+                if b.get("retracted"):
+                    continue
+                pid = b.get("project_id")
+                if pid and int(pid) not in seen:
+                    seen.add(int(pid))
+                    project_ids.append(int(pid))
+            offset += len(bids)
+            if len(bids) < 100:
+                break
+    except Exception as exc:
+        return 400, {"ok": False, "message": f"Failed reading your bids: {exc}"}
+
+    conn = connect()
+    marked = stored = already = 0
+    missing: list[int] = []
+    try:
+        init_db(conn)
+        for pid in project_ids:
+            row = get_project(conn, pid)
+            if row is None:
+                missing.append(pid)
+                continue
+            st = row["status"] or ""
+            if st.startswith("bid") or st in _APPLIED_STATUSES or "sent" in st:
+                already += 1
+                continue
+            set_project_score_and_status(conn, pid, int(row["score"] or 0), "applied")
+            marked += 1
+        # 2) Batch-fetch the projects the bot never collected, store them as applied.
+        for i in range(0, len(missing), 50):
+            chunk = missing[i:i + 50]
+            try:
+                r = session.session.get(
+                    base + "/api/projects/0.1/projects/",
+                    params=[("projects[]", p) for p in chunk] + [("full_description", "true"), ("job_details", "true")],
+                )
+                projs = (r.json().get("result") or {}).get("projects") or []
+            except Exception as exc:
+                print(f"[webui] sync: batch fetch failed: {exc}")
+                continue
+            for p in projs:
+                if not p.get("id"):
+                    continue
+                upsert_project(conn, {**_project_to_row(p), "status": "applied", "score": 0, "filter_reason": None})
+                stored += 1
+    finally:
+        conn.close()
+
+    return 200, {
+        "ok": True,
+        "bids_projects": len(project_ids),
+        "marked_existing": marked,
+        "stored_new": stored,
+        "already_marked": already,
+    }
+
+
 def serve_webui(host: str, port: int) -> None:
     class Handler(BaseHTTPRequestHandler):
         def _send_html(self, status: int, body: str) -> None:
@@ -1511,6 +1624,7 @@ def serve_webui(host: str, port: int) -> None:
                 return
             if path == "/jobs":
                 status = (query.get("status", [""])[0] or "").strip() or None
+                msg = (query.get("msg", [""])[0] or "").strip() or None
                 conn = db.connect()
                 try:
                     db.init_db(conn)
@@ -1518,7 +1632,7 @@ def serve_webui(host: str, port: int) -> None:
                     counts = db.count_projects_by_status(conn)
                 finally:
                     conn.close()
-                self._send_html(200, _render_jobs(rows, counts, status))
+                self._send_html(200, _render_jobs(rows, counts, status, msg))
                 return
             if path not in ("/", "/index.html"):
                 self.send_error(404)
@@ -1537,6 +1651,17 @@ def serve_webui(host: str, port: int) -> None:
                 auto = self.path == "/jobs/auto-bid"
                 ok, message = _action_bid(pid, form.get("proposal"), auto)
                 self._send_json(200 if ok else 400, {"ok": ok, "message": message})
+                return
+            if self.path == "/jobs/sync-applied":
+                _code, res = _sync_applied_from_freelancer()
+                if res.get("ok"):
+                    n = int(res.get("marked_existing", 0)) + int(res.get("stored_new", 0))
+                    msg = f"Synced {res.get('bids_projects', 0)} bid(s): {n} marked applied ({res.get('stored_new', 0)} newly stored, {res.get('already_marked', 0)} already)."
+                else:
+                    msg = res.get("message", "Sync failed.")
+                self.send_response(303)
+                self.send_header("Location", "/jobs?msg=" + quote(msg))
+                self.end_headers()
                 return
             if self.path != "/save":
                 self.send_error(404)
