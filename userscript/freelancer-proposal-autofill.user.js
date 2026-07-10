@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.6.0
-// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating.
+// @version      1.7.0
+// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -107,6 +107,16 @@
       }
     }
     return null;
+  }
+
+  // ── Detect that YOU have already bid on this project ──────────────────────
+  // Freelancer replaces the bid form with a "revise / retract your bid" UI once
+  // you've bid. We use conservative markers (retract, revise your bid, already
+  // bid) so we don't mis-flag a fresh project. Used to mark the job "applied" in
+  // the bot even when you placed the bid manually (not via this panel).
+  function hasAlreadyBid() {
+    const txt = (document.body && document.body.innerText) || "";
+    return /(retract\s+bid|revise\s+(your\s+)?bid|you(?:'ve| have)?\s+already\s+(?:placed\s+a\s+)?bid|your\s+active\s+bid|edit\s+your\s+bid)/i.test(txt);
   }
 
   // ── Floating control panel: status + manual buttons (always available, even
@@ -226,7 +236,7 @@
     const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
     return (
       btns.find(
-        (b) => b.offsetParent !== null && /(place|create|submit)\s*bid/i.test((b.textContent || "").trim())
+        (b) => b.offsetParent !== null && /(place|update|submit)\s*bid/i.test((b.textContent || "").trim())
       ) || null
     );
   }
@@ -234,7 +244,26 @@
     const btn = findPlaceBidButton();
     if (!btn) { badge("Place-bid button not found (is the bid form open?).", "err"); return; }
     btn.click();
-    badge("Clicked Place Bid.", "ok");
+    markApplied(currentSeo(), currentProjectId()); // record it in the bot's Jobs list
+    badge("Clicked Place Bid — marked applied.", "ok");
+  }
+
+  // ── Tell the bot you've applied so the Jobs page shows it as done ──────────
+  // Fire-and-forget: a failure here must never disrupt bidding. The bot stores the
+  // project (fetching it live if it never collected it) with status 'applied'.
+  function markApplied(seo, pid) {
+    if (!seo && !pid) return;
+    const params =
+      (pid ? "id=" + encodeURIComponent(pid) : "") +
+      (seo ? (pid ? "&" : "") + "seo=" + encodeURIComponent(seo) : "");
+    try {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: BOT_BASE + "/jobs/applied?" + params,
+        timeout: 15000,
+        onload: () => {}, onerror: () => {}, ontimeout: () => {},
+      });
+    } catch (e) { /* ignore */ }
   }
 
   function fillForm(data) {
@@ -282,13 +311,16 @@
     });
   }
 
-  // ── Wait for the bid form to render (freelancer is a slow SPA) ─────────────
-  // Resolves the instant the textarea appears via a MutationObserver (so a slow
-  // page still works the moment it finishes), with a polling fallback and a
-  // generous hard timeout. Much more reliable than a short fixed-poll window.
-  function waitForTextarea(timeoutMs) {
+  // ── Wait for the bid form to render, OR for an "already bid" state ─────────
+  // Freelancer is a slow SPA. Resolves the instant the proposal textarea appears
+  // ("textarea"), or the instant we can tell you've already bid ("alreadybid"),
+  // via a MutationObserver with a polling fallback and a hard timeout ("timeout").
+  function waitForBidState(timeoutMs) {
+    const check = () =>
+      findProposalTextarea() ? "textarea" : (hasAlreadyBid() ? "alreadybid" : null);
     return new Promise((resolve) => {
-      if (findProposalTextarea()) return resolve(true);
+      const first = check();
+      if (first) return resolve(first);
       let done = false;
       const finish = (val) => {
         if (done) return;
@@ -299,15 +331,17 @@
         resolve(val);
       };
       const obs = new MutationObserver(() => {
-        if (findProposalTextarea()) finish(true);
+        const s = check();
+        if (s) finish(s);
       });
       obs.observe(document.documentElement, { childList: true, subtree: true });
       // Belt-and-suspenders: some frameworks reveal the box without a mutation the
       // observer surfaces (e.g. an existing node un-hidden via CSS).
       const poll = setInterval(() => {
-        if (findProposalTextarea()) finish(true);
+        const s = check();
+        if (s) finish(s);
       }, 600);
-      const timer = setTimeout(() => finish(false), timeoutMs);
+      const timer = setTimeout(() => finish("timeout"), timeoutMs);
     });
   }
 
@@ -318,10 +352,17 @@
     if (!force && seo === lastSeo) return; // already handled this project in-tab
     lastSeo = seo;
 
-    if (!(await waitForTextarea(90000))) {
-      // 90s and still nothing — either you can't bid here (already bid / closed /
-      // NDA not accepted) or the page is extremely slow. Use the Generate button
-      // (or Alt+G) to retry once the bid form is visible.
+    const state = await waitForBidState(90000);
+    if (state === "alreadybid") {
+      // You've already bid on this project — record it so the Jobs page shows it as
+      // applied, and don't spend an OpenAI call generating a proposal you can't use.
+      markApplied(seo, currentProjectId());
+      badge("You've already bid on this — marked as applied.", "info");
+      return;
+    }
+    if (state !== "textarea") {
+      // 90s and still nothing — either you can't bid here (closed / NDA not accepted)
+      // or the page is extremely slow. Use the Generate button (or Alt+G) to retry.
       badge("No bid box yet — press Generate / Alt+G to retry.", "info");
       return;
     }

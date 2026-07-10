@@ -439,6 +439,7 @@ def _render(values: dict[str, str], *, saved: bool, errors: dict[str, str]) -> s
 _STATUS_COLORS = {
     "new": ("#1e3a5f", "#8ec5ff"),
     "bid": ("#10341f", "#7ee2a8"),
+    "applied": ("#123a2a", "#6ee3b8"),
     "filtered": ("#3a2a17", "#f2c08a"),
     "skipped": ("#2a2f40", "#9aa4c0"),
     "error": ("#3a1717", "#f8a3a3"),
@@ -746,7 +747,7 @@ def _render_jobs(rows: list, counts: list, active_status: str | None) -> str:
             # A project we've already bid on (real or draft) shows a marker instead
             # of buttons so it can't be double-submitted. The bids table enforces
             # one row per project, so a second attempt would fail anyway.
-            acted = st.startswith("bid") or "sent" in st or "dry_run" in st
+            acted = st.startswith("bid") or st == "applied" or "sent" in st or "dry_run" in st
             if acted:
                 actions = f'<button class="btn view" data-id="{esc(r["id"])}" data-title="{title}">✓ View</button>'
             else:
@@ -1374,6 +1375,44 @@ def _generate_for_job(project_id: int, client_country: str | None = None) -> tup
     }
 
 
+# Statuses that already mean "you've applied" — never downgrade them to 'applied'.
+_APPLIED_STATUSES = ("bid", "applied")
+
+
+def _mark_applied(project_id: int) -> tuple[int, dict]:
+    """Mark a project as applied (status 'applied') so the Jobs page shows it as done.
+
+    Called by the userscript when you place a bid from the panel, or when it detects on
+    page open that you've already bid. If the project was never collected, it's fetched
+    live and stored so it still shows up in the Jobs list. Idempotent, and never
+    downgrades a real 'bid'/'applied' row."""
+    from .config import load_settings
+    from .db import connect, get_project, init_db, set_project_score_and_status, upsert_project
+
+    try:
+        s = load_settings()
+    except Exception as exc:
+        return 400, {"ok": False, "message": f"Config error: {exc}"}
+    conn = connect()
+    try:
+        init_db(conn)
+        row = get_project(conn, project_id)
+        if row is not None:
+            st = (row["status"] or "")
+            if st.startswith("bid") or st in _APPLIED_STATUSES or "sent" in st:
+                return 200, {"ok": True, "already": True, "status": st}
+            set_project_score_and_status(conn, project_id, int(row["score"] or 0), "applied")
+            return 200, {"ok": True, "status": "applied"}
+        # Never collected: fetch live and store it as applied so it appears in the list.
+        proj = _fetch_live_project_row(s, project_id)
+        if proj is None:
+            return 404, {"ok": False, "message": f"Project {project_id} not found."}
+        upsert_project(conn, {**proj, "status": "applied", "score": 0, "filter_reason": None})
+        return 200, {"ok": True, "status": "applied", "stored": True}
+    finally:
+        conn.close()
+
+
 def serve_webui(host: str, port: int) -> None:
     class Handler(BaseHTTPRequestHandler):
         def _send_html(self, status: int, body: str) -> None:
@@ -1404,12 +1443,12 @@ def serve_webui(host: str, port: int) -> None:
         def do_GET(self) -> None:  # noqa: N802
             path = self.path.split("?")[0]
             query = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
-            if path in ("/jobs/detail", "/jobs/generate"):
+            if path in ("/jobs/detail", "/jobs/generate", "/jobs/applied"):
                 # Accept a numeric ?id= (Jobs page, or the userscript-scraped project
                 # id) and/or a ?seo=<category/slug> (userscript, derived from the URL).
-                # The numeric id wins: with it, /jobs/generate works even for a project
-                # the bot never collected (it's fetched live). seo alone only resolves
-                # already-collected projects.
+                # The numeric id wins: with it, /jobs/generate and /jobs/applied work
+                # even for a project the bot never collected (it's fetched live). seo
+                # alone only resolves already-collected projects.
                 pid_raw = (query.get("id", [""])[0] or "").strip()
                 seo = (query.get("seo", [""])[0] or "").strip()
                 if pid_raw:
@@ -1429,9 +1468,12 @@ def serve_webui(host: str, port: int) -> None:
                 # Client country scraped off the page by the userscript (the API hides
                 # owner_id, so this is how the country filter gets a country to match).
                 country = (query.get("country", [""])[0] or "").strip() or None
-                code, payload = (
-                    _generate_for_job(pid, country) if path == "/jobs/generate" else _job_detail(pid)
-                )
+                if path == "/jobs/generate":
+                    code, payload = _generate_for_job(pid, country)
+                elif path == "/jobs/applied":
+                    code, payload = _mark_applied(pid)
+                else:
+                    code, payload = _job_detail(pid)
                 self._send_json(code, payload)
                 return
             if path == "/jobs":
