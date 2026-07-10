@@ -1440,6 +1440,26 @@ def serve_webui(host: str, port: int) -> None:
             body = self.rfile.read(length).decode("utf-8") if length else ""
             return {k: v[-1] for k, v in parse_qs(body, keep_blank_values=True).items()}
 
+        def _send_userscript(self) -> None:
+            """Serve the Tampermonkey userscript so it can auto-update from this server.
+
+            The script's @updateURL/@downloadURL point here, so installing it once from
+            http://127.0.0.1:8765/userscript.user.js means Tampermonkey pulls every later
+            version automatically — no more manual copy-paste on each change."""
+            from pathlib import Path
+            p = Path(__file__).resolve().parent.parent / "userscript" / "freelancer-proposal-autofill.user.js"
+            try:
+                data = p.read_bytes()
+            except OSError:
+                self.send_error(404, "userscript file not found")
+                return
+            self.send_response(200)
+            # A .user.js content-type makes Tampermonkey offer to install/update it.
+            self.send_header("Content-Type", "text/javascript; charset=utf-8")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def do_GET(self) -> None:  # noqa: N802
             path = self.path.split("?")[0]
             query = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
@@ -1475,6 +1495,9 @@ def serve_webui(host: str, port: int) -> None:
                 else:
                     code, payload = _job_detail(pid)
                 self._send_json(code, payload)
+                return
+            if path in ("/userscript.user.js", "/userscript"):
+                self._send_userscript()
                 return
             if path == "/jobs":
                 status = (query.get("status", [""])[0] or "").strip() or None
