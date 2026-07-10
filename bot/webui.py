@@ -749,7 +749,17 @@ def _render_jobs(rows: list, counts: list, active_status: str | None) -> str:
             # one row per project, so a second attempt would fail anyway.
             acted = st.startswith("bid") or st == "applied" or "sent" in st or "dry_run" in st
             if acted:
-                actions = f'<button class="btn view" data-id="{esc(r["id"])}" data-title="{title}">✓ View</button>'
+                # Label the marker by WHAT happened so the Jobs list shows applied vs
+                # bid vs draft at a glance, instead of a generic "View".
+                if st == "applied":
+                    done_label = "✓ Applied"
+                elif "dry_run" in st or "draft" in st:
+                    done_label = "✓ Draft"
+                elif st.startswith("bid") or "sent" in st:
+                    done_label = "✓ Bid placed"
+                else:
+                    done_label = "✓ Done"
+                actions = f'<button class="btn view" data-id="{esc(r["id"])}" data-title="{title}">{done_label}</button>'
             else:
                 actions = (
                     f'<button class="btn apply" data-id="{esc(r["id"])}" data-title="{title}">Apply</button>'
