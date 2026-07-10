@@ -76,7 +76,12 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
         "- Confident, natural, human. No emojis, no fluff, no fake claims. Use ',' never ';'.",
     ]
     if include_profile and has_portfolio:
-        lines.append("- You may reference ONLY the portfolio URLs listed below, each on its own line. Never invent links.")
+        lines.append(
+            "- A tagged portfolio list follows. Each link shows the tech/role it demonstrates. "
+            "Include ONLY the link(s) whose tags best match THIS job's skills and description — "
+            "usually 1, at most 2-3. Omit every unrelated link. If none clearly fit, include none. "
+            "Put each chosen link on its own line, and NEVER print the tags or invent links."
+        )
     elif not include_profile:
         lines.append("- Do NOT include portfolio links or a profile/experience dump.")
     if ask_question:
@@ -111,6 +116,23 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
     return "\n".join(lines)
 
 
+def _split_portfolio_entry(entry: str) -> tuple[str, str]:
+    """Split a portfolio entry into ``(url, tags)``. Tags describe the tech/role the
+    link demonstrates and steer which link the AI picks per job; they are never shown.
+
+    Accepts ``URL | tags`` (preferred) and, as a convenience, ``URL<tab/2+ spaces>tags``
+    (so a list pasted straight from a spreadsheet works). A bare URL yields empty tags.
+    """
+    e = (entry or "").strip()
+    if "|" in e:
+        url, tags = e.split("|", 1)
+        return url.strip(), tags.strip()
+    m = re.match(r"(\S+)(?:\t+|\s{2,})(.+)", e)
+    if m:
+        return m.group(1).strip(), m.group(2).strip()
+    return e, ""
+
+
 def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> str:
     client = OpenAI(api_key=api_key)
 
@@ -137,11 +159,21 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
             "\n".join(f"- {b}" for b in bullets),
         ]
         if has_portfolio:
-            blocks += [
-                "",
-                "Portfolio URLs you may reference (only these, each on its own line):",
-                "\n".join(portfolio),
-            ]
+            parsed = [_split_portfolio_entry(u) for u in portfolio]
+            if any(tags for _, tags in parsed):
+                rendered = "\n".join(
+                    f"- {url}  (demonstrates: {tags})" if tags else f"- {url}"
+                    for url, tags in parsed
+                )
+                header = (
+                    "Portfolio links with the tech/role each one demonstrates. Pick ONLY the "
+                    "link(s) whose 'demonstrates' tags match this job; omit the rest; never print "
+                    "the tags:"
+                )
+            else:
+                rendered = "\n".join(portfolio)
+                header = "Portfolio URLs you may reference (only these, each on its own line):"
+            blocks += ["", header, rendered]
     if data.ask_question and data.questions:
         blocks += [
             "",

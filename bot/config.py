@@ -72,6 +72,22 @@ def _get_lines(name: str) -> list[str]:
     """A textarea value parsed into a list of non-empty trimmed lines."""
     return [ln.strip() for ln in _get_text(name).splitlines() if ln.strip()]
 
+def _get_portfolio(name: str) -> list[str]:
+    """Portfolio entries, one per line, each optionally tagged with the tech/role it
+    demonstrates so the AI can pick the links relevant to a given job::
+
+        https://site.com | React, Next, payments
+        https://other.com | Django, REST API
+
+    The part after ``|`` is a free-text tag (never shown verbatim in the proposal).
+    Back-compat: a legacy single-line, comma-separated list of bare URLs (no tags,
+    no ``|``) is still accepted and parsed by comma."""
+    text = _get_text(name)
+    if not text:
+        return []
+    parts = text.splitlines() if ("\n" in text or "|" in text) else text.split(",")
+    return [p.strip() for p in parts if p.strip()]
+
 @dataclass(frozen=True)
 class Settings:
     # Freelancer
@@ -280,7 +296,7 @@ def load_settings() -> Settings:
         proposal_instructions=_get_text("BOT_PROPOSAL_INSTRUCTIONS"),
         # Proposal personalization (empty = built-in defaults in proposal_ai.py).
         signature_name=(os.getenv("BOT_SIGNATURE_NAME") or "").strip(),
-        portfolio_urls=_csv("BOT_PORTFOLIO_URLS"),
+        portfolio_urls=_get_portfolio("BOT_PORTFOLIO_URLS"),
         profile_bullets=_get_lines("BOT_PROFILE_BULLETS"),
         proposal_template=_get_text("BOT_PROPOSAL_TEMPLATE"),
         include_name=_get_bool("BOT_INCLUDE_NAME", True),

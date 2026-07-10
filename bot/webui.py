@@ -93,8 +93,11 @@ GROUPS: list[tuple[str, list[Field]]] = [
               "Name signed at the end of proposals. Blank = built-in default.", "User"),
         Field("BOT_PROFILE_BULLETS", "Profile description (one per line)", "textarea",
               "Proof bullets about you the AI may use (never invents others). One per line. Blank = built-in default.", ""),
-        Field("BOT_PORTFOLIO_URLS", "Portfolio URLs", "csv",
-              "Comma-separated links the AI may reference (never invents others). Blank = built-in default.", ""),
+        Field("BOT_PORTFOLIO_URLS", "Portfolio URLs (one per line: URL | tech, role)", "textarea",
+              "One portfolio per line, optionally tagged so the AI cites the most relevant per job, "
+              "e.g. 'https://shop.com | React, Next, payments'. The AI includes only the link(s) whose "
+              "tags match the job (usually 1-2) and never prints the tags. A bare URL (no tags) still works. "
+              "Blank = built-in default.", ""),
         Field("BOT_INCLUDE_NAME", "Include my name in proposal", "bool",
               "ON = sign the proposal with your name on the last line.", "1"),
         Field("BOT_INCLUDE_PROFILE", "Include profile description", "bool",

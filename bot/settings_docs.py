@@ -239,7 +239,7 @@ FIELD_DOCS: dict[str, str] = {
     ),
     # ── Proposal personalization (surfaced as the UI grows) ───────────────────
     "BOT_SIGNATURE_NAME": "Name signed on the last line of proposals. Blank = the built-in default.",
-    "BOT_PORTFOLIO_URLS": "Comma-separated portfolio links the AI may cite (and only these — it won't invent URLs).",
+    "BOT_PORTFOLIO_URLS": "Portfolio links the AI may cite (and only these — it won't invent URLs). One per line, each optionally tagged with the tech/role it demonstrates ('https://site.com | React, payments'); the AI cites only the link(s) whose tags match the job and never prints the tags. A bare URL (or a legacy comma-separated line) still works.",
     "BOT_PROFILE_BULLETS": "Proof bullets about you, one per line, that the AI must use rather than inventing claims.",
     "BOT_PROPOSAL_TEMPLATE": "A sample proposal the AI imitates for tone/structure. Blank = the built-in style example.",
     "BOT_INCLUDE_NAME": "On = sign proposals with your name on the last line.",
@@ -298,7 +298,7 @@ FIELD_EXAMPLES: dict[str, str] = {
     "OPENAI_MODEL": "gpt-5.2-mini",
     "TELEGRAM_CHAT_ID": "12345678, 87654321",
     "BOT_SIGNATURE_NAME": "User",
-    "BOT_PORTFOLIO_URLS": "https://myapp.web.app, https://example.com",
+    "BOT_PORTFOLIO_URLS": "https://shop.example.com | React, Next, Stripe payments\nhttps://dash.example.com | Django, REST API, Postgres\nhttps://brandy-ai.example.app | AI, LLM, prompt UI",
     "BOT_PROFILE_BULLETS": "Senior engineer, 10+ years shipping React/Node apps\nBuilt 5 production SaaS dashboards end to end",
     "BOT_PROPOSAL_TEMPLATE": "Dear Client,\nAre you looking for a developer who can deliver this cleanly and on time?\n...\nBest regards,\nUser",
     "BOT_PROPOSAL_PREFIX": "Hello,",
