@@ -1369,6 +1369,13 @@ def _generate_for_job(project_id: int, client_country: str | None = None) -> tup
         conn.close()
 
     if proj is not None:
+        # Already applied/bid? Don't regenerate — save the OpenAI call and signal the
+        # userscript to leave the form alone. This is what stops you re-bidding a job you
+        # already applied to (whether tracked via the panel or synced from Freelancer).
+        st = (proj.get("status") or "")
+        if st.startswith("bid") or st in _APPLIED_STATUSES or "sent" in st:
+            return 200, {"ok": False, "skipped": True, "already_applied": True,
+                         "message": "You've already applied to this project — not regenerating."}
         # Already collected: it passed the full filter at fetch time, so only re-apply
         # the cheap currency/upgrade/country skip checks here.
         skip = _filter_skip_reason(s, proj, client_country)
@@ -1446,8 +1453,6 @@ def _sync_applied_from_freelancer() -> tuple[int, dict]:
     Projects already stored get their status set to 'applied'; projects the bot never
     collected are fetched (batched) and stored so they appear in the Jobs list. Retracted
     bids and rows already marked bid/applied are left alone. Returns counts."""
-    from freelancersdk.resources.users.users import get_self_user_id
-
     from .collector import _project_to_row
     from .config import load_settings
     from .db import connect, get_project, init_db, set_project_score_and_status, upsert_project
@@ -1458,13 +1463,18 @@ def _sync_applied_from_freelancer() -> tuple[int, dict]:
     except Exception as exc:
         return 400, {"ok": False, "message": f"Config error: {exc}"}
 
+    base = (s.fln_url or "https://www.freelancer.com").rstrip("/")
+    # Resolve your own user id via a DIRECT call, not the SDK's get_self_user_id — that
+    # one raises UserIdNotRetrievedException with the wrong arg count on any non-200, so
+    # the real reason (usually a bad/expired FLN_OAUTH_TOKEN) gets masked by a TypeError.
     try:
         session = make_session(s.fln_oauth_token, s.fln_url)
-        uid = get_self_user_id(session)
+        r = session.session.get(base + "/api/users/0.1/self/")
+        if r.status_code != 200:
+            return 400, {"ok": False, "message": f"Couldn't get your Freelancer user id (HTTP {r.status_code}). Check FLN_OAUTH_TOKEN in Settings — it may be missing or expired. {r.text[:150]}"}
+        uid = int(((r.json() or {}).get("result") or {}).get("id"))
     except Exception as exc:
         return 400, {"ok": False, "message": f"Couldn't reach Freelancer: {exc}"}
-
-    base = (s.fln_url or "https://www.freelancer.com").rstrip("/")
     # 1) Collect every project id you have a non-retracted bid on (paged).
     project_ids: list[int] = []
     seen: set[int] = set()
