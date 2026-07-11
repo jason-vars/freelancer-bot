@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.8.0
+// @version      1.9.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
@@ -56,59 +56,31 @@
     return null;
   }
 
-  // ── Scrape the CLIENT's country from the "About the Client" panel ──────────
-  // The bot's country filter needs a country, but Freelancer's API hides the
-  // project owner's id/location from our token — so we read the country the page
-  // already shows you and send it to the bot to match against BOT_SKIP_COUNTRIES.
-  // Best-effort: returns a country name string, or null (then no country filter is
-  // applied and the proposal generates as before). Freelancer renders the country
-  // next to a flag whose alt/title is the country name.
+  // ── Read the "About the Client" panel text (for the country filter) ────────
+  // Freelancer's API hides the client's country from our token, so we read what the
+  // page shows and let the bot match BOT_SKIP_COUNTRIES / BOT_ALLOW_COUNTRIES against
+  // it. We send the WHOLE "About the Client" text block (not a lone country word):
+  // Freelancer renders the flag as an emoji (🇮🇳), so element-based flag scraping
+  // missed it — but the country name ("India") is always present as plain text in
+  // this block, and the bot matches country names within it. Returns the text (capped)
+  // or null (then no country filter is applied and it generates as before).
   function currentClientCountry() {
     const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
-    const looksLikeCountry = (s) =>
-      /^[a-z][a-z .'()-]{2,39}$/i.test(s) && !/^flag$/i.test(s) &&
-      !/(about|client|member|since|rating|review|project|verified)/i.test(s);
-
-    // Scope to the "About the Client" card so we read the client's country, not
-    // some other flag elsewhere on the page.
-    let scope = null;
-    const heads = document.querySelectorAll("h1,h2,h3,h4,h5,strong,span,div");
-    for (const el of heads) {
+    let head = null;
+    for (const el of document.querySelectorAll("h1,h2,h3,h4,h5,strong,span,div")) {
       const t = clean(el.textContent);
-      if (t.length < 40 && /about the client/i.test(t)) {
-        let c = el;
-        for (let i = 0; i < 8 && c.parentElement; i++) c = c.parentElement;
-        scope = c;
-        break;
-      }
+      if (t.length < 40 && /about the client/i.test(t)) { head = el; break; }
     }
-    const root = scope || document;
-    const flags = Array.from(
-      root.querySelectorAll(
-        "fl-flag, img[src*='flag'], img[alt], [class*='flag'], [class*='Flag']"
-      )
-    );
-    // 1) The country name is often the flag element's own alt/title/aria-label.
-    for (const f of flags) {
-      for (const attr of ["title", "alt", "aria-label"]) {
-        const v = clean(f.getAttribute && f.getAttribute(attr));
-        if (looksLikeCountry(v)) return v;
-      }
+    if (!head) return null;
+    // Climb to the card that holds the client's location/verification, but not so far
+    // that we swallow the project description (which could mention other countries).
+    let card = head;
+    for (let i = 0; i < 6 && card.parentElement; i++) {
+      card = card.parentElement;
+      if ((card.innerText || "").length > 400) break;
     }
-    // 2) Otherwise it's the visible text sitting right next to the flag.
-    for (const f of flags) {
-      const cands = [
-        f.nextElementSibling && f.nextElementSibling.textContent,
-        f.parentElement && f.parentElement.textContent,
-        f.getAttribute && f.getAttribute("code"),
-        f.getAttribute && f.getAttribute("flagcode"),
-      ];
-      for (const c of cands) {
-        const v = clean(c);
-        if (looksLikeCountry(v)) return v;
-      }
-    }
-    return null;
+    const txt = clean(card.innerText || card.textContent);
+    return txt ? txt.slice(0, 300) : null;
   }
 
   // ── Detect that YOU have already bid on this project ──────────────────────
@@ -385,9 +357,9 @@
       } else {
         const country = currentClientCountry();
         // Surface what we scraped so a country-filter miss is diagnosable at a glance:
-        // "(client: India)" means the filter got a country; "(client: ?)" means the
-        // scraper couldn't read it, so BOT_SKIP_COUNTRIES can't apply.
-        badge("Generating proposal… (client: " + (country || "?") + ")", "info");
+        // a short preview of the client text means the filter got something; "?" means
+        // the "About the Client" block wasn't found, so the country filter can't apply.
+        badge("Generating proposal… (client: " + (country ? country.slice(0, 32) : "?") + ")", "info");
         data = await fetchProposal(seo, currentProjectId(), country);
       }
       // Project matched a currency/country skip filter — don't fill, don't cache.

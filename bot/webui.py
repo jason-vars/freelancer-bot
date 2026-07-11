@@ -1222,26 +1222,40 @@ def _country_skip_reason(s, proj: dict, client_country: str | None) -> str | Non
       2. ``client_country`` — the country the browser userscript scraped straight from
          the "About the Client" panel on the page you opened. This is what actually
          makes the country filter work for browsed/collected projects."""
+    import re
+
     from .filters import country_allowed, get_client_status
 
     if not (s.allow_countries or s.skip_countries):
         return None
-    cs: dict | None = None
+    # 1) Try the API client lookup (only works for webhook projects with an owner_id).
     owner_id = _owner_id_from_project(proj)
     if owner_id is not None:
         try:
             from .freelancer_client import make_session
             session = make_session(s.fln_oauth_token, s.fln_url)
             cs = get_client_status(session, owner_id)
+            if cs and (cs.get("country") or cs.get("country_name")):
+                ok, reason = country_allowed(cs, s.allow_countries, s.skip_countries)
+                return None if ok else reason
         except Exception as exc:
             print(f"[webui] country filter lookup failed for {proj.get('id')}: {exc}")
-    # Fall back to the page-scraped country when the API gave us no country.
-    if (cs is None or not (cs.get("country") or cs.get("country_name"))) and client_country:
-        cs = {"country": client_country, "country_name": client_country, "country_code": None}
-    if cs is None:
+    # 2) Match your country lists against the page-scraped "About the Client" text.
+    # We match country NAMES within the text (the flag is an emoji, so there's no clean
+    # country field to isolate) — robust because the client's country is always shown.
+    text = (client_country or "").lower()
+    if not text:
         return None
-    ok, reason = country_allowed(cs, s.allow_countries, s.skip_countries)
-    return None if ok else reason
+
+    def _in_text(name: str) -> bool:
+        n = (name or "").strip().lower()
+        return bool(n) and re.search(r"\b" + re.escape(n) + r"\b", text) is not None
+
+    if any(_in_text(c) for c in s.skip_countries):
+        return "country_blocked"
+    if s.allow_countries and not any(_in_text(c) for c in s.allow_countries):
+        return "country_not_allowed"
+    return None
 
 
 def _filter_skip_reason(s, proj: dict, client_country: str | None = None) -> str | None:
