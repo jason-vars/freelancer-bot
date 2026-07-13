@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.9.0
+// @version      1.10.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
@@ -93,11 +93,16 @@
   function hasAlreadyBid() {
     const ta = findProposalTextarea();
     // An EMPTY proposal box means the fresh bid form is open => you haven't bid yet.
-    // (A box pre-filled with your existing proposal, or no box at all, may mean you
-    // have — so fall through to the text check in that case.)
     if (ta && !(ta.value || "").trim()) return false;
+    // Otherwise require a STRONG, current signal: a visible Retract control (exists only
+    // when you have an active bid) or the explicit "already placed a bid" message.
+    // Loose body-text scanning used to false-fire on slow/partial loads and SPA
+    // transitions (stale text), flagging fresh projects as already bid.
+    for (const c of document.querySelectorAll('button, a, [role="button"]')) {
+      if (c.offsetParent !== null && /\bretract\b/i.test((c.textContent || "").trim())) return true;
+    }
     const txt = (document.body && document.body.innerText) || "";
-    return /(retract\s+(your\s+)?bid|revise\s+(your\s+)?bid|you(?:'ve| have)?\s+already\s+(?:placed\s+a\s+)?bid|your\s+active\s+bid)/i.test(txt);
+    return /you(?:'ve| have)?\s+already\s+placed\s+a\s+bid/i.test(txt);
   }
 
   // ── Floating control panel: status + manual buttons (always available, even
@@ -187,15 +192,27 @@
   }
 
   // The free "Sealed" upgrade checkbox (hides your bid from other freelancers).
-  // Locate the row whose leaf text is exactly "SEALED", climb to a container that
-  // also holds a checkbox, and (defensively) require the row to read "free".
+  // Preferred anchors are Freelancer's stable attributes (fltrackinglabel /
+  // data-upgrade-type); the checkbox lives in a sibling subtree of the "Sealed" tag,
+  // ~7 levels away, which the old shallow text-climb never reached. We require the row
+  // to read "free" so we only auto-tick it when the upgrade is actually free.
   function findSealedCheckbox() {
+    const anchors = document.querySelectorAll(
+      'fl-list-item[fltrackinglabel="BidFormUpgrades.Sealed"], fl-upgrade-tag[data-upgrade-type="sealed"]'
+    );
+    for (const a of anchors) {
+      const row = a.closest("fl-list-item") || a.parentElement;
+      if (!row) continue;
+      const cb = row.querySelector('input[type="checkbox"]');
+      if (cb && /\bfree\b/i.test(row.textContent || "")) return cb;
+    }
+    // Fallback: find the "Sealed" leaf and climb far enough to reach checkbox + "free".
     const leaves = Array.from(document.querySelectorAll("*")).filter(
       (el) => !el.children.length && /^\s*sealed\s*$/i.test(el.textContent || "")
     );
     for (const leaf of leaves) {
       let row = leaf;
-      for (let i = 0; i < 6 && row; i++) {
+      for (let i = 0; i < 10 && row; i++) {
         const cb = row.querySelector ? row.querySelector('input[type="checkbox"]') : null;
         const txt = (row.textContent || "").toLowerCase();
         if (cb && txt.includes("sealed") && txt.includes("free")) return cb;
@@ -207,7 +224,13 @@
   function checkSealed() {
     const cb = findSealedCheckbox();
     if (!cb) return false;
-    if (!cb.checked) cb.click(); // click (not .checked=) so freelancer's handler fires
+    if (!cb.checked) {
+      // Click the LABEL (fl-checkbox hides the native input); the label's `for` toggles
+      // it and fires Angular's handler. Falls back to clicking the input directly.
+      const esc = (window.CSS && CSS.escape) ? CSS.escape(cb.id) : cb.id;
+      const label = cb.id ? document.querySelector('label[for="' + esc + '"]') : null;
+      (label || cb).click();
+    }
     return cb.checked;
   }
 
@@ -335,10 +358,10 @@
 
     const state = await waitForBidState(90000);
     if (state === "alreadybid") {
-      // You've already bid on this project — record it so the Jobs page shows it as
-      // applied, and don't spend an OpenAI call generating a proposal you can't use.
-      markApplied(seo, currentProjectId());
-      badge("You've already bid on this — marked as applied.", "info");
+      // You've already bid — skip generating (don't overwrite your bid). We do NOT mark
+      // applied here: auto-detect can mis-fire on bad networks, and the applied list is
+      // kept accurate by the panel's Place-bid and the "Sync applied" button instead.
+      badge("You've already bid on this — skipping. Use Sync to refresh the list.", "info");
       return;
     }
     if (state !== "textarea") {
