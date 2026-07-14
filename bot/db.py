@@ -303,18 +303,42 @@ def list_projects_by_status(conn: sqlite3.Connection, status: str, limit: int = 
     ).fetchall()
 
 
-def list_all_projects(conn: sqlite3.Connection, status: str | None = None, limit: int = 500) -> list[sqlite3.Row]:
-    """Every stored project, newest first. Pass ``status`` to restrict to one
-    status (e.g. 'new', 'filtered', 'bid'); None returns all statuses."""
-    if status:
+def list_all_projects(
+    conn: sqlite3.Connection,
+    statuses: list[str] | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[sqlite3.Row]:
+    """A page of stored projects, newest first.
+
+    ``statuses`` restricts to one OR MORE statuses (e.g. ['alerted', 'applied'] for the
+    merged Jobs chip); None returns every status. NULL statuses count as 'new'.
+    ``limit``/``offset`` drive the Jobs-page pagination."""
+    if statuses:
+        placeholders = ",".join("?" for _ in statuses)
         return conn.execute(
-            "SELECT * FROM projects WHERE status=? ORDER BY COALESCE(created_at, '') DESC, id DESC LIMIT ?",
-            (status, limit),
+            f"SELECT * FROM projects WHERE COALESCE(status, 'new') IN ({placeholders}) "
+            "ORDER BY COALESCE(created_at, '') DESC, id DESC LIMIT ? OFFSET ?",
+            (*statuses, limit, offset),
         ).fetchall()
     return conn.execute(
-        "SELECT * FROM projects ORDER BY COALESCE(created_at, '') DESC, id DESC LIMIT ?",
-        (limit,),
+        "SELECT * FROM projects ORDER BY COALESCE(created_at, '') DESC, id DESC LIMIT ? OFFSET ?",
+        (limit, offset),
     ).fetchall()
+
+
+def count_projects(conn: sqlite3.Connection, statuses: list[str] | None = None) -> int:
+    """Total stored projects matching ``statuses`` (None = all). Used to size the
+    Jobs-page pager. NULL statuses count as 'new', mirroring :func:`list_all_projects`."""
+    if statuses:
+        placeholders = ",".join("?" for _ in statuses)
+        row = conn.execute(
+            f"SELECT COUNT(*) AS c FROM projects WHERE COALESCE(status, 'new') IN ({placeholders})",
+            tuple(statuses),
+        ).fetchone()
+    else:
+        row = conn.execute("SELECT COUNT(*) AS c FROM projects").fetchone()
+    return int(row["c"])
 
 
 def count_projects_by_status(conn: sqlite3.Connection) -> list[sqlite3.Row]:

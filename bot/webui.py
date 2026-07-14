@@ -436,6 +436,15 @@ def _render(values: dict[str, str], *, saved: bool, errors: dict[str, str]) -> s
 </body></html>"""
 
 
+# The Jobs page collapses these two statuses into ONE chip/filter. "alerted" (the bot
+# flagged it for you) and "applied" (you've bid) are shown together so a job that gets
+# marked applied never silently drops out of the list you work from. The chip's
+# ?status= value is the comma-joined key, which the /jobs handler splits back out.
+_MERGED_STATUSES = ("alerted", "applied")
+_MERGED_KEY = ",".join(_MERGED_STATUSES)
+_MERGED_LABEL = "alerted + applied"
+_JOBS_PAGE_SIZE = 50
+
 _STATUS_COLORS = {
     "new": ("#1e3a5f", "#8ec5ff"),
     "bid": ("#10341f", "#7ee2a8"),
@@ -473,6 +482,11 @@ _JOBS_STYLE = """
   .utags { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; }
   .utag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; letter-spacing: .02em; }
   .empty { color: #7a85a6; padding: 40px 0; text-align: center; }
+  .pager { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 18px 0 4px; }
+  .pgbtn { text-decoration: none; padding: 7px 14px; border-radius: 8px; border: 1px solid #2c3550; color: #cdd5ee; font-size: 13px; font-weight: 600; }
+  .pgbtn:hover { background: #1b2236; color: #e6e8ef; }
+  .pgbtn.disabled { opacity: .4; pointer-events: none; }
+  .pginfo { color: #9aa4c0; font-size: 12.5px; font-variant-numeric: tabular-nums; }
   .note { color: #7a85a6; font-size: 12.5px; }
   .actions { white-space: nowrap; text-align: right; }
   .btn { font: inherit; font-size: 12.5px; font-weight: 600; border-radius: 7px; padding: 6px 11px; cursor: pointer; border: 1px solid #2c3550; background: #1d2438; color: #cdd5ee; }
@@ -716,16 +730,38 @@ def _row_upgrade_badges(raw_json: Any) -> str:
     return '<div class="utags">' + "".join(pills) + "</div>"
 
 
-def _render_jobs(rows: list, counts: list, active_status: str | None, msg: str | None = None) -> str:
+def _render_jobs(
+    rows: list,
+    counts: list,
+    active_status: str | None,
+    msg: str | None = None,
+    *,
+    page: int = 1,
+    total: int = 0,
+    page_size: int = _JOBS_PAGE_SIZE,
+) -> str:
     def esc(x: Any) -> str:
         return html.escape("" if x is None else str(x), quote=True)
 
-    total = sum(int(c["c"]) for c in counts)
+    counts_map = {c["status"]: int(c["c"]) for c in counts}
+    grand_total = sum(counts_map.values())
     chips = [
-        f'<a href="/jobs" class="{"on" if not active_status else ""}">All ({total})</a>'
+        f'<a href="/jobs" class="{"on" if not active_status else ""}">All ({grand_total})</a>'
     ]
+    # Fold 'alerted' + 'applied' into a single combined chip, emitted once in place of
+    # both. Every other status keeps its own chip.
+    merged_total = sum(counts_map.get(s, 0) for s in _MERGED_STATUSES)
+    merged_emitted = False
     for c in counts:
         st = c["status"]
+        if st in _MERGED_STATUSES:
+            if merged_emitted:
+                continue
+            merged_emitted = True
+            sel = "on" if active_status == _MERGED_KEY else ""
+            q = urlencode({"status": _MERGED_KEY})
+            chips.append(f'<a href="/jobs?{q}" class="{sel}">{esc(_MERGED_LABEL)} ({merged_total})</a>')
+            continue
         sel = "on" if active_status == st else ""
         q = urlencode({"status": st})
         chips.append(f'<a href="/jobs?{q}" class="{sel}">{esc(st)} ({int(c["c"])})</a>')
@@ -798,7 +834,32 @@ def _render_jobs(rows: list, counts: list, active_status: str | None, msg: str |
             + "</tbody></table>"
         )
     else:
-        table = '<div class="empty">No jobs stored yet. They appear here once the bot has run a polling cycle.</div>'
+        table = '<div class="empty">No jobs on this page. Try another filter or page.</div>'
+
+    # Pager: page links preserve the active status filter. Disabled ends are inert links.
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    page = min(max(1, page), total_pages)
+
+    def _page_href(p: int) -> str:
+        q: dict[str, Any] = {"page": p}
+        if active_status:
+            q["status"] = active_status
+        return "/jobs?" + urlencode(q)
+
+    if total_pages > 1:
+        first = (page - 1) * page_size + 1
+        last = min(page * page_size, total)
+        prev_cls = " disabled" if page <= 1 else ""
+        next_cls = " disabled" if page >= total_pages else ""
+        pager = (
+            '<div class="pager">'
+            f'<a class="pgbtn{prev_cls}" href="{esc(_page_href(max(1, page - 1)))}">‹ Prev</a>'
+            f'<span class="pginfo">Page {page} of {total_pages} · {first}–{last} of {total}</span>'
+            f'<a class="pgbtn{next_cls}" href="{esc(_page_href(min(total_pages, page + 1)))}">Next ›</a>'
+            "</div>"
+        )
+    else:
+        pager = ""
 
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -811,7 +872,8 @@ def _render_jobs(rows: list, counts: list, active_status: str | None, msg: str |
   {banner}
   <div class="filters">{''.join(chips)}{sync_btn}</div>
   {table}
-  <p class="note">Showing up to 500 most recent projects. Times are UTC. <b>Apply</b> submits a proposal you write; <b>Auto-bid</b> generates one with OpenAI and submits it. While <b>Dry run</b> is ON (Settings) both only save a draft — no real bid is placed. <b>Sync applied</b> reads your real bids from Freelancer and marks them applied.</p>
+  {pager}
+  <p class="note">{page_size} per page, newest first. Times are UTC. <b>Apply</b> submits a proposal you write; <b>Auto-bid</b> generates one with OpenAI and submits it. While <b>Dry run</b> is ON (Settings) both only save a draft — no real bid is placed. <b>Sync applied</b> reads your real bids from Freelancer and marks them applied.</p>
 </div>
 <div id="overlay" class="overlay"><div class="modal">
   <h3 id="m_title">Apply</h3>
@@ -1386,8 +1448,7 @@ def _generate_for_job(project_id: int, client_country: str | None = None) -> tup
         # Already applied/bid? Don't regenerate — save the OpenAI call and signal the
         # userscript to leave the form alone. This is what stops you re-bidding a job you
         # already applied to (whether tracked via the panel or synced from Freelancer).
-        st = (proj.get("status") or "")
-        if st.startswith("bid") or st in _APPLIED_STATUSES or "sent" in st:
+        if _is_applied_status(proj.get("status")):
             return 200, {"ok": False, "skipped": True, "already_applied": True,
                          "message": "You've already applied to this project — not regenerating."}
         # Already collected: it passed the full filter at fetch time, so only re-apply
@@ -1420,8 +1481,20 @@ def _generate_for_job(project_id: int, client_country: str | None = None) -> tup
     }
 
 
-# Statuses that already mean "you've applied" — never downgrade them to 'applied'.
-_APPLIED_STATUSES = ("bid", "applied")
+# Draft statuses are experiments, NOT real applications. A dry-run draft (bid_draft /
+# webui_dry_run) must never count as "already applied": doing so mislabeled jobs you
+# never bid on and refused to (re)generate a proposal for them.
+_DRAFT_STATUSES = ("bid_draft", "webui_dry_run")
+
+
+def _is_applied_status(status: str | None) -> bool:
+    """True only when a REAL bid/application exists for this project — never for a
+    dry-run/saved draft. Used to gate regeneration and to avoid downgrading a real
+    'bid'/'applied' row. Real markers: 'applied', a real 'bid…', or any '…sent' status."""
+    st = (status or "").strip().lower()
+    if not st or st in _DRAFT_STATUSES or "draft" in st or "dry_run" in st:
+        return False
+    return st == "applied" or st.startswith("bid") or "sent" in st
 
 
 def _mark_applied(project_id: int) -> tuple[int, dict]:
@@ -1444,7 +1517,7 @@ def _mark_applied(project_id: int) -> tuple[int, dict]:
         row = get_project(conn, project_id)
         if row is not None:
             st = (row["status"] or "")
-            if st.startswith("bid") or st in _APPLIED_STATUSES or "sent" in st:
+            if _is_applied_status(st):
                 return 200, {"ok": True, "already": True, "status": st}
             set_project_score_and_status(conn, project_id, int(row["score"] or 0), "applied")
             return 200, {"ok": True, "status": "applied"}
@@ -1526,7 +1599,7 @@ def _sync_applied_from_freelancer() -> tuple[int, dict]:
                 missing.append(pid)
                 continue
             st = row["status"] or ""
-            if st.startswith("bid") or st in _APPLIED_STATUSES or "sent" in st:
+            if _is_applied_status(st):
                 already += 1
                 continue
             set_project_score_and_status(conn, pid, int(row["score"] or 0), "applied")
@@ -1649,14 +1722,27 @@ def serve_webui(host: str, port: int) -> None:
             if path == "/jobs":
                 status = (query.get("status", [""])[0] or "").strip() or None
                 msg = (query.get("msg", [""])[0] or "").strip() or None
+                try:
+                    page = max(1, int((query.get("page", ["1"])[0] or "1")))
+                except (TypeError, ValueError):
+                    page = 1
+                # A comma-joined status (the merged "alerted + applied" chip) filters on
+                # several statuses at once; a single status filters on just that one.
+                statuses = [s for s in status.split(",") if s] if status else None
                 conn = db.connect()
                 try:
                     db.init_db(conn)
-                    rows = db.list_all_projects(conn, status=status)
+                    total = db.count_projects(conn, statuses)
+                    total_pages = max(1, (total + _JOBS_PAGE_SIZE - 1) // _JOBS_PAGE_SIZE)
+                    page = min(page, total_pages)
+                    rows = db.list_all_projects(
+                        conn, statuses=statuses, limit=_JOBS_PAGE_SIZE,
+                        offset=(page - 1) * _JOBS_PAGE_SIZE,
+                    )
                     counts = db.count_projects_by_status(conn)
                 finally:
                     conn.close()
-                self._send_html(200, _render_jobs(rows, counts, status, msg))
+                self._send_html(200, _render_jobs(rows, counts, status, msg, page=page, total=total))
                 return
             if path not in ("/", "/index.html"):
                 self.send_error(404)

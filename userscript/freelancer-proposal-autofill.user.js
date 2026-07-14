@@ -191,11 +191,24 @@
     );
   }
 
+  // Is *this specific* upgrade row free? Freelancer shows a positive price like
+  // "$0.11 USD" when it costs money and "FREE"/"$0.00" when it doesn't. We judge on
+  // the price shown in the row, NOT on the word "free" appearing somewhere — that word
+  // also shows up elsewhere on the bid form (e.g. the "free bids remaining" counter),
+  // which is exactly what caused a $0.11 Sealed upgrade to be auto-ticked.
+  function rowIsFree(text) {
+    const t = (text || "").toLowerCase();
+    const priced = /\$\s*(\d+(?:\.\d+)?)/.exec(t);
+    if (priced && parseFloat(priced[1]) > 0) return false; // has a positive price → paid
+    return /\bfree\b/.test(t) || /\$\s*0(?:\.0+)?\b/.test(t);
+  }
+
   // The free "Sealed" upgrade checkbox (hides your bid from other freelancers).
   // Preferred anchors are Freelancer's stable attributes (fltrackinglabel /
   // data-upgrade-type); the checkbox lives in a sibling subtree of the "Sealed" tag,
-  // ~7 levels away, which the old shallow text-climb never reached. We require the row
-  // to read "free" so we only auto-tick it when the upgrade is actually free.
+  // ~7 levels away, which the old shallow text-climb never reached. We return the
+  // checkbox only when the Sealed row is actually free, so a paid upgrade is never
+  // auto-ticked.
   function findSealedCheckbox() {
     const anchors = document.querySelectorAll(
       'fl-list-item[fltrackinglabel="BidFormUpgrades.Sealed"], fl-upgrade-tag[data-upgrade-type="sealed"]'
@@ -204,9 +217,12 @@
       const row = a.closest("fl-list-item") || a.parentElement;
       if (!row) continue;
       const cb = row.querySelector('input[type="checkbox"]');
-      if (cb && /\bfree\b/i.test(row.textContent || "")) return cb;
+      if (cb && rowIsFree(row.textContent)) return cb;
     }
-    // Fallback: find the "Sealed" leaf and climb far enough to reach checkbox + "free".
+    // Fallback: find the "Sealed" leaf and climb to the FIRST ancestor that owns a
+    // checkbox — that ancestor is the Sealed row itself (each upgrade has its own
+    // checkbox in a separate subtree). Judge free-ness on that tightly-scoped row only;
+    // don't keep climbing into larger containers that mention "free" for other reasons.
     const leaves = Array.from(document.querySelectorAll("*")).filter(
       (el) => !el.children.length && /^\s*sealed\s*$/i.test(el.textContent || "")
     );
@@ -214,8 +230,7 @@
       let row = leaf;
       for (let i = 0; i < 10 && row; i++) {
         const cb = row.querySelector ? row.querySelector('input[type="checkbox"]') : null;
-        const txt = (row.textContent || "").toLowerCase();
-        if (cb && txt.includes("sealed") && txt.includes("free")) return cb;
+        if (cb) return rowIsFree(row.textContent) ? cb : null;
         row = row.parentElement;
       }
     }
@@ -248,8 +263,24 @@
     const btn = findPlaceBidButton();
     if (!btn) { badge("Place-bid button not found (is the bid form open?).", "err"); return; }
     btn.click();
-    markApplied(currentSeo(), currentProjectId()); // record it in the bot's Jobs list
-    badge("Clicked Place Bid — marked applied.", "ok");
+    badge("Clicked Place Bid — confirming…", "info");
+    // Only mark applied once Freelancer ACTUALLY confirms the bid (a Retract control or
+    // the "already placed a bid" message appears). A click alone does not mean the bid
+    // went through — it can be rejected (out of bids, project closed, NDA not accepted).
+    // Marking on click alone left jobs you never bid on flagged "applied", which then
+    // blocked regenerating a proposal for them.
+    const seo = currentSeo(), pid = currentProjectId();
+    const started = Date.now();
+    const iv = setInterval(() => {
+      if (hasAlreadyBid()) {
+        clearInterval(iv);
+        markApplied(seo, pid); // record it in the bot's Jobs list
+        badge("Bid confirmed — marked applied.", "ok");
+      } else if (Date.now() - started > 12000) {
+        clearInterval(iv);
+        badge("Couldn't confirm the bid was placed — not marking applied. If it did go through, use 🔄 Sync.", "info");
+      }
+    }, 500);
   }
 
   // ── Tell the bot you've applied so the Jobs page shows it as done ──────────
@@ -285,7 +316,7 @@
       const per = findNumberInput(/period|day|deliver|duration/i);
       if (per) { setNativeValue(per, String(data.period)); filled.push("period"); }
     }
-    // Auto-enable the free Sealed upgrade whenever it's offered.
+    // Auto-enable the Sealed upgrade only when it's free.
     if (checkSealed()) filled.push("sealed");
     return filled;
   }
