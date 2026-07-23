@@ -93,6 +93,11 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
         "signature. End with the last sentence of your pitch or your question — a closing and signature are added "
         "automatically afterwards."
     )
+    lines.append(
+        "- If the job post asks bidders to begin with a specific verification word, code, or phrase (an anti-AI "
+        "check, e.g. 'start with the word Bundle'), do NOT write it yourself — it is prepended automatically as the "
+        "very first line. Just start with your normal hook."
+    )
 
     if has_template:
         lines += [
@@ -131,6 +136,45 @@ def _split_portfolio_entry(entry: str) -> tuple[str, str]:
     if m:
         return m.group(1).strip(), m.group(2).strip()
     return e, ""
+
+
+def detect_required_lead(api_key: str, model: str, description: str) -> str:
+    """Pull a client's hidden anti-AI instruction out of the job post.
+
+    Some clients embed a check to catch copy-pasted / AI proposals: they ask the
+    bidder to begin their proposal with a specific exact word, code, or phrase
+    (e.g. "start your bid with the word Bundle", "type GREEN at the very top").
+    This returns that exact text (verbatim, original casing) so it can be placed
+    as the first line, or ``""`` when the post demands no such thing.
+
+    Fails safe: any error, empty description, or unparseable reply returns ``""``
+    so proposal generation is never blocked."""
+    if not (description or "").strip():
+        return ""
+    system = (
+        "You scan a Freelancer.com job post for a hidden anti-AI instruction that "
+        "tells bidders to BEGIN their proposal with a specific exact word, code, or "
+        "phrase (e.g. 'start your bid with the word Bundle', 'type GREEN at the top', "
+        "'begin your proposal with ...'). "
+        'Reply with ONLY a JSON object: {"lead": "<exact text to put first, or empty string>"}. '
+        "Copy the required text verbatim, preserving its exact casing and punctuation. "
+        "Return an empty string if the post does not demand a specific starting word/phrase. "
+        "Do NOT invent one and do NOT include any surrounding words."
+    )
+    user = f"Job post:\n{(description or '')[:4000]}\n\nReturn the JSON object only."
+    try:
+        client = OpenAI(api_key=api_key)
+        resp = client.responses.create(
+            model=model,
+            input=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
+        obj = _extract_json(resp.output_text.strip())
+        return str(obj.get("lead") or "").strip()
+    except Exception:  # noqa: BLE001 - detection must never block the bid
+        return ""
 
 
 def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> str:
@@ -201,8 +245,11 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     )
     # The SDK returns a structured response; simplest is `output_text`.
     body = _sanitize(resp.output_text.strip())
+    # Client-required verification word (anti-AI check) goes ABOVE everything else.
+    lead = detect_required_lead(api_key, model, data.description)
     return _assemble(
         body,
+        lead=lead,
         prefix=data.prefix,
         suffix=data.suffix,
         signature=signature if data.include_name else "",
@@ -217,8 +264,16 @@ def _sanitize(text: str) -> str:
     return text.strip()
 
 
-def _assemble(body: str, *, prefix: str, suffix: str, signature: str) -> str:
-    """Build the final letter: [prefix] -> body -> [closing suffix] -> [name].
+def _assemble(body: str, *, lead: str = "", prefix: str, suffix: str, signature: str) -> str:
+    """Build the final letter: [lead] -> [prefix] -> body -> [closing suffix] -> [name].
+
+    ``lead`` is a client-required verification word/phrase (an anti-AI check pulled
+    from the job post) that MUST be the absolute first line — above the "Text at
+    start" prefix — so the client's checker sees it immediately::
+
+        Bundle                                            <- lead (required word)
+        I am a senior full stack developer ...            <- prefix ("Text at start")
+        ...your pitch...
 
     The signature name is always LAST so the ending reads, e.g.::
 
@@ -228,8 +283,12 @@ def _assemble(body: str, *, prefix: str, suffix: str, signature: str) -> str:
         Anoosher
 
     where the two closing lines come from ``suffix`` (Text at end) and ``Anoosher``
-    from the signature. The model never writes the closing/name itself."""
+    from the signature. The model never writes the lead/closing/name itself."""
     out = []
+    if (lead or "").strip():
+        # Present the required word quoted, e.g. "Bundle" (strip any quotes the
+        # detector already captured so we never double-wrap).
+        out.append(f'"{lead.strip().strip(chr(34)).strip(chr(39)).strip()}"')
     if (prefix or "").strip():
         out.append(prefix.strip())
     out.append(body.strip())
