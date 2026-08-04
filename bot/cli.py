@@ -27,7 +27,7 @@ from .db import (
 )
 from .freelancer_client import make_session
 from .collector import fetch_and_store_projects
-from .filters import passes_recency
+from .filters import passes_recency, _to_epoch_seconds
 from .util import within_active_hours, current_minutes, fmt_minutes
 from .scorer import score_project
 from .proposal_ai import (
@@ -477,7 +477,13 @@ def _maybe_save_proposal(conn, settings, p) -> None:
     except Exception as exc:
         print(f"[{pid}] proposal save FAILED: {exc}")
 
-def run(dry_run_override: bool | None = None) -> None:
+def run(dry_run_override: bool | None = None, notify_floor_epoch: float | None = None) -> None:
+    """One fetch -> score -> notify cycle.
+
+    ``notify_floor_epoch`` is an absolute cutoff: projects posted BEFORE this epoch
+    are never alerted (the continuous loop passes its own start time, so a launch at
+    9:00 AM never notifies jobs posted earlier, even ones still inside the recency
+    window). ``None`` disables the floor (one-shot ``run`` behaves as before)."""
     s = load_settings()
     if dry_run_override is not None:
         dry_run = dry_run_override
@@ -512,6 +518,14 @@ def run(dry_run_override: bool | None = None) -> None:
             print(f"[{p['id']}] skip (stale): {rec_reason}")
             set_project_filtered(conn, int(p["id"]), rec_reason)
             continue
+        # Absolute launch-time floor: never alert on jobs posted before the bot
+        # started this session. Marked handled so it is not retried next cycle.
+        if notify_floor_epoch is not None:
+            ts = _to_epoch_seconds(p["created_at"])
+            if ts is not None and ts < notify_floor_epoch:
+                set_project_filtered(conn, int(p["id"]), "posted_before_session_start")
+                print(f"[{p['id']}] skip (posted before bot started this session)")
+                continue
         res = score_project(
             title=p["title"],
             description=p["description"] or "",
@@ -570,7 +584,12 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
     if interval <= 0:
         raise ValueError("interval must be > 0 seconds")
 
-    print(f"Auto polling started. interval={interval}s dry_run={'yes' if dry_run_override else 'env/default'}")
+    # Absolute floor captured at launch: jobs posted before the bot started this
+    # session are treated as backlog and never alerted (tighter than the rolling
+    # recency window). A restart re-floors to the new start time.
+    session_start = time.time()
+    print(f"Auto polling started. interval={interval}s dry_run={'yes' if dry_run_override else 'env/default'} "
+          f"(alerting only jobs posted from launch onward)")
     while True:
         started = int(time.time())
         # Reload settings each cycle so interval / active-hours edits made in the
@@ -592,7 +611,7 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
 
         print(f"\n[{started}] Running fetch/score cycle...")
         try:
-            run(dry_run_override=dry_run_override)
+            run(dry_run_override=dry_run_override, notify_floor_epoch=session_start)
         except KeyboardInterrupt:
             raise
         except Exception as exc:
@@ -633,6 +652,19 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _port_in_use(host: str, port: int) -> bool:
+    """True if something is already accepting TCP connections on ``host:port``.
+
+    Used as the reliable single-instance lock for ``serve`` — if the web UI port
+    answers, another bot is already running, so a second one must not start (two
+    polling loops would double-send every notification)."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        # connect_ex == 0 means the port accepted the connection (someone's listening).
+        return sock.connect_ex((host, port)) == 0
+
+
 def serve_app(host: str = "127.0.0.1", port: int = 8765) -> None:
     """Run the web UI and the polling loop together in ONE process.
 
@@ -656,7 +688,19 @@ def serve_app(host: str = "127.0.0.1", port: int = 8765) -> None:
         sys.stderr = log
 
     pid_path = "bot.pid"
-    # Single-instance guard: a second polling loop would notify every job twice.
+    # Single-instance guard #1 (primary, reliable): if the web UI port is already
+    # accepting connections, another bot is live. This does NOT depend on writing
+    # bot.pid (which can silently fail on macOS / in protected folders, leaving the
+    # file guard useless) and is checked BEFORE the polling thread starts, so a
+    # second launch can never sneak in a duplicate poll loop and double-notify.
+    if _port_in_use(host, port):
+        print(
+            f"A bot is already running on {host}:{port}; not starting a second one "
+            f"(that would send every notification twice). Open http://{host}:{port}, "
+            f"or stop the existing one first."
+        )
+        return
+    # Single-instance guard #2 (best-effort): a live PID from a previous run.
     existing = _read_pid(pid_path)
     if existing and existing != os.getpid() and _pid_alive(existing):
         print(
