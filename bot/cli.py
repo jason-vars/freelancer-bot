@@ -11,6 +11,7 @@ from freelancersdk.resources.users import users as fln_users
 from .config import load_settings
 from .db import (
     bid_exists_for_project,
+    claim_project_for_notify,
     connect,
     count_bids_today,
     count_projects_by_filter_reason,
@@ -545,26 +546,34 @@ def run(dry_run_override: bool | None = None, notify_floor_epoch: float | None =
             print(f"[{p['id']}] score={res.score} min_score={s.min_score} -> skip")
             continue
 
+        # Outside the notification window: collect but DON'T alert, and mark it
+        # handled ('notify_skipped') so it is never alerted later either. Checked
+        # BEFORE the claim below so out-of-window jobs are not left stuck mid-claim.
+        # This is what makes alerts start fresh at the window edge instead of
+        # replaying a backlog of jobs found while the window was closed.
+        if s.notify_enabled and s.telegram_targets and not s.notify_window_open():
+            set_project_score_and_status(conn, int(p["id"]), int(res.score), "notify_skipped")
+            print(f"[{p['id']}] score={res.score} -> alert skipped (outside notification window)")
+            continue
+
+        # ATOMIC CLAIM: transition the row out of 'new'/'alert_failed' in one UPDATE
+        # so exactly ONE cycle/instance can send this job. Losers skip — this is the
+        # guard against duplicate notifications (same job sent twice).
+        if not claim_project_for_notify(conn, int(p["id"]), int(res.score)):
+            print(f"[{p['id']}] already claimed for alert (another cycle/instance) -> skip")
+            continue
+
         # Optionally generate + save a proposal draft to the DB for review (testing
         # before enabling real bids). Guarded by BOT_SAVE_PROPOSALS; idempotent.
         _maybe_save_proposal(conn, s, p)
 
-        # Mark the final status by the SEND OUTCOME, not before attempting it, so a
-        # failed delivery can never masquerade as 'alerted'. send_telegram_message
-        # already retries transient errors; if it still fails we record
-        # 'alert_failed' and pick it up again next cycle.
+        # Mark the final status by the SEND OUTCOME. send_telegram_message already
+        # retries transient errors; if it still fails we record 'alert_failed' and
+        # re-claim it next cycle.
         outcome = _notify_telegram_polling(
             conn, s, dict(p), None,
             {"ok": True, "project_id": int(p["id"]), "score": int(res.score)},
         )
-        if outcome is not None and outcome.get("out_of_window"):
-            # Outside the notification window: collect but DON'T alert, and mark it
-            # handled ('notify_skipped') so it is never alerted later either. This is
-            # what makes alerts start fresh at the window edge instead of replaying a
-            # backlog of jobs found while the window was closed.
-            set_project_score_and_status(conn, int(p["id"]), int(res.score), "notify_skipped")
-            print(f"[{p['id']}] score={res.score} -> alert skipped (outside notification window)")
-            continue
         if outcome is None or outcome.get("sent"):
             # None => Telegram not configured (notifications disabled): treat as
             # handled so it isn't retried forever.

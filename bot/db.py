@@ -292,6 +292,27 @@ def set_project_score_and_status(conn: sqlite3.Connection, project_id: int, scor
     )
     conn.commit()
 
+
+def claim_project_for_notify(conn: sqlite3.Connection, project_id: int, score: int) -> bool:
+    """Atomically claim a project for exactly ONE notification attempt.
+
+    Flips status ``new``/``alert_failed`` -> ``alerting`` in a single UPDATE and
+    returns True only for the caller that actually changed the row. Because SQLite
+    serializes writes, when two poll cycles OR two bot instances sharing this DB
+    race for the same project, only the first UPDATE matches a row (rowcount 1);
+    the rest see the status already moved to ``alerting`` (rowcount 0) and MUST
+    NOT send. This is what prevents the same job being alerted twice.
+
+    The winner later sets the final status: ``alerted`` on success, or
+    ``alert_failed`` to release it for a retry next cycle."""
+    cur = conn.execute(
+        "UPDATE projects SET score=?, status='alerting' "
+        "WHERE id=? AND status IN ('new', 'alert_failed')",
+        (int(score), int(project_id)),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
 def delete_project(conn: sqlite3.Connection, project_id: int) -> None:
     conn.execute("DELETE FROM projects WHERE id=?", (project_id,))
     conn.commit()
