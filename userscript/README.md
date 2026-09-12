@@ -22,6 +22,9 @@ lightest way to do that (no extension to package/sign).
    returns `{ proposal, amount, period, currency }`.
 5. The script fills the bid textarea + amount + period, and shows a status badge
    (bottom-right). Click the badge to re-fill.
+6. With **auto-bid ON** (the default), it then counts down 5 seconds and clicks
+   Freelancer's own **Place Bid** button for you. Press **Esc** during the countdown
+   to stop it.
 
 ## Install
 
@@ -43,6 +46,8 @@ auto-fill couldn't find the bid box (e.g. a slow page, or you opened the form la
 | Generate & fill | ✨ Generate | **Alt+G** | Re-fetch the proposal from the bot and fill the bid form (proposal + amount + period). |
 | Place bid | 🚀 Place bid | **Alt+B** | Clicks Freelancer's own **Place Bid** / **Create Bid** button. |
 | Seal | — | **Alt+S** | Toggles the free **Sealed** upgrade checkbox. |
+| Auto-bid | 🤖 Auto-bid: ON/OFF | **Alt+A** | Turns automatic placing on/off. Remembered per browser. |
+| Cancel | — | **Esc** | Aborts a running auto-bid countdown. |
 
 The status line at the top of the panel shows what happened (filled fields, skip
 reason, or errors).
@@ -51,10 +56,22 @@ reason, or errors).
 - **Sealed upgrade** — when Freelancer offers the free *Sealed* entry (hide your bid
   from other freelancers), it's checked automatically. Only the *free* Sealed option
   is touched — paid upgrades (Sponsored, Highlight) are never enabled.
+- **Auto-bid** — once the proposal lands in the box, the panel counts down and then
+  clicks **Place Bid** itself. Guard rails:
+  - Only when the **proposal** actually filled — never on an empty/leftover box.
+  - It waits (up to 15s) for Freelancer's button to become *enabled*, i.e. for their
+    own form validation to pass, so amount/period problems stop the bid.
+  - At most **once per project per tab** — re-generating or an SPA re-render can't
+    double-submit — and it re-checks "already bid" immediately before clicking.
+  - **Esc** cancels, and so does pressing ✨ Generate again (the countdown restarts
+    with the new text).
+- Change the 5s window with `AUTO_BID_DELAY_MS` at the top of the script (`0`
+  submits immediately), or set `AUTO_BID_DEFAULT = false` to have it start OFF.
 
-> **Place Bid is a real action.** Alt+B / the button submits the bid on Freelancer
-> (subject to Freelancer's own confirmation, if any). The shortcut uses **Alt** so it
-> can't fire while you're typing in the proposal box.
+> **Place Bid is a real action.** It submits the bid on Freelancer (subject to
+> Freelancer's own confirmation, if any) and spends a bid credit. With auto-bid ON
+> that happens without a click, so keep the panel in view — or press **Alt+A** to
+> turn it off and go back to placing bids by hand.
 
 ## Requirements / notes
 

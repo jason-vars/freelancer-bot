@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.10.0
-// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically. Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
+// @version      1.11.0
+// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; toggle with Alt+A). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
@@ -21,6 +21,13 @@
   // Re-use an already-fetched proposal for the same project within this tab so a
   // page refresh doesn't spend a second OpenAI call. Cleared when the tab closes.
   const CACHE = window.sessionStorage;
+  // How long the auto-bid countdown runs after the form is filled. Placing a bid
+  // spends a bid credit and is visible to the client, so there's always a window to
+  // read the proposal and hit Esc before it submits. Set to 0 to submit immediately.
+  const AUTO_BID_DELAY_MS = 5000;
+  // Default for the auto-bid toggle the first time the script runs in a browser
+  // (afterwards the panel button / Alt+A decides, persisted in localStorage).
+  const AUTO_BID_DEFAULT = true;
 
   // ── Derive the project's seo slug from the page URL ───────────────────────
   // /projects/<category>/<slug>/details  ->  <category>/<slug>
@@ -108,6 +115,7 @@
   // ── Floating control panel: status + manual buttons (always available, even
   // when auto-fill couldn't find the bid box on a slow page) ─────────────────
   let statusEl = null;
+  let autoBtn = null;
   function mkBtn(label, color, onClick) {
     const b = document.createElement("button");
     b.textContent = label;
@@ -120,6 +128,10 @@
   function buildPanel() {
     if (statusEl) return;
     const panel = document.createElement("div");
+    // Tag the panel so findPlaceBidButton() can exclude our own "Place bid" button —
+    // it matches the same text as Freelancer's and would otherwise make auto-bid click
+    // itself in a loop on pages where the real bid form isn't rendered.
+    panel.setAttribute("data-fbb-panel", "1");
     panel.style.cssText =
       "position:fixed;z-index:2147483647;right:16px;bottom:16px;display:flex;flex-direction:column;" +
       "gap:8px;width:250px;padding:12px;border-radius:12px;background:#12172a;border:1px solid #2c3550;" +
@@ -130,12 +142,18 @@
     const row = document.createElement("div");
     row.style.cssText = "display:flex;gap:8px;";
     row.appendChild(mkBtn("✨ Generate", "#3b82f6", () => run(true)));
-    row.appendChild(mkBtn("🚀 Place bid", "#e0218a", () => placeBid()));
+    row.appendChild(mkBtn("🚀 Place bid", "#e0218a", () => placeBid(0)));
+    autoBtn = mkBtn("", "#334155", () => setAutoBid(!autoBidOn()));
+    paintAutoBtn();
+    const autoRow = document.createElement("div");
+    autoRow.style.cssText = "display:flex;gap:8px;";
+    autoRow.appendChild(autoBtn);
     const hint = document.createElement("div");
     hint.style.cssText = "font-weight:400;font-size:11px;color:#7a85a6;";
-    hint.textContent = "Alt+G generate · Alt+B place bid · Alt+S seal";
+    hint.textContent = "Alt+G generate · Alt+B place bid · Alt+S seal · Alt+A auto · Esc cancel";
     panel.appendChild(statusEl);
     panel.appendChild(row);
+    panel.appendChild(autoRow);
     panel.appendChild(hint);
     document.body.appendChild(panel);
   }
@@ -149,6 +167,26 @@
     statusEl.style.cssText =
       "padding:6px 8px;border-radius:8px;line-height:1.35;" + (colors[kind] || colors.info);
     statusEl.textContent = "🤖 " + text;
+  }
+
+  // ── Auto-bid toggle (persisted per browser, not per tab) ───────────────────
+  const AUTO_KEY = "fbb:autobid";
+  function autoBidOn() {
+    try {
+      const v = window.localStorage.getItem(AUTO_KEY);
+      return v === null ? AUTO_BID_DEFAULT : v === "1";
+    } catch (e) { return AUTO_BID_DEFAULT; }
+  }
+  function setAutoBid(on) {
+    try { window.localStorage.setItem(AUTO_KEY, on ? "1" : "0"); } catch (e) {}
+    if (!on) cancelAutoBid("Auto-bid off — bids are placed only when you say so.");
+    paintAutoBtn();
+  }
+  function paintAutoBtn() {
+    if (!autoBtn) return;
+    const on = autoBidOn();
+    autoBtn.textContent = on ? "🤖 Auto-bid: ON" : "✋ Auto-bid: OFF";
+    autoBtn.style.background = on ? "#166534" : "#334155";
   }
 
   // ── Value setter that frameworks (Angular/React) actually notice ──────────
@@ -250,18 +288,60 @@
   }
 
   // Freelancer's submit button is "Place Bid" or "Create Bid" (never "Write my bid",
-  // which is their own AI writer — excluded by the verb list).
+  // which is their own AI writer — excluded by the verb list). Buttons inside our own
+  // panel are skipped (ours says "Place bid" too), and so are disabled ones: Angular
+  // keeps the real button disabled until the form validates, and clicking it then is a
+  // silent no-op — auto-bid waits for it to go live instead.
+  function btnDisabled(b) {
+    return (
+      b.disabled === true ||
+      b.getAttribute("aria-disabled") === "true" ||
+      b.classList.contains("disabled") ||
+      /(^|\s)(is-)?disabled(\s|$)/i.test(b.className || "")
+    );
+  }
   function findPlaceBidButton() {
     const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
     return (
       btns.find(
-        (b) => b.offsetParent !== null && /(place|update|submit)\s*bid/i.test((b.textContent || "").trim())
+        (b) =>
+          b.offsetParent !== null &&
+          !b.closest("[data-fbb-panel]") &&
+          !btnDisabled(b) &&
+          /(place|update|submit)\s*bid/i.test((b.textContent || "").trim())
       ) || null
     );
   }
-  function placeBid() {
-    const btn = findPlaceBidButton();
-    if (!btn) { badge("Place-bid button not found (is the bid form open?).", "err"); return; }
+  // Resolve with the button as soon as it exists AND is clickable, or null on timeout.
+  // timeoutMs = 0 → a single immediate check (what the manual button/Alt+B does).
+  function waitForPlaceBidButton(timeoutMs) {
+    return new Promise((resolve) => {
+      const first = findPlaceBidButton();
+      if (first || !timeoutMs) return resolve(first);
+      const started = Date.now();
+      const iv = setInterval(() => {
+        const b = findPlaceBidButton();
+        if (b || Date.now() - started > timeoutMs) { clearInterval(iv); resolve(b); }
+      }, 300);
+    });
+  }
+  // waitMs: how long to wait for the button to become clickable (0 = check once).
+  // isAuto: submitted by the countdown, not by you — then a bid that already exists is
+  // a hard stop. A manual click still goes through, because on an existing bid the same
+  // button reads "Update bid" and clicking it is exactly what you asked for.
+  async function placeBid(waitMs, isAuto) {
+    cancelAutoBid(null); // a manual place-bid supersedes any pending countdown
+    if (isAuto && hasAlreadyBid()) { badge("Already bid on this project — auto-bid skipped.", "info"); return; }
+    const btn = await waitForPlaceBidButton(waitMs || 0);
+    if (!btn) {
+      badge(
+        waitMs
+          ? "Place Bid never became clickable — check the form and place it manually."
+          : "Place-bid button not found or disabled (is the bid form complete?).",
+        "err"
+      );
+      return;
+    }
     btn.click();
     badge("Clicked Place Bid — confirming…", "info");
     // Only mark applied once Freelancer ACTUALLY confirms the bid (a Retract control or
@@ -281,6 +361,46 @@
         badge("Couldn't confirm the bid was placed — not marking applied. If it did go through, use 🔄 Sync.", "info");
       }
     }, 500);
+  }
+
+  // ── Auto-place the bid once the form is filled ────────────────────────────
+  // Runs after a successful fill when auto-bid is ON. A visible countdown gives you
+  // AUTO_BID_DELAY_MS to read the proposal and hit Esc (or Generate again) before it
+  // submits. It fires at most once per project per tab, so an SPA re-render or a
+  // manual re-generate can never double-submit, and it re-checks "already bid" right
+  // before clicking.
+  let autoTimer = null;
+  function cancelAutoBid(msg) {
+    if (!autoTimer) return false;
+    clearInterval(autoTimer);
+    autoTimer = null;
+    if (msg) badge(msg, "info");
+    return true;
+  }
+  function scheduleAutoBid(filledNote) {
+    if (!autoBidOn()) { badge(filledNote + " — auto-bid off, press 🚀 / Alt+B.", "ok"); return; }
+    const seo = currentSeo();
+    const once = seo ? "fbb:auto:" + seo : null;
+    if (once && CACHE.getItem(once)) {
+      badge(filledNote + " — auto-bid already ran here, press 🚀 / Alt+B.", "ok");
+      return;
+    }
+    cancelAutoBid(null);
+    let left = Math.ceil(AUTO_BID_DELAY_MS / 1000);
+    const tick = () => badge(filledNote + " — placing bid in " + left + "s (Esc cancels).", "ok");
+    const fire = () => {
+      cancelAutoBid(null);
+      if (once) CACHE.setItem(once, "1");
+      badge("Auto-placing bid…", "info");
+      placeBid(15000, true); // the button is often still disabled while Angular validates
+    };
+    if (left <= 0) return fire();
+    tick();
+    autoTimer = setInterval(() => {
+      left -= 1;
+      if (left > 0) tick();
+      else fire();
+    }, 1000);
   }
 
   // ── Tell the bot you've applied so the Jobs page shows it as done ──────────
@@ -386,6 +506,7 @@
     if (!seo) return;
     if (!force && seo === lastSeo) return; // already handled this project in-tab
     lastSeo = seo;
+    cancelAutoBid(null); // a fresh generate restarts the countdown with the new text
 
     const state = await waitForBidState(90000);
     if (state === "alreadybid") {
@@ -427,7 +548,9 @@
       }
       if (!cached) CACHE.setItem(cacheKey, JSON.stringify(data));
       const filled = fillForm(data);
-      if (filled.includes("proposal")) badge("Filled: " + filled.join(", "), "ok");
+      // Only auto-place when the proposal itself landed — without it the bid would be
+      // submitted empty (or with whatever was in the box before).
+      if (filled.includes("proposal")) scheduleAutoBid("Filled: " + filled.join(", "));
       else badge("Got proposal but couldn't find the bid box.", "err");
     } catch (msg) {
       badge(String(msg), "err");
@@ -436,11 +559,23 @@
 
   // ── Keyboard shortcuts (Alt+letter so they don't fire while typing a bid) ──
   document.addEventListener("keydown", (e) => {
+    // Esc aborts a pending auto-bid — works without Alt (and without stealing the key
+    // when no countdown is running, so Freelancer's own dialogs still close).
+    if ((e.key === "Escape" || e.key === "Esc") && !e.altKey) {
+      if (cancelAutoBid("Auto-bid cancelled — press 🚀 / Alt+B when you're ready.")) e.preventDefault();
+      return;
+    }
     if (!e.altKey || e.ctrlKey || e.metaKey) return;
     const k = (e.key || "").toLowerCase();
     if (k === "g") { e.preventDefault(); run(true); }
-    else if (k === "b") { e.preventDefault(); placeBid(); }
+    else if (k === "b") { e.preventDefault(); placeBid(0); }
     else if (k === "s") { e.preventDefault(); badge(checkSealed() ? "Sealed checked." : "Sealed option not found.", "info"); }
+    else if (k === "a") {
+      e.preventDefault();
+      const on = !autoBidOn();
+      setAutoBid(on);
+      if (on) badge("Auto-bid ON — a filled form submits after " + Math.ceil(AUTO_BID_DELAY_MS / 1000) + "s.", "info");
+    }
   });
 
   // Build the panel immediately so the buttons exist even if the bid box never
@@ -452,6 +587,7 @@
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
       lastSeo = null;
+      cancelAutoBid(null); // never let a countdown from the previous project fire here
       run(false);
     }
   }, 1000);
