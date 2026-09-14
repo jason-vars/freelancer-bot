@@ -72,7 +72,15 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
         "- Keep it UNDER 200 words AND under 1200 characters.",
         "- Open with a strong one-line hook that immediately shows you understand THIS specific project.",
         "- Plain text only: NO bullet points, NO numbered lists, NO markdown, NO backslash (\\) characters.",
-        "- Write one sentence per line. Do NOT use empty lines, except at most a single blank line right before the closing.",
+        # Blank-line policy is the one built-in rule custom instructions routinely
+        # contradict (a three-block layout needs blank lines between the blocks). When
+        # the user supplies instructions, their layout wins and only the
+        # one-sentence-per-line habit is kept; otherwise the tight default stands.
+        (
+            "- Write one sentence per line. Your own instructions below decide where blank lines go."
+            if (user_instructions or "").strip()
+            else "- Write one sentence per line. Do NOT use empty lines, except at most a single blank line right before the closing."
+        ),
         "- Confident, natural, human. No emojis, no fluff, no fake claims. Use ',' never ';'.",
     ]
     if include_profile and has_portfolio:
@@ -199,7 +207,10 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     if data.include_profile:
         blocks += [
             "",
-            "Facts about you (draw on these, do NOT invent others, do NOT list them verbatim):",
+            # Headed "MY FACTS" because that is the name custom instructions refer to
+            # ("use only what MY FACTS gives you"). A prompt that cites a section the
+            # model can't find has nothing to write its credibility lines from.
+            "MY FACTS — true facts about you (draw on these, do NOT invent others, do NOT list them verbatim):",
             "\n".join(f"- {b}" for b in bullets),
         ]
         if has_portfolio:
