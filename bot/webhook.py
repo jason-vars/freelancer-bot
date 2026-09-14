@@ -112,10 +112,10 @@ def choose_bid_from_rules(
 
 
 def _build_proposal(s, project: dict[str, Any]) -> str:
-    questions = [
-        "Do you already have designs/wireframes, or should I propose a simple UI?",
-        "What’s your ideal deadline and must-have features for v1?",
-    ]
+    # Deliberately empty: canned closers ("your ideal deadline?", "do you have
+    # wireframes?") fit any job, which is exactly what makes them read as a template.
+    # The system rule makes the model derive its question from this post instead.
+    questions: list[str] = []
     # Style-consistent fallback (no empty lines, no ";", short question at start/end).
     fallback = (
         "Hi!\n"

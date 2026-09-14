@@ -93,7 +93,20 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
     elif not include_profile:
         lines.append("- Do NOT include portfolio links or a profile/experience dump.")
     if ask_question:
-        lines.append("- End with exactly ONE short, specific question to the client.")
+        # Questions are earned, not mandatory. Forcing one onto a fully-specified post
+        # produces filler the client reads as a template ("what's your ideal deadline?").
+        # So: ask only when the post is genuinely ambiguous, otherwise spend the last
+        # lines proving you already know how to build it.
+        lines.append(
+            "- Ask a question ONLY when the post leaves something genuinely unclear that would change HOW you build "
+            "it. In that case end with one or two short questions, each drawn from THIS post (their feature, data, "
+            "edge case, platform, or integration). NEVER a generic closer about deadlines, timelines, budget, or "
+            "when to start."
+        )
+        lines.append(
+            "- When the post is already clear enough to start, ask NOTHING. End instead with a short concrete plan: "
+            "the first two or three steps you would actually take on THIS job, one per line, naming their features."
+        )
     else:
         lines.append("- Do NOT ask any questions.")
     lines.append(

@@ -103,7 +103,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("BOT_INCLUDE_PROFILE", "Include profile description", "bool",
               "ON = weave your proof bullets + portfolio into the proposal.", "1"),
         Field("BOT_ASK_QUESTION", "Ask a question in proposal", "bool",
-              "ON = open and close with a short question to the client.", "1"),
+              "ON = ask 1-2 questions only when the post is genuinely unclear, otherwise close with a short plan. "
+              "OFF = never ask.", "1"),
         Field("BOT_PROPOSAL_TEMPLATE", "Default template (advanced)", "textarea",
               "A sample proposal the AI imitates for tone/structure. Blank = built-in style example.", ""),
         Field("BOT_PROPOSAL_PREFIX", "Text at start", "text",
@@ -1061,7 +1062,10 @@ def _generate_proposal(s, proj: dict) -> tuple[str | None, str | None]:
                 s, title=proj["title"] or "", description=proj["description"] or "",
                 skills=proj["skills"] or "", budget_min=proj["budget_min"],
                 budget_max=proj["budget_max"], currency=proj["currency"],
-                questions=["What is your ideal deadline?"],
+                # No canned questions: a suggested closer only pulls the model toward a
+                # generic "what's your deadline?" ending. The system rule already requires
+                # one question drawn from THIS job post.
+                questions=[],
             ),
         )
         return text, None

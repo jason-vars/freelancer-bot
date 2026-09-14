@@ -244,7 +244,12 @@ FIELD_DOCS: dict[str, str] = {
     "BOT_PROPOSAL_TEMPLATE": "A sample proposal the AI imitates for tone/structure. Blank = the built-in style example.",
     "BOT_INCLUDE_NAME": "On = sign proposals with your name on the last line.",
     "BOT_INCLUDE_PROFILE": "On = include your proof bullets and portfolio references in proposals.",
-    "BOT_ASK_QUESTION": "On = open and close each proposal with a short question (engagement nudge).",
+    "BOT_ASK_QUESTION": (
+        "On = the AI may end with 1-2 short questions, but ONLY when the job post leaves something genuinely "
+        "unclear that would change how it's built. When the post is clear it asks nothing and closes with a "
+        "short concrete plan instead, so you never send a filler question like 'what is your ideal deadline?'. "
+        "Off = never ask anything."
+    ),
     "BOT_PROPOSAL_PREFIX": "Literal text prepended verbatim to every proposal (e.g. a greeting).",
     "BOT_PROPOSAL_SUFFIX": "Literal text appended verbatim to every proposal (e.g. a sign-off).",
     "BOT_AI_FILTER_ENABLED": "On = screen each candidate job with an extra AI accept/reject call (more OpenAI cost per job).",

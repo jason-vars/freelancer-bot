@@ -195,7 +195,7 @@ def _gen_one_proposal(s, conn, project: dict, save: bool) -> None:
                 title=title, description=description,
                 budget_min=budget_min, budget_max=budget_max, currency=currency,
                 skills=skills,
-                questions=["What is your ideal deadline?"],
+                questions=[],  # see _generate_proposal in webui.py — no canned closers
             ),
         )
     except Exception as exc:
