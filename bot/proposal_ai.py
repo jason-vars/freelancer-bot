@@ -272,12 +272,38 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     # Client-required verification word (anti-AI check) goes ABOVE everything else.
     lead = detect_required_lead(api_key, model, data.description)
     return _assemble(
-        body,
+        _strip_lead_from_body(body, lead),
         lead=lead,
         prefix=data.prefix,
         suffix=data.suffix,
         signature=signature if data.include_name else "",
     )
+
+
+def _strip_lead_from_body(body: str, lead: str) -> str:
+    """Drop the client's required opening phrase when the model wrote it anyway.
+
+    The system prompt tells the model to leave the verification word alone because
+    :func:`_assemble` prepends it — but the JOB POST tells the model to start with it,
+    and the post usually wins. That produced proposals opening with the phrase twice
+    ('"ARCHITECTURE FIRST"' then 'ARCHITECTURE FIRST'), which looks worse than either
+    choice alone. Compares loosely (case, quotes and punctuation ignored) so 'Bundle.'
+    and '"bundle"' are both recognised as the same line."""
+    if not (lead or "").strip():
+        return body
+    norm = lambda s: re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+    target = norm(lead)
+    if not target:
+        return body
+    lines = body.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if lines and norm(lines[0]) == target:
+        lines.pop(0)
+        while lines and not lines[0].strip():
+            lines.pop(0)
+        return "\n".join(lines).strip()
+    return body
 
 
 def _sanitize(text: str) -> str:
