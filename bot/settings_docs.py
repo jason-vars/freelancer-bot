@@ -83,6 +83,14 @@ FIELD_DOCS: dict[str, str] = {
         "dropped. Webhook-path only. Blank = block none."
     ),
     # ── Bot behaviour ─────────────────────────────────────────────────────────
+    "BOT_FETCH_ENABLED": (
+        "Master on/off for fetching jobs in the polling loop. On (default) = fetch every "
+        "cycle (within Active hours). Off = the bot keeps running but skips fetching, so "
+        "no new jobs, alerts or polling auto-bids; Telegram Approve buttons you already "
+        "have still work. Picked up on the next cycle, no restart needed. When switched "
+        "back On, only jobs posted from that moment are alerted - nothing from the pause "
+        "is replayed. Does not affect the webhook path."
+    ),
     "BOT_AUTO_APPLY": (
         "Master start/stop for AUTOMATIC bidding. Off (default) = the bot never "
         "submits a bid on its own — it collects jobs, generates/saves draft "

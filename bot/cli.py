@@ -599,6 +599,7 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
     session_start = time.time()
     print(f"Auto polling started. interval={interval}s dry_run={'yes' if dry_run_override else 'env/default'} "
           f"(alerting only jobs posted from launch onward)")
+    paused = False
     while True:
         started = int(time.time())
         # Reload settings each cycle so interval / active-hours edits made in the
@@ -606,6 +607,20 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
         cur = load_settings()
         if interval_seconds is None:
             interval = max(1, int(cur.poll_interval_seconds))
+
+        # "Fetch jobs" OFF in the web UI pauses polling without stopping the process.
+        # On resume the alert floor moves to now, so jobs posted while paused are not
+        # replayed as a backlog (same idea as the notification window).
+        if not cur.fetch_enabled:
+            if not paused:
+                print(f"\n[{started}] Fetching paused (Fetch jobs = OFF in Settings).")
+            paused = True
+            time.sleep(interval)
+            continue
+        if paused:
+            paused = False
+            session_start = time.time()
+            print(f"\n[{started}] Fetching resumed; alerting only jobs posted from now on.")
 
         # Evaluate the active window in the configured timezone (or machine local
         # time when no offset is set). Logs the perceived clock so a timezone

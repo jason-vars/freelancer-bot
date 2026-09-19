@@ -66,6 +66,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
         for suffix, key, label in SKIPPABLE_UPGRADES
     ]),
     ("Bot behaviour", [
+        Field("BOT_FETCH_ENABLED", "Fetch jobs", "bool",
+              "ON = the polling loop fetches new jobs every cycle. OFF = pause fetching (and so alerts + auto-bids from polling) without stopping the bot. Takes effect on the next cycle.", "1"),
         Field("BOT_AUTO_APPLY", "Auto-apply (auto-bid)", "bool",
               "Master switch for AUTOMATIC bidding. OFF = bot only collects + notifies; you apply manually. ON = the webhook path can auto-bid. Manual Apply/Auto-bid buttons always work.", "0"),
         Field("BOT_AUTOAPPLY_START", "Auto-apply from", "time",
