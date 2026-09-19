@@ -330,10 +330,9 @@ def _render(values: dict[str, str], *, saved: bool, errors: dict[str, str]) -> s
             elif f.kind == "time":
                 control = f'<input type="time" name="{f.key}" value="{esc(cur)}">'
             elif f.kind == "textarea":
-                # Stored escaped (\\n) for the single-line .env — decode back to real
-                # newlines so multi-line values are editable.
-                disp = cur.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
-                control = f'<textarea name="{f.key}" rows="4" placeholder="{esc(ph)}">{esc(disp)}</textarea>'
+                # read_env already decoded the stored escapes (\\n, \\"), so a second
+                # decode here would mangle literal backslashes in the text.
+                control = f'<textarea name="{f.key}" rows="4" placeholder="{esc(ph)}">{esc(cur)}</textarea>'
             elif f.kind == "select":
                 opts = list(f.choices)
                 if cur and cur not in {v for v, _ in opts}:
@@ -480,6 +479,8 @@ _JOBS_STYLE = """
   .title a { color: #e6e8ef; text-decoration: none; font-weight: 600; }
   .title a:hover { color: #8ec5ff; }
   .meta { color: #7a85a6; font-size: 12px; margin-top: 3px; }
+  .why { color: #f2a86a; font-size: 12px; font-weight: 600; margin-top: 4px; }
+  mark.hit { background: #5a2a1a; color: #ffb38a; border-radius: 3px; padding: 0 2px; }
   .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; }
   .utags { margin-top: 5px; display: flex; flex-wrap: wrap; gap: 5px; }
@@ -716,6 +717,48 @@ _UPGRADE_BADGE_COLORS: dict[str, tuple[str, str]] = {
 }
 
 
+def _mark_term(text: str, term: str) -> str:
+    """HTML-escape ``text`` and wrap each case-insensitive occurrence of ``term``
+    in <mark>, the same substring match the keyword/skill filters use."""
+    if not term:
+        return html.escape(text)
+    import re
+    parts = re.split(f"({re.escape(term)})", text, flags=re.IGNORECASE)
+    return "".join(
+        f'<mark class="hit">{html.escape(p)}</mark>' if i % 2 else html.escape(p)
+        for i, p in enumerate(parts)
+    )
+
+
+def _explain_filter(reason: str) -> tuple[str, str, str]:
+    """Split a stored filter_reason into (human text, highlight target, term).
+
+    The target says where the blocked term appears: "title", "skills" or "" (none)."""
+    code, _, detail = (reason or "").partition(":")
+    q = f"“{detail}”"
+    table = {
+        "title_keyword_blocked": (f"Blocked title keyword {q}", "title"),
+        "desc_keyword_blocked": (f"Blocked description keyword {q}", ""),
+        "skill_blocked": (f"Blocked skill {q}", "skills"),
+        "upgrade_blocked": (f"Skipped project type {q}", ""),
+        "currency_skipped": (f"Skipped currency {detail}", ""),
+        "budget_too_low": (f"Budget too low (max {detail})", ""),
+        "project_too_old": (f"Too old when found ({detail} after posting)", ""),
+        "bid_ending_soon": (f"Bidding closes soon ({detail.replace('_', ' ')})", ""),
+        "posted_before_session_start": ("Posted before the bot started", ""),
+        "country_blocked": ("Client country is blocked", ""),
+        "country_not_allowed": ("Client country not in allowed list", ""),
+        "client_completed_jobs_too_low": ("Client has too few completed jobs", ""),
+        "client_payment_unverified": ("Client payment not verified", ""),
+        "client_payment_unknown": ("Client payment status unknown", ""),
+        "score": (f"Score too low ({detail})", ""),
+    }
+    if code == "ai_filter":
+        return "AI filter rejected: " + detail.partition(":")[2], "", ""
+    text, target = table.get(code, (reason, ""))
+    return text, target, (detail if target else "")
+
+
 def _row_upgrade_badges(raw_json: Any) -> str:
     """Small pills for a project's active upgrade flags (NDA, Preferred, ...), parsed
     from the stored raw payload. Empty string when the project has none."""
@@ -785,15 +828,24 @@ def _render_jobs(
             bg, fg = _STATUS_COLORS.get(st, ("#2a2f40", "#cdd5ee"))
             url = _job_url(r["url"])
             title = esc(r["title"] or f"Project {r['id']}")
-            title_html = (
-                f'<a href="{esc(url)}" target="_blank" rel="noopener">{title}</a>'
-                if url else title
-            )
             skills = esc(r["skills"] or "")
             reason = r["filter_reason"]
-            meta_bits = [b for b in (f"#{r['id']}", skills) if b]
+            # Filtered rows say WHY in plain words and highlight the blocked term
+            # where it matched (title or skill badge).
+            why_html = ""
+            title_shown = title
             if st == "filtered" and reason:
-                meta_bits.append(f"reason: {esc(reason)}")
+                why, target, term = _explain_filter(reason)
+                if target == "title":
+                    title_shown = _mark_term(r["title"] or "", term)
+                elif target == "skills":
+                    skills = _mark_term(r["skills"] or "", term)
+                why_html = f'<div class="why">⛔ {esc(why)}</div>'
+            title_html = (
+                f'<a href="{esc(url)}" target="_blank" rel="noopener">{title_shown}</a>'
+                if url else title_shown
+            )
+            meta_bits = [b for b in (f"#{r['id']}", skills) if b]
             score = r["score"] if r["score"] is not None else 0
             bids = r["bid_count"] if r["bid_count"] is not None else "—"
             # A project we've already bid on (real or draft) shows a marker instead
@@ -820,7 +872,7 @@ def _render_jobs(
             badges = _row_upgrade_badges(r["raw_json"])
             body.append(
                 "<tr>"
-                f'<td class="title">{title_html}<div class="meta">{" · ".join(meta_bits)}</div>{badges}</td>'
+                f'<td class="title">{title_html}<div class="meta">{" · ".join(meta_bits)}</div>{why_html}{badges}</td>'
                 f'<td><span class="pill" style="background:{bg};color:{fg}">{esc(st)}</span></td>'
                 f'<td class="num">{esc(score)}</td>'
                 f'<td class="num">{esc(_fmt_budget(r))}</td>'

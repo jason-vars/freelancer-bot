@@ -34,6 +34,23 @@ def _unescape(s: str) -> str:
     return "".join(out)
 
 
+def _closing_quote(vp: str, quote: str) -> int:
+    """Index of the quote closing ``vp`` (which starts with ``quote``), or -1.
+
+    Inside double quotes a backslash escapes the next character, so an escaped
+    ``\\"`` in the text does not end the value (the web UI writes quotes that way)."""
+    i = 1
+    while i < len(vp):
+        ch = vp[i]
+        if quote == '"' and ch == "\\":
+            i += 2
+            continue
+        if ch == quote:
+            return i
+        i += 1
+    return -1
+
+
 def _strip_value(value_part: str) -> str:
     """Turn the right-hand side of a KEY=VALUE line into its effective value.
 
@@ -44,7 +61,7 @@ def _strip_value(value_part: str) -> str:
     vp = value_part.strip()
     if vp and vp[0] in ("'", '"'):
         quote = vp[0]
-        end = vp.find(quote, 1)
+        end = _closing_quote(vp, quote)
         if end != -1:
             inner = vp[1:end]
             return _unescape(inner) if quote == '"' else inner
