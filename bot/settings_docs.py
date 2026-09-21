@@ -101,8 +101,8 @@ FIELD_DOCS: dict[str, str] = {
     ),
     "SLACK_WEBHOOK_URL": (
         "Slack Incoming Webhook URL (https://hooks.slack.com/services/...). When set, "
-        "every job alert is ALSO posted to that channel, with the same facts as the "
-        "Telegram alert. Blank = Telegram only. The channel is fixed by the webhook "
+        "every job alert is ALSO posted to that channel as a short summary (title link, "
+        "budget, score, bids, client - no description). Blank = Telegram only. The channel is fixed by the webhook "
         "itself. Slack webhook posts carry no buttons, so Mark-read stays on Telegram. "
         "Obeys 'Send notifications' and the notify window; a Slack failure never blocks "
         "the Telegram alert."

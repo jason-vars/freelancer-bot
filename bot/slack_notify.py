@@ -1,8 +1,8 @@
 """Slack alerts via an Incoming Webhook (SLACK_WEBHOOK_URL).
 
-Mirrors the Telegram alert: same facts, Slack's mrkdwn instead of HTML. Slack has
-no inline buttons on a webhook post, so alerts carry a link only — Approve/Skip
-stays on Telegram.
+A short pointer, not the whole job: title link, ids and the key numbers, with no
+description (Telegram keeps the full text). Slack webhook posts carry no buttons,
+so the title link is the only action.
 """
 from __future__ import annotations
 
@@ -11,17 +11,12 @@ from typing import Any
 from urllib import request
 
 from .telegram_notify import (
-    _clean_description,
     _format_posted,
     _job_type,
     _project_link,
     _ssl_context,
     _upgrade_flags,
 )
-
-# Slack renders at most 3000 chars per section block; keep headroom for markup.
-_MAX_DESC_CHARS = 2200
-
 
 class SlackError(RuntimeError):
     pass
@@ -87,13 +82,8 @@ def build_slack_message(
     if flags:
         lines.append(f"*Flags:* \U0001f3f7️ {_mrkdwn(', '.join(flags))}")
 
-    desc = _clean_description(project.get("description") or "")
-    if desc:
-        if len(desc) > _MAX_DESC_CHARS:
-            desc = desc[:_MAX_DESC_CHARS].rstrip() + " …"
-        # Blockquote so a long description stays visually separate from the facts.
-        lines.append("")
-        lines.append("\n".join("> " + ln for ln in _mrkdwn(desc).splitlines()))
+    # No description on purpose: the Slack post is a short pointer, and the full
+    # text is one click away behind the title link (Telegram still carries it).
     return "\n".join(lines)
 
 
