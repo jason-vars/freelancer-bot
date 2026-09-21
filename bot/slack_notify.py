@@ -89,7 +89,9 @@ def build_slack_message(
 
 def send_slack_message(webhook_url: str, text: str, timeout: int = 30) -> None:
     """POST one message to a Slack Incoming Webhook. Raises SlackError on failure."""
-    body = json.dumps({"text": text, "unfurl_links": False}).encode("utf-8")
+    # Both flags are needed: unfurl_links kills the link card, unfurl_media the
+    # image/thumbnail that Slack attaches with it.
+    body = json.dumps({"text": text, "unfurl_links": False, "unfurl_media": False}).encode("utf-8")
     req = request.Request(webhook_url, data=body,
                           headers={"Content-Type": "application/json"}, method="POST")
     try:
