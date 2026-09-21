@@ -210,6 +210,8 @@ class Settings:
     # Every (bot_token, chat_id) an alert is delivered to: the primary bot paired
     # with each of its chat ids, plus any extra bots (each with its own token).
     telegram_targets: list[tuple[str, str]]
+    # Slack Incoming Webhook URL; blank = no Slack alerts.
+    slack_webhook_url: str | None
 
 def _telegram_targets() -> list[tuple[str, str]]:
     """Resolve every (token, chat_id) pair an alert should be delivered to.
@@ -326,4 +328,5 @@ def load_settings() -> Settings:
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID"),
         telegram_chat_ids=_csv("TELEGRAM_CHAT_ID"),
         telegram_targets=_telegram_targets(),
+        slack_webhook_url=(os.getenv("SLACK_WEBHOOK_URL") or "").strip() or None,
     )

@@ -145,6 +145,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("OPENAI_API_KEY", "OpenAI API key", "secret", "For AI proposals (blank = template fallback).", ""),
         Field("OPENAI_MODEL", "OpenAI model", "select", "Model used for proposals, AI filtering & pricing. Pricing: https://openai.com/api/pricing", "gpt-5.2-mini", OPENAI_MODEL_CHOICES),
         Field("TELEGRAM_BOT_TOKEN", "Telegram bot token", "secret", "Primary bot, from @BotFather (blank = notifications off).", ""),
+        Field("SLACK_WEBHOOK_URL", "Slack webhook URL", "secret",
+              "Incoming Webhook for one Slack channel (Slack app > Incoming Webhooks > Add New Webhook). Blank = no Slack alerts; when set, alerts go to Telegram AND Slack.", ""),
         Field("TELEGRAM_CHAT_ID", "Telegram chat id(s)", "csv", "Chat id(s) for the PRIMARY bot. Comma-separate for several chats, e.g. 12345,67890.", ""),
         Field("TELEGRAM_BOTS", "Extra bots (token + chat)", "telegrambots",
               "Additional bots, each with its OWN token and chat id. Every alert is sent to the primary bot AND each of these.", ""),

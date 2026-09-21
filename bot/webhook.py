@@ -46,6 +46,7 @@ from .proposal_ai import (
     generate_proposal_openai,
 )
 from .scorer import score_project
+from .slack_notify import notify_slack
 from .telegram_notify import build_alert_keyboard, build_project_notification, send_telegram_message
 from .telegram_notify import _project_link
 from .util import safe_get
@@ -243,7 +244,7 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
     event_id = insert_webhook_event(conn, "received", payload_json=payload_json)
 
     def _notify_telegram(project: dict[str, Any], client_status: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
-        if not s.notify_enabled or not s.telegram_targets:
+        if not s.notify_enabled or not (s.telegram_targets or s.slack_webhook_url):
             return None
         # Outside the notification window: skip the alert. Unlike the polling path a
         # webhook is one-shot (the project is marked handled), so there is nothing to
@@ -252,7 +253,8 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
             return {"sent": False, "skipped": "outside notification window"}
         message = build_project_notification(project=project, client_status=client_status, result=result)
         keyboard = build_alert_keyboard(_project_link(project), project.get("id"))
-        sent_any = False
+        # Slack is a parallel destination: its outcome never blocks Telegram.
+        sent_any = notify_slack(s, project, client_status, result)
         last_err: str | None = None
         for token, chat_id in s.telegram_targets:
             try:

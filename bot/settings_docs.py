@@ -99,6 +99,14 @@ FIELD_DOCS: dict[str, str] = {
         "run, the daily cap, and Save-only). The web-UI Apply/Auto-bid buttons are "
         "manual and always work regardless of this switch."
     ),
+    "SLACK_WEBHOOK_URL": (
+        "Slack Incoming Webhook URL (https://hooks.slack.com/services/...). When set, "
+        "every job alert is ALSO posted to that channel, with the same facts as the "
+        "Telegram alert. Blank = Telegram only. The channel is fixed by the webhook "
+        "itself. Slack webhook posts carry no buttons, so Mark-read stays on Telegram. "
+        "Obeys 'Send notifications' and the notify window; a Slack failure never blocks "
+        "the Telegram alert."
+    ),
     "BOT_NOTIFY_ENABLED": (
         "Master on/off for Telegram alerts. On (default) = matching jobs are pushed to "
         "your Telegram chat(s). Off = no alerts are sent, but the bot keeps fetching and "

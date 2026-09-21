@@ -41,6 +41,7 @@ from .telegram_notify import (
     build_project_notification,
     send_telegram_message,
 )
+from .slack_notify import notify_slack
 from .telegram_listener import run_telegram_listener
 from .webhook import process_webhook_file, serve_webhook, _build_proposal, choose_bid_from_rules
 
@@ -427,7 +428,7 @@ def choose_period_days(budget_min: float | None, budget_max: float | None) -> in
 def _notify_telegram_polling(conn, settings, project: dict[str, Any], client_status: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
     # Notifications muted (master switch off): treat like "not configured" — the
     # project is still collected and marked handled, just no alert is sent.
-    if not settings.notify_enabled or not settings.telegram_targets:
+    if not settings.notify_enabled or not (settings.telegram_targets or settings.slack_webhook_url):
         return None
     # Outside the notification window: DROP the alert (don't defer). The project is
     # still collected/browsable, but it is not alerted now and never later — the user
@@ -437,7 +438,9 @@ def _notify_telegram_polling(conn, settings, project: dict[str, Any], client_sta
     if not settings.notify_window_open():
         return {"sent": False, "out_of_window": True}
     msg = build_project_notification(project=project, client_status=client_status, result=result)
-    sent_any = False
+    # Slack is a parallel destination, not a replacement: a Slack failure never
+    # affects the Telegram outcome (and vice versa).
+    sent_any = notify_slack(settings, project, client_status, result)
     last_err: str | None = None
     for token, chat_id in settings.telegram_targets:
         try:
