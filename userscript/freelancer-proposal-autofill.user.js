@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.11.0
+// @version      1.13.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; toggle with Alt+A). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
+// @grant        GM_setClipboard
 // @connect      127.0.0.1
 // @connect      localhost
 // @updateURL    http://127.0.0.1:8765/userscript.user.js
@@ -28,6 +29,10 @@
   // Default for the auto-bid toggle the first time the script runs in a browser
   // (afterwards the panel button / Alt+A decides, persisted in localStorage).
   const AUTO_BID_DEFAULT = true;
+  // Fallback for the Sealed toggle until the bot answers (it owns the real value in
+  // BOT_SEAL_BIDS on the Settings page). ON = tick Freelancer's FREE "Sealed" upgrade,
+  // which hides your bid from other freelancers. Paid upgrades are never touched.
+  const SEAL_DEFAULT = true;
 
   // ── Derive the project's seo slug from the page URL ───────────────────────
   // /projects/<category>/<slug>/details  ->  <category>/<slug>
@@ -116,6 +121,7 @@
   // when auto-fill couldn't find the bid box on a slow page) ─────────────────
   let statusEl = null;
   let autoBtn = null;
+  let sealBtn = null;
   function mkBtn(label, color, onClick) {
     const b = document.createElement("button");
     b.textContent = label;
@@ -144,16 +150,23 @@
     row.appendChild(mkBtn("✨ Generate", "#3b82f6", () => run(true)));
     row.appendChild(mkBtn("🚀 Place bid", "#e0218a", () => placeBid(0)));
     autoBtn = mkBtn("", "#334155", () => setAutoBid(!autoBidOn()));
+    sealBtn = mkBtn("", "#334155", () => setSeal(!sealOn()));
     paintAutoBtn();
+    paintSealBtn();
     const autoRow = document.createElement("div");
     autoRow.style.cssText = "display:flex;gap:8px;";
     autoRow.appendChild(autoBtn);
+    autoRow.appendChild(sealBtn);
+    const copyRow = document.createElement("div");
+    copyRow.style.cssText = "display:flex;gap:8px;";
+    copyRow.appendChild(mkBtn("📋 Copy job", "#7c3aed", () => copyJobText()));
     const hint = document.createElement("div");
     hint.style.cssText = "font-weight:400;font-size:11px;color:#7a85a6;";
-    hint.textContent = "Alt+G generate · Alt+B place bid · Alt+S seal · Alt+A auto · Esc cancel";
+    hint.textContent = "Alt+G generate · Alt+B bid · Alt+S seal · Alt+A auto · Alt+C copy · Esc cancel";
     panel.appendChild(statusEl);
     panel.appendChild(row);
     panel.appendChild(autoRow);
+    panel.appendChild(copyRow);
     panel.appendChild(hint);
     document.body.appendChild(panel);
   }
@@ -187,6 +200,63 @@
     const on = autoBidOn();
     autoBtn.textContent = on ? "🤖 Auto-bid: ON" : "✋ Auto-bid: OFF";
     autoBtn.style.background = on ? "#166534" : "#334155";
+  }
+
+  // ── Sealed toggle (owned by the bot's Settings page: BOT_SEAL_BIDS) ────────
+  // ON = every fill ticks the FREE Sealed upgrade. The panel button and the Settings
+  // page are the SAME switch: the button writes .env through /jobs/seal, and every
+  // proposal response carries the current value back. localStorage only mirrors it,
+  // so the buttons still show the right state before the bot answers (or if it's
+  // down). Flipping it also applies to the form already open.
+  const SEAL_KEY = "fbb:seal";
+  function sealOn() {
+    try {
+      const v = window.localStorage.getItem(SEAL_KEY);
+      return v === null ? SEAL_DEFAULT : v === "1";
+    } catch (e) { return SEAL_DEFAULT; }
+  }
+  // Remember what the bot told us, without asking it again.
+  function cacheSeal(on) {
+    try { window.localStorage.setItem(SEAL_KEY, on ? "1" : "0"); } catch (e) {}
+    paintSealBtn();
+  }
+  // Ask the bot for the setting (set === null) or change it (true/false).
+  function sealRequest(set) {
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: BOT_BASE + "/jobs/seal" + (set === null ? "" : "?set=" + (set ? "1" : "0")),
+        timeout: 15000,
+        onload: (r) => {
+          let d;
+          try { d = JSON.parse(r.responseText); } catch (e) { return reject("Bad response from bot."); }
+          if (r.status >= 200 && r.status < 300 && d.ok) resolve(!!d.seal);
+          else reject(d.message || ("Bot returned HTTP " + r.status));
+        },
+        onerror: () => reject("Cannot reach the bot at " + BOT_BASE + "."),
+        ontimeout: () => reject("Bot timed out."),
+      });
+    });
+  }
+  async function setSeal(on) {
+    cacheSeal(on);                 // paint immediately; the bot confirms below
+    const applied = applySealed(on);
+    const here = applied
+      ? (on ? " — bid sealed." : " — unticked on this bid.")
+      : (on ? " — will tick it when the form fills." : " — the free upgrade won't be ticked.");
+    try {
+      const saved = await sealRequest(on);
+      cacheSeal(saved);
+      badge("Seal " + (saved ? "ON" : "OFF") + " (saved to Settings)" + here, "info");
+    } catch (msg) {
+      badge("Seal " + (on ? "ON" : "OFF") + " for this browser only — couldn't save to Settings: " + msg, "err");
+    }
+  }
+  function paintSealBtn() {
+    if (!sealBtn) return;
+    const on = sealOn();
+    sealBtn.textContent = on ? "🔒 Seal: ON" : "🔓 Seal: OFF";
+    sealBtn.style.background = on ? "#166534" : "#334155";
   }
 
   // ── Value setter that frameworks (Angular/React) actually notice ──────────
@@ -274,17 +344,19 @@
     }
     return null;
   }
-  function checkSealed() {
+  // Set the free Sealed checkbox to ``on``. Returns true when the checkbox exists and
+  // now matches ``on`` (so the caller can report what actually happened).
+  function applySealed(on) {
     const cb = findSealedCheckbox();
     if (!cb) return false;
-    if (!cb.checked) {
+    if (cb.checked !== !!on) {
       // Click the LABEL (fl-checkbox hides the native input); the label's `for` toggles
       // it and fires Angular's handler. Falls back to clicking the input directly.
       const esc = (window.CSS && CSS.escape) ? CSS.escape(cb.id) : cb.id;
       const label = cb.id ? document.querySelector('label[for="' + esc + '"]') : null;
       (label || cb).click();
     }
-    return cb.checked;
+    return cb.checked === !!on;
   }
 
   // Freelancer's submit button is "Place Bid" or "Create Bid" (never "Write my bid",
@@ -421,6 +493,88 @@
     } catch (e) { /* ignore */ }
   }
 
+  // ── Copy the job's description + skills to the clipboard ──────────────────
+  // The text comes from the BOT (/jobs/text), not the page: it's the same full
+  // description the proposal was written from, already stripped of Freelancer's
+  // markup and "read more" truncation. No OpenAI call and no filters, so copying
+  // works on any project — including ones your filters would skip. Cached per
+  // project in the tab so repeat copies don't re-hit the API.
+  function fetchJobText(seo, pid) {
+    const params =
+      (pid ? "id=" + encodeURIComponent(pid) : "") +
+      (seo ? (pid ? "&" : "") + "seo=" + encodeURIComponent(seo) : "");
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        url: BOT_BASE + "/jobs/text?" + params,
+        timeout: 30000,
+        onload: (r) => {
+          let d;
+          try { d = JSON.parse(r.responseText); } catch (e) { return reject("Bad response from bot."); }
+          if (r.status >= 200 && r.status < 300 && d.ok) resolve(d);
+          else reject(d.message || ("Bot returned HTTP " + r.status));
+        },
+        onerror: () => reject("Cannot reach the bot at " + BOT_BASE + " — is `python -m bot serve` running?"),
+        ontimeout: () => reject("Bot timed out reading the job."),
+      });
+    });
+  }
+
+  // Three routes, because each can fail on its own: the async Clipboard API (needs a
+  // focused document), Tampermonkey's GM_setClipboard, then the execCommand fallback.
+  function toClipboard(text) {
+    return new Promise((resolve, reject) => {
+      const viaGM = () => {
+        try {
+          if (typeof GM_setClipboard === "function") { GM_setClipboard(text, "text"); return resolve(); }
+        } catch (e) { /* fall through */ }
+        viaExec();
+      };
+      const viaExec = () => {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.cssText = "position:fixed;top:-1000px;opacity:0;";
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand("copy");
+          ta.remove();
+          return ok ? resolve() : reject("The browser blocked the copy.");
+        } catch (e) { return reject("The browser blocked the copy."); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(resolve, viaGM);
+      } else viaGM();
+    });
+  }
+
+  async function copyJobText() {
+    const seo = currentSeo(), pid = currentProjectId();
+    if (!seo && !pid) { badge("Couldn't tell which project this is.", "err"); return; }
+    const key = "fbbtext:" + (pid || seo);
+    try {
+      let d;
+      const cached = CACHE.getItem(key);
+      if (cached) d = JSON.parse(cached);
+      else {
+        badge("Reading the job from the bot…", "info");
+        d = await fetchJobText(seo, pid);
+        CACHE.setItem(key, JSON.stringify(d));
+      }
+      // Skills first, then the description — no title line, so the text pastes
+      // straight into a chat/notes without a header you already saw on the page.
+      const parts = [];
+      if (d.skills) parts.push("Skills: " + d.skills, "");
+      if (d.description) parts.push(d.description);
+      const text = parts.join("\n").trim();
+      if (!text) { badge("The bot has no description/skills for this project.", "err"); return; }
+      await toClipboard(text);
+      badge("Copied description + skills (" + text.length + " chars).", "ok");
+    } catch (msg) {
+      badge("Copy failed: " + String(msg), "err");
+    }
+  }
+
   function fillForm(data) {
     let filled = [];
     const ta = findProposalTextarea();
@@ -436,8 +590,11 @@
       const per = findNumberInput(/period|day|deliver|duration/i);
       if (per) { setNativeValue(per, String(data.period)); filled.push("period"); }
     }
-    // Auto-enable the Sealed upgrade only when it's free.
-    if (checkSealed()) filled.push("sealed");
+    // Sealed: obey the value the bot sent with this proposal (BOT_SEAL_BIDS on the
+    // Settings page), falling back to the cached one for an older bot build.
+    const wantSeal = typeof data.seal === "boolean" ? data.seal : sealOn();
+    if (typeof data.seal === "boolean") cacheSeal(data.seal);
+    if (wantSeal && applySealed(true)) filled.push("sealed");
     return filled;
   }
 
@@ -569,7 +726,8 @@
     const k = (e.key || "").toLowerCase();
     if (k === "g") { e.preventDefault(); run(true); }
     else if (k === "b") { e.preventDefault(); placeBid(0); }
-    else if (k === "s") { e.preventDefault(); badge(checkSealed() ? "Sealed checked." : "Sealed option not found.", "info"); }
+    else if (k === "s") { e.preventDefault(); setSeal(!sealOn()); }
+    else if (k === "c") { e.preventDefault(); copyJobText(); }
     else if (k === "a") {
       e.preventDefault();
       const on = !autoBidOn();
@@ -581,6 +739,9 @@
   // Build the panel immediately so the buttons exist even if the bid box never
   // loads, then run once. A light watcher re-runs on SPA navigation to a new project.
   buildPanel();
+  // Show the Seal state the BOT has (Settings page), not a stale local one. Silent
+  // on failure: the cached value already painted the button.
+  sealRequest(null).then(cacheSeal, () => {});
   run(false);
   let lastPath = location.pathname;
   setInterval(() => {

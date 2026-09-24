@@ -7,7 +7,15 @@ from dotenv import load_dotenv
 
 from .filters import SKIPPABLE_UPGRADES
 
-load_dotenv()
+
+def _env_file() -> str | None:
+    """The .env to read. Mirrors env_store.ENV_PATH so BOT_ENV_FILE points the
+    reader and the writer (settings page, userscript) at the SAME file; unset =
+    python-dotenv's own search, i.e. the project's .env."""
+    return (os.getenv("BOT_ENV_FILE") or "").strip() or None
+
+
+load_dotenv(_env_file())
 
 def _strip_inline_comment(v: str | None) -> str:
     """Drop a leaked inline ``# comment`` and surrounding whitespace.
@@ -194,6 +202,10 @@ class Settings:
     # saves it to the bids table (status 'proposal_saved') for review — no real bid.
     save_proposals: bool
 
+    # Tick Freelancer's FREE "Sealed" upgrade (hides your bid from other freelancers)
+    # when the browser userscript fills a bid form. Paid upgrades are never touched.
+    seal_bids: bool
+
     # OpenAI
     openai_api_key: str | None
     openai_model: str
@@ -245,7 +257,7 @@ def load_settings() -> Settings:
     # take effect on the next polling cycle without restarting the bot. override=True
     # is required because the values are already in os.environ from the import-time
     # load_dotenv() above, and python-dotenv won't replace existing keys otherwise.
-    load_dotenv(override=True)
+    load_dotenv(_env_file(), override=True)
 
     token = os.getenv("FLN_OAUTH_TOKEN", "").strip()
     if not token:
@@ -316,6 +328,8 @@ def load_settings() -> Settings:
         ai_pricing_rules=_get_text("BOT_AI_PRICING_RULES"),
         # Save a generated proposal draft to the DB during polling (for testing).
         save_proposals=_get_bool("BOT_SAVE_PROPOSALS", False),
+        # Seal bids placed through the userscript (free upgrade; default on).
+        seal_bids=_get_bool("BOT_SEAL_BIDS", True),
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-5.2-mini"),
         webhook_secret=os.getenv("WEBHOOK_SECRET"),

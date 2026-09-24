@@ -182,6 +182,12 @@ FIELD_DOCS: dict[str, str] = {
         "to the DB (bids table, status 'proposal_saved') WITHOUT bidding. Lets you "
         "review real proposals before enabling bids. Idempotent (one per project)."
     ),
+    "BOT_SEAL_BIDS": (
+        "On (default) = the browser userscript ticks Freelancer's FREE 'Sealed' upgrade "
+        "when it fills a bid form, so other freelancers can't see your bid. Only the free "
+        "option is touched; paid upgrades (Sponsored, Highlight) never are. The 🔒 Seal "
+        "button in the userscript panel toggles this same setting."
+    ),
     "BOT_DEFAULT_PERIOD_DAYS": (
         "Delivery period (days) offered on a bid when no bid-rule row matches. Default 7."
     ),

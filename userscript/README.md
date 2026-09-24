@@ -45,7 +45,8 @@ auto-fill couldn't find the bid box (e.g. a slow page, or you opened the form la
 |---|---|---|---|
 | Generate & fill | ✨ Generate | **Alt+G** | Re-fetch the proposal from the bot and fill the bid form (proposal + amount + period). |
 | Place bid | 🚀 Place bid | **Alt+B** | Clicks Freelancer's own **Place Bid** / **Create Bid** button. |
-| Seal | — | **Alt+S** | Toggles the free **Sealed** upgrade checkbox. |
+| Seal | 🔒 Seal: ON/OFF | **Alt+S** | Turns the free **Sealed** upgrade on/off. ON = every fill ticks it; flipping it also seals/unseals the form that's already open, **and saves to the bot's Settings page** (`BOT_SEAL_BIDS`). |
+| Copy job | 📋 Copy job | **Alt+C** | Copies the job's **skills + full description** to the clipboard (from the bot, so it's the untruncated text — no OpenAI call). |
 | Auto-bid | 🤖 Auto-bid: ON/OFF | **Alt+A** | Turns automatic placing on/off. Remembered per browser. |
 | Cancel | — | **Esc** | Aborts a running auto-bid countdown. |
 
@@ -53,9 +54,17 @@ The status line at the top of the panel shows what happened (filled fields, skip
 reason, or errors).
 
 ### Auto-behaviours on fill
-- **Sealed upgrade** — when Freelancer offers the free *Sealed* entry (hide your bid
-  from other freelancers), it's checked automatically. Only the *free* Sealed option
-  is touched — paid upgrades (Sponsored, Highlight) are never enabled.
+- **Sealed upgrade** — when sealing is ON (the default) and Freelancer offers the free
+  *Sealed* entry (hide your bid from other freelancers), it's checked automatically.
+  Only the *free* Sealed option is touched — paid upgrades (Sponsored, Highlight) are
+  never enabled.
+
+  The switch lives in the **bot's Settings page** → *Bid defaults* → **Seal bids (free
+  upgrade)** (`BOT_SEAL_BIDS`). The panel's 🔒 button and **Alt+S** toggle that same
+  setting (the script writes it via `GET /jobs/seal?set=0|1`), so the two can never
+  disagree; the current value also travels back with every proposal. If the bot is
+  unreachable, the button falls back to a per-browser value (`SEAL_DEFAULT` in the
+  script) and says so.
 - **Auto-bid** — once the proposal lands in the box, the panel counts down and then
   clicks **Place Bid** itself. Guard rails:
   - Only when the **proposal** actually filled — never on an empty/leftover box.
@@ -72,6 +81,21 @@ reason, or errors).
 > Freelancer's own confirmation, if any) and spends a bid credit. With auto-bid ON
 > that happens without a click, so keep the panel in view — or press **Alt+A** to
 > turn it off and go back to placing bids by hand.
+
+## Copy job (clipboard)
+
+📋 **Copy job** / **Alt+C** puts this on your clipboard:
+
+```
+Skills: Next.js, Stripe, ...
+
+<full description>
+```
+
+The text comes from the bot (`GET /jobs/text`), not scraped off the page, so you get
+the complete description without Freelancer's "read more" truncation. It costs no
+OpenAI call and ignores your skip filters, so it works on any project — even one the
+bot would never bid on. A project the bot never collected is fetched live from the API.
 
 ## Requirements / notes
 

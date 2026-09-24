@@ -129,6 +129,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
     ("Bid defaults", [
         Field("BOT_SAVE_PROPOSALS", "Save proposals to DB (test)", "bool",
               "ON = during polling, generate a proposal per matching project and save it to the DB for review (no bid placed).", "0"),
+        Field("BOT_SEAL_BIDS", "Seal bids (free upgrade)", "bool",
+              "ON = the browser userscript ticks Freelancer's FREE 'Sealed' upgrade when it fills a bid, hiding your bid from other freelancers. Paid upgrades (Sponsored, Highlight) are never touched. The userscript's 🔒 Seal button writes back to this setting.", "1"),
         Field("BOT_DEFAULT_PERIOD_DAYS", "Default period (days)", "int", "Delivery period offered on bids (when no rule matches).", "7"),
         Field("BOT_DEFAULT_MILESTONE_PERCENT", "Default milestone %", "int", "Milestone percentage offered.", "50"),
         Field("BOT_BID_RULES", "Bid by currency & budget", "bidrules",
@@ -1283,6 +1285,59 @@ def _job_detail(project_id: int) -> tuple[int, dict]:
     return 200, detail
 
 
+def _seal_setting(set_to: str | None) -> tuple[int, dict]:
+    """Read (``set_to`` None) or write the BOT_SEAL_BIDS setting.
+
+    Backs the userscript's 🔒 Seal button so the panel and the Settings page can't
+    disagree: the button writes .env exactly like the settings form does."""
+    from .config import load_settings
+    from .env_store import update_env
+
+    if set_to is not None:
+        update_env({"BOT_SEAL_BIDS": "1" if set_to in ("1", "true", "on", "yes") else "0"})
+    try:
+        s = load_settings()
+    except Exception as exc:
+        return 400, {"ok": False, "message": f"Config error: {exc}"}
+    return 200, {"ok": True, "seal": bool(s.seal_bids)}
+
+
+def _job_text(project_id: int) -> tuple[int, dict]:
+    """Title / skills / description for the userscript's 'Copy job' button.
+
+    Deliberately cheap and unfiltered: no OpenAI call and no skip filters, so copying
+    a job's text works even for one you'd never bid on. Falls back to a live fetch for
+    a project the bot never collected."""
+    from .config import load_settings
+    from .db import connect, get_project, init_db
+
+    conn = connect()
+    try:
+        init_db(conn)
+        row = get_project(conn, project_id)
+        proj = {k: row[k] for k in row.keys()} if row is not None else None
+    finally:
+        conn.close()
+
+    if proj is None:
+        try:
+            s = load_settings()
+        except Exception as exc:
+            return 400, {"ok": False, "message": f"Config error: {exc}"}
+        proj = _fetch_live_project_row(s, project_id)
+        if proj is None:
+            return 404, {"ok": False, "message": f"Project {project_id} not found on Freelancer."}
+
+    return 200, {
+        "ok": True,
+        "id": int(proj["id"]),
+        "title": proj.get("title") or "",
+        "skills": proj.get("skills") or "",
+        "description": proj.get("description") or "",
+        "url": _job_url(proj.get("url")),
+    }
+
+
 def _resolve_pid_by_seo(seo: str) -> int | None:
     """Map a freelancer ``category/slug`` seo path to a stored project id, or None.
 
@@ -1538,6 +1593,9 @@ def _generate_for_job(project_id: int, client_country: str | None = None) -> tup
         "amount": float(amount),
         "period": int(period),
         "currency": proj["currency"] or "",
+        # Settings own the Sealed upgrade, so the answer travels with the proposal
+        # and a change on the Settings page applies to the very next fill.
+        "seal": bool(s.seal_bids),
     }
 
 
@@ -1743,7 +1801,12 @@ def serve_webui(host: str, port: int) -> None:
         def do_GET(self) -> None:  # noqa: N802
             path = self.path.split("?")[0]
             query = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
-            if path in ("/jobs/detail", "/jobs/generate", "/jobs/applied"):
+            if path == "/jobs/seal":
+                raw = (query.get("set", [""])[0] or "").strip().lower() or None
+                code, payload = _seal_setting(raw)
+                self._send_json(code, payload)
+                return
+            if path in ("/jobs/detail", "/jobs/generate", "/jobs/applied", "/jobs/text"):
                 # Accept a numeric ?id= (Jobs page, or the userscript-scraped project
                 # id) and/or a ?seo=<category/slug> (userscript, derived from the URL).
                 # The numeric id wins: with it, /jobs/generate and /jobs/applied work
@@ -1772,6 +1835,8 @@ def serve_webui(host: str, port: int) -> None:
                     code, payload = _generate_for_job(pid, country)
                 elif path == "/jobs/applied":
                     code, payload = _mark_applied(pid)
+                elif path == "/jobs/text":
+                    code, payload = _job_text(pid)
                 else:
                     code, payload = _job_detail(pid)
                 self._send_json(code, payload)
