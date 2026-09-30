@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.15.0
+// @version      1.15.2
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; toggle with Alt+A). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -23,7 +23,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.15.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.15.2 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -722,6 +722,11 @@
   }
 
   let lastSeo = null;
+  // Bumped by every run that goes on to generate. Only the NEWEST run may fill the
+  // form, so a slower earlier request can never overwrite what's already there
+  // (the "proposal changes twice" bug) — e.g. after you pressed ✨ Generate while
+  // the automatic run was still waiting on OpenAI.
+  let runSeq = 0;
   async function run(force) {
     const seo = currentSeo();
     if (!seo) return;
@@ -734,9 +739,13 @@
       return;
     }
     lastSeo = seo;
+    const myRun = ++runSeq;
+    // A newer run started, or you moved to another project, while we waited.
+    const superseded = () => myRun !== runSeq || currentSeo() !== seo;
     cancelAutoBid(null); // a fresh generate restarts the countdown with the new text
 
     const state = await waitForBidState(90000);
+    if (superseded()) return;
     if (state === "alreadybid") {
       // You've already bid — skip generating (don't overwrite your bid). We do NOT mark
       // applied here: auto-detect can mis-fire on bad networks, and the applied list is
@@ -748,6 +757,17 @@
       // 90s and still nothing — either you can't bid here (closed / NDA not accepted)
       // or the page is extremely slow. Use the Generate button (or Alt+G) to retry.
       badge("No bid box yet — press Generate / Alt+G to retry.", "info");
+      return;
+    }
+    // An automatic run never touches a form that already has a proposal in it —
+    // whether we filled it earlier or you typed it. Only ✨ Generate / Alt+G
+    // (force) replaces it, so editing the price or days can't trigger a rewrite.
+    const formHasText = () => {
+      const ta = findProposalTextarea();
+      return !!(ta && (ta.value || "").trim());
+    };
+    if (!force && formHasText()) {
+      badge("Form already filled — press ✨ Generate / Alt+G to write a new proposal.", "info");
       return;
     }
 
@@ -764,6 +784,7 @@
         // the "About the Client" block wasn't found, so the country filter can't apply.
         badge("Generating proposal… (client: " + (country ? country.slice(0, 32) : "?") + ")", "info");
         data = await fetchProposal(seo, currentProjectId(), country);
+        if (superseded()) return; // a newer run owns the form now
       }
       // Project matched a currency/country skip filter — don't fill, don't cache.
       if (data && data.skipped) {
@@ -775,6 +796,11 @@
         return;
       }
       if (!cached) CACHE.setItem(cacheKey, JSON.stringify(data));
+      // Re-checked here: you may have started typing while OpenAI was writing.
+      if (!force && formHasText()) {
+        badge("You started editing — kept your text. Press ✨ Generate / Alt+G to replace it.", "info");
+        return;
+      }
       const filled = fillForm(data);
       // Only auto-place when the proposal itself landed — without it the bid would be
       // submitted empty (or with whatever was in the box before).
@@ -816,10 +842,14 @@
   // setting instead of the built-in default. On failure we fall back to the cached
   // values, which the buttons already show.
   optionsRequest({}).then(cacheOptions, () => {}).then(() => run(false));
-  let lastPath = location.pathname;
+  // Keyed on the PROJECT, not the raw path: Freelancer rewrites the URL of the same
+  // project after load (…/slug -> …/slug/details), and treating that as a new page
+  // started a second generate that re-filled the form with a different proposal.
+  let lastWatchedSeo = currentSeo();
   setInterval(() => {
-    if (location.pathname !== lastPath) {
-      lastPath = location.pathname;
+    const seo = currentSeo();
+    if (seo !== lastWatchedSeo) {
+      lastWatchedSeo = seo;
       lastSeo = null;
       cancelAutoBid(null); // never let a countdown from the previous project fire here
       run(false);
