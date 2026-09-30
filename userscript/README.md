@@ -16,7 +16,9 @@ lightest way to do that (no extension to package/sign).
 1. You open a project page: `https://www.freelancer.com/projects/<category>/<slug>/details`.
 2. The script derives the seo slug `<category>/<slug>` from the URL — the exact
    string the bot stored as the project's `url` when it collected the job.
-3. It calls your local bot: `GET http://127.0.0.1:8765/jobs/generate?seo=<slug>`
+3. With **auto-generate ON** (the default) it calls your local bot:
+   `GET http://127.0.0.1:8765/jobs/generate?seo=<slug>`. With it OFF nothing is
+   requested until you press ✨ Generate / Alt+N toggles the setting.
    (via `GM_xmlhttpRequest`, which bypasses CORS and https→localhost mixed-content).
 4. The bot looks the project up, generates the proposal with your OpenAI key, and
    returns `{ proposal, amount, period, currency }`.
@@ -45,8 +47,9 @@ auto-fill couldn't find the bid box (e.g. a slow page, or you opened the form la
 |---|---|---|---|
 | Generate & fill | ✨ Generate | **Alt+G** | Re-fetch the proposal from the bot and fill the bid form (proposal + amount + period). |
 | Place bid | 🚀 Place bid | **Alt+B** | Clicks Freelancer's own **Place Bid** / **Create Bid** button. |
+| Auto-generate | ✨ Auto-gen: ON/OFF | **Alt+N** | ON = opening a project writes the proposal and fills the form right away. OFF = nothing happens until you press ✨ Generate, so browsing costs no OpenAI call. Saved to the Settings page (`BOT_AUTO_GENERATE`). |
 | Seal | 🔒 Seal: ON/OFF | **Alt+S** | Turns the free **Sealed** upgrade on/off. ON = every fill ticks it; flipping it also seals/unseals the form that's already open, **and saves to the bot's Settings page** (`BOT_SEAL_BIDS`). |
-| Copy job | 📋 Copy job | **Alt+C** | Copies the job's **skills + full description** to the clipboard (from the bot, so it's the untruncated text — no OpenAI call). |
+| Copy job | 📋 Copy job | **Alt+C** | Copies the job's **full description + skills** to the clipboard (from the bot, so it's the untruncated text — no OpenAI call). |
 | Auto-bid | 🤖 Auto-bid: ON/OFF | **Alt+A** | Turns automatic placing on/off. Remembered per browser. |
 | Cancel | — | **Esc** | Aborts a running auto-bid countdown. |
 
@@ -87,9 +90,9 @@ reason, or errors).
 📋 **Copy job** / **Alt+C** puts this on your clipboard:
 
 ```
-Skills: Next.js, Stripe, ...
-
 <full description>
+
+Skills: Next.js, Stripe, ...
 ```
 
 The text comes from the bot (`GET /jobs/text`), not scraped off the page, so you get

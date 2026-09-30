@@ -182,6 +182,12 @@ FIELD_DOCS: dict[str, str] = {
         "to the DB (bids table, status 'proposal_saved') WITHOUT bidding. Lets you "
         "review real proposals before enabling bids. Idempotent (one per project)."
     ),
+    "BOT_AUTO_GENERATE": (
+        "On (default) = the browser userscript generates a proposal and fills the bid "
+        "form as soon as you open a project page (one OpenAI call per new project). Off "
+        "= nothing is generated until you press the panel's Generate button (Alt+G), so "
+        "browsing jobs costs nothing. Auto-bid still only runs after a successful fill."
+    ),
     "BOT_SEAL_BIDS": (
         "On (default) = the browser userscript ticks Freelancer's FREE 'Sealed' upgrade "
         "when it fills a bid form, so other freelancers can't see your bid. Only the free "

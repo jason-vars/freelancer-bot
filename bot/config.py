@@ -202,6 +202,11 @@ class Settings:
     # saves it to the bids table (status 'proposal_saved') for review — no real bid.
     save_proposals: bool
 
+    # Generate a proposal automatically when the userscript opens a project page.
+    # Off = the page is only prepared and you press ✨ Generate / Alt+G yourself, so
+    # browsing a job costs no OpenAI call.
+    auto_generate: bool
+
     # Tick Freelancer's FREE "Sealed" upgrade (hides your bid from other freelancers)
     # when the browser userscript fills a bid form. Paid upgrades are never touched.
     seal_bids: bool
@@ -328,6 +333,8 @@ def load_settings() -> Settings:
         ai_pricing_rules=_get_text("BOT_AI_PRICING_RULES"),
         # Save a generated proposal draft to the DB during polling (for testing).
         save_proposals=_get_bool("BOT_SAVE_PROPOSALS", False),
+        # Auto-generate the proposal when a project page opens (default on).
+        auto_generate=_get_bool("BOT_AUTO_GENERATE", True),
         # Seal bids placed through the userscript (free upgrade; default on).
         seal_bids=_get_bool("BOT_SEAL_BIDS", True),
         openai_api_key=os.getenv("OPENAI_API_KEY"),

@@ -129,6 +129,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
     ("Bid defaults", [
         Field("BOT_SAVE_PROPOSALS", "Save proposals to DB (test)", "bool",
               "ON = during polling, generate a proposal per matching project and save it to the DB for review (no bid placed).", "0"),
+        Field("BOT_AUTO_GENERATE", "Auto-generate proposal on open", "bool",
+              "ON = opening a project page makes the userscript generate the proposal and fill the bid form straight away (one OpenAI call per new project). OFF = it only gets the page ready and waits for the ✨ Generate button / Alt+G, so browsing costs nothing. The panel's ✨ button always works either way.", "1"),
         Field("BOT_SEAL_BIDS", "Seal bids (free upgrade)", "bool",
               "ON = the browser userscript ticks Freelancer's FREE 'Sealed' upgrade when it fills a bid, hiding your bid from other freelancers. Paid upgrades (Sponsored, Highlight) are never touched. The userscript's 🔒 Seal button writes back to this setting.", "1"),
         Field("BOT_DEFAULT_PERIOD_DAYS", "Default period (days)", "int", "Delivery period offered on bids (when no rule matches).", "7"),
@@ -1285,21 +1287,29 @@ def _job_detail(project_id: int) -> tuple[int, dict]:
     return 200, detail
 
 
-def _seal_setting(set_to: str | None) -> tuple[int, dict]:
-    """Read (``set_to`` None) or write the BOT_SEAL_BIDS setting.
+# Panel toggles the userscript can read AND write: query name -> env var.
+_PANEL_OPTIONS = {"seal": "BOT_SEAL_BIDS", "autogen": "BOT_AUTO_GENERATE"}
+_TRUEISH = ("1", "true", "on", "yes")
 
-    Backs the userscript's 🔒 Seal button so the panel and the Settings page can't
-    disagree: the button writes .env exactly like the settings form does."""
+
+def _panel_options(sets: dict[str, str]) -> tuple[int, dict]:
+    """Read (``sets`` empty) or write the userscript's panel switches.
+
+    Backs the panel's 🔒 Seal and ✨ Auto buttons so they and the Settings page can't
+    disagree: a button writes .env exactly like the settings form does, and the reply
+    always reports the stored values."""
     from .config import load_settings
     from .env_store import update_env
 
-    if set_to is not None:
-        update_env({"BOT_SEAL_BIDS": "1" if set_to in ("1", "true", "on", "yes") else "0"})
+    updates = {env: ("1" if raw in _TRUEISH else "0")
+               for name, env in _PANEL_OPTIONS.items() if (raw := sets.get(name)) is not None}
+    if updates:
+        update_env(updates)
     try:
         s = load_settings()
     except Exception as exc:
         return 400, {"ok": False, "message": f"Config error: {exc}"}
-    return 200, {"ok": True, "seal": bool(s.seal_bids)}
+    return 200, {"ok": True, "seal": bool(s.seal_bids), "autogen": bool(s.auto_generate)}
 
 
 def _job_text(project_id: int) -> tuple[int, dict]:
@@ -1596,6 +1606,7 @@ def _generate_for_job(project_id: int, client_country: str | None = None) -> tup
         # Settings own the Sealed upgrade, so the answer travels with the proposal
         # and a change on the Settings page applies to the very next fill.
         "seal": bool(s.seal_bids),
+        "autogen": bool(s.auto_generate),
     }
 
 
@@ -1801,9 +1812,15 @@ def serve_webui(host: str, port: int) -> None:
         def do_GET(self) -> None:  # noqa: N802
             path = self.path.split("?")[0]
             query = parse_qs(self.path.split("?", 1)[1]) if "?" in self.path else {}
-            if path == "/jobs/seal":
-                raw = (query.get("set", [""])[0] or "").strip().lower() or None
-                code, payload = _seal_setting(raw)
+            if path in ("/jobs/options", "/jobs/seal"):
+                # /jobs/seal is the old single-switch spelling kept for an
+                # already-installed userscript: ?set= still means the Sealed upgrade.
+                sets = {name: (query.get(name, [""])[0] or "").strip().lower()
+                        for name in _PANEL_OPTIONS if query.get(name, [""])[0].strip()}
+                legacy = (query.get("set", [""])[0] or "").strip().lower()
+                if legacy and path == "/jobs/seal":
+                    sets["seal"] = legacy
+                code, payload = _panel_options(sets)
                 self._send_json(code, payload)
                 return
             if path in ("/jobs/detail", "/jobs/generate", "/jobs/applied", "/jobs/text"):

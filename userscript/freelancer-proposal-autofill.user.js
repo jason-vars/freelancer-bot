@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.13.0
+// @version      1.15.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; toggle with Alt+A). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
+// @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setClipboard
@@ -13,8 +14,16 @@
 // @downloadURL  http://127.0.0.1:8765/userscript.user.js
 // ==/UserScript==
 
+// The @include above exists because Freelancer redirects logged-in users to their
+// regional site (freelancer.in, freelancer.com.au, freelancer.pk, …), where the
+// www.freelancer.com @match alone never fires and the panel simply never appears.
+
 (function () {
   "use strict";
+
+  // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
+  // isn't running the script here — check that it's enabled and that the URL matches.
+  console.log("[fbb] userscript 1.15.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -33,6 +42,10 @@
   // BOT_SEAL_BIDS on the Settings page). ON = tick Freelancer's FREE "Sealed" upgrade,
   // which hides your bid from other freelancers. Paid upgrades are never touched.
   const SEAL_DEFAULT = true;
+  // Fallback for the auto-generate toggle until the bot answers (it owns the real
+  // value in BOT_AUTO_GENERATE on the Settings page). ON = opening a project writes
+  // the proposal immediately; OFF = wait for the ✨ Generate button.
+  const AUTOGEN_DEFAULT = true;
 
   // ── Derive the project's seo slug from the page URL ───────────────────────
   // /projects/<category>/<slug>/details  ->  <category>/<slug>
@@ -122,6 +135,7 @@
   let statusEl = null;
   let autoBtn = null;
   let sealBtn = null;
+  let genBtn = null;
   function mkBtn(label, color, onClick) {
     const b = document.createElement("button");
     b.textContent = label;
@@ -151,18 +165,21 @@
     row.appendChild(mkBtn("🚀 Place bid", "#e0218a", () => placeBid(0)));
     autoBtn = mkBtn("", "#334155", () => setAutoBid(!autoBidOn()));
     sealBtn = mkBtn("", "#334155", () => setSeal(!sealOn()));
+    genBtn = mkBtn("", "#334155", () => setAutoGen(!autoGenOn()));
     paintAutoBtn();
     paintSealBtn();
+    paintGenBtn();
     const autoRow = document.createElement("div");
     autoRow.style.cssText = "display:flex;gap:8px;";
     autoRow.appendChild(autoBtn);
     autoRow.appendChild(sealBtn);
     const copyRow = document.createElement("div");
     copyRow.style.cssText = "display:flex;gap:8px;";
+    copyRow.appendChild(genBtn);
     copyRow.appendChild(mkBtn("📋 Copy job", "#7c3aed", () => copyJobText()));
     const hint = document.createElement("div");
     hint.style.cssText = "font-weight:400;font-size:11px;color:#7a85a6;";
-    hint.textContent = "Alt+G generate · Alt+B bid · Alt+S seal · Alt+A auto · Alt+C copy · Esc cancel";
+    hint.textContent = "Alt+G generate · Alt+B bid · Alt+S seal · Alt+A auto-bid · Alt+N auto-gen · Alt+C copy";
     panel.appendChild(statusEl);
     panel.appendChild(row);
     panel.appendChild(autoRow);
@@ -220,23 +237,33 @@
     try { window.localStorage.setItem(SEAL_KEY, on ? "1" : "0"); } catch (e) {}
     paintSealBtn();
   }
-  // Ask the bot for the setting (set === null) or change it (true/false).
-  function sealRequest(set) {
+  // Read the panel switches from the bot (no args) or change one of them:
+  // optionsRequest({seal: true}) / optionsRequest({autogen: false}). Resolves with
+  // the bot's stored values, so what we paint is always what it saved.
+  function optionsRequest(sets) {
+    const q = Object.keys(sets || {})
+      .map((k) => k + "=" + (sets[k] ? "1" : "0"))
+      .join("&");
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: "GET",
-        url: BOT_BASE + "/jobs/seal" + (set === null ? "" : "?set=" + (set ? "1" : "0")),
+        url: BOT_BASE + "/jobs/options" + (q ? "?" + q : ""),
         timeout: 15000,
         onload: (r) => {
           let d;
           try { d = JSON.parse(r.responseText); } catch (e) { return reject("Bad response from bot."); }
-          if (r.status >= 200 && r.status < 300 && d.ok) resolve(!!d.seal);
+          if (r.status >= 200 && r.status < 300 && d.ok) resolve(d);
           else reject(d.message || ("Bot returned HTTP " + r.status));
         },
         onerror: () => reject("Cannot reach the bot at " + BOT_BASE + "."),
         ontimeout: () => reject("Bot timed out."),
       });
     });
+  }
+  // Paint both toggles from one bot reply.
+  function cacheOptions(d) {
+    if (typeof d.seal === "boolean") cacheSeal(d.seal);
+    if (typeof d.autogen === "boolean") cacheAutoGen(d.autogen);
   }
   async function setSeal(on) {
     cacheSeal(on);                 // paint immediately; the bot confirms below
@@ -245,12 +272,49 @@
       ? (on ? " — bid sealed." : " — unticked on this bid.")
       : (on ? " — will tick it when the form fills." : " — the free upgrade won't be ticked.");
     try {
-      const saved = await sealRequest(on);
-      cacheSeal(saved);
-      badge("Seal " + (saved ? "ON" : "OFF") + " (saved to Settings)" + here, "info");
+      const d = await optionsRequest({ seal: on });
+      cacheOptions(d);
+      badge("Seal " + (d.seal ? "ON" : "OFF") + " (saved to Settings)" + here, "info");
     } catch (msg) {
       badge("Seal " + (on ? "ON" : "OFF") + " for this browser only — couldn't save to Settings: " + msg, "err");
     }
+  }
+
+  // ── Auto-generate toggle (Settings page: BOT_AUTO_GENERATE) ────────────────
+  // ON = opening a project generates the proposal and fills the form (one OpenAI
+  // call per new project). OFF = the page is left alone until you press ✨ Generate,
+  // so browsing jobs is free. Same two-way sync as the Sealed switch.
+  const AUTOGEN_KEY = "fbb:autogen";
+  function autoGenOn() {
+    try {
+      const v = window.localStorage.getItem(AUTOGEN_KEY);
+      return v === null ? AUTOGEN_DEFAULT : v === "1";
+    } catch (e) { return AUTOGEN_DEFAULT; }
+  }
+  function cacheAutoGen(on) {
+    try { window.localStorage.setItem(AUTOGEN_KEY, on ? "1" : "0"); } catch (e) {}
+    paintGenBtn();
+  }
+  async function setAutoGen(on) {
+    cacheAutoGen(on);
+    try {
+      const d = await optionsRequest({ autogen: on });
+      cacheOptions(d);
+      badge(
+        d.autogen
+          ? "Auto-generate ON (saved) — opening a project writes the proposal."
+          : "Auto-generate OFF (saved) — press ✨ Generate / Alt+G on the jobs you want.",
+        "info"
+      );
+    } catch (msg) {
+      badge("Auto-generate " + (on ? "ON" : "OFF") + " for this browser only — couldn't save to Settings: " + msg, "err");
+    }
+  }
+  function paintGenBtn() {
+    if (!genBtn) return;
+    const on = autoGenOn();
+    genBtn.textContent = on ? "✨ Auto-gen: ON" : "✋ Auto-gen: OFF";
+    genBtn.style.background = on ? "#166534" : "#334155";
   }
   function paintSealBtn() {
     if (!sealBtn) return;
@@ -561,11 +625,11 @@
         d = await fetchJobText(seo, pid);
         CACHE.setItem(key, JSON.stringify(d));
       }
-      // Skills first, then the description — no title line, so the text pastes
+      // Description first, skills after it — no title line, so the text pastes
       // straight into a chat/notes without a header you already saw on the page.
       const parts = [];
-      if (d.skills) parts.push("Skills: " + d.skills, "");
-      if (d.description) parts.push(d.description);
+      if (d.description) parts.push(d.description, "");
+      if (d.skills) parts.push("Skills: " + d.skills);
       const text = parts.join("\n").trim();
       if (!text) { badge("The bot has no description/skills for this project.", "err"); return; }
       await toClipboard(text);
@@ -662,6 +726,13 @@
     const seo = currentSeo();
     if (!seo) return;
     if (!force && seo === lastSeo) return; // already handled this project in-tab
+    // Auto-generate OFF: opening a project does nothing, so browsing costs no OpenAI
+    // call. Pressing ✨ Generate / Alt+G passes force=true and always generates. Note
+    // lastSeo is NOT set here — if you switch the toggle on, a re-run still works.
+    if (!force && !autoGenOn()) {
+      badge("Auto-generate is OFF — press ✨ Generate / Alt+G to write a proposal.", "info");
+      return;
+    }
     lastSeo = seo;
     cancelAutoBid(null); // a fresh generate restarts the countdown with the new text
 
@@ -728,6 +799,7 @@
     else if (k === "b") { e.preventDefault(); placeBid(0); }
     else if (k === "s") { e.preventDefault(); setSeal(!sealOn()); }
     else if (k === "c") { e.preventDefault(); copyJobText(); }
+    else if (k === "n") { e.preventDefault(); setAutoGen(!autoGenOn()); }
     else if (k === "a") {
       e.preventDefault();
       const on = !autoBidOn();
@@ -739,10 +811,11 @@
   // Build the panel immediately so the buttons exist even if the bid box never
   // loads, then run once. A light watcher re-runs on SPA navigation to a new project.
   buildPanel();
-  // Show the Seal state the BOT has (Settings page), not a stale local one. Silent
-  // on failure: the cached value already painted the button.
-  sealRequest(null).then(cacheSeal, () => {});
-  run(false);
+  // Show the switch states the BOT has (Settings page), not stale local ones, then
+  // decide whether to generate. Reading first means a fresh browser obeys the saved
+  // setting instead of the built-in default. On failure we fall back to the cached
+  // values, which the buttons already show.
+  optionsRequest({}).then(cacheOptions, () => {}).then(() => run(false));
   let lastPath = location.pathname;
   setInterval(() => {
     if (location.pathname !== lastPath) {
