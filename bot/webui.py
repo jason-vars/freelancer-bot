@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import html
 import json
+import re
+import time
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -45,6 +47,50 @@ OPENAI_MODEL_CHOICES: tuple[tuple[str, str], ...] = (
     ("gpt-4o", "GPT-4o — older general model, mid cost"),
     ("gpt-4o-mini", "GPT-4o mini — older, very cheap, weak on long prompts"),
 )
+
+# Model ids that can't write a proposal (audio, images, embeddings, code agents...),
+# and dated snapshots ("gpt-4.1-2025-04-14") that only duplicate their alias.
+_NON_TEXT_MODEL = re.compile(
+    r"audio|realtime|transcribe|tts|image|dall-e|embedding|moderation|search|instruct|"
+    r"codex|computer-use|whisper|babbage|davinci|-\d{4}-\d{2}-\d{2}$|-\d{4}$"
+)
+_TEXT_MODEL_PREFIX = re.compile(r"^(gpt-|o\d)")
+_MODEL_CACHE: dict[str, tuple[float, tuple[tuple[str, str], ...]]] = {}
+_MODEL_CACHE_TTL = 3600       # a successful listing is reused for an hour
+_MODEL_CACHE_FAIL_TTL = 300   # a failure is retried after 5 minutes, not on every page load
+
+
+def _openai_model_choices(api_key: str) -> tuple[tuple[str, str], ...]:
+    """The model dropdown, filled live from the account's ``GET /v1/models``.
+
+    Known models keep their hand-written hint and order; any other text model the
+    account can use (e.g. one released after this list was written) is appended,
+    newest-looking id first. Falls back to the static list when there is no key or
+    the API call fails, so the settings page never breaks or hangs on it."""
+    key = (api_key or "").strip()
+    if not key:
+        return OPENAI_MODEL_CHOICES
+    now = time.time()
+    hit = _MODEL_CACHE.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(api_key=key, timeout=5, max_retries=0)
+        ids = {m.id for m in client.models.list()}
+    except Exception:  # noqa: BLE001 - offline / bad key -> static list
+        _MODEL_CACHE[key] = (now + _MODEL_CACHE_FAIL_TTL, OPENAI_MODEL_CHOICES)
+        return OPENAI_MODEL_CHOICES
+    usable = {i for i in ids if _TEXT_MODEL_PREFIX.match(i) and not _NON_TEXT_MODEL.search(i)}
+    known = [(v, lbl) for v, lbl in OPENAI_MODEL_CHOICES if v in usable]
+    known_ids = {v for v, _ in known}
+    rest = sorted(usable - known_ids, reverse=True)
+    rest = [i for i in rest if i.startswith("gpt-")] + [i for i in rest if not i.startswith("gpt-")]
+    extra = [(i, f"{i} — available on your account") for i in rest]
+    choices = tuple(known + extra) or OPENAI_MODEL_CHOICES
+    _MODEL_CACHE[key] = (now + _MODEL_CACHE_TTL, choices)
+    return choices
 
 
 # Grouped settings rendered top-to-bottom. Mirrors bot/config.py so every knob the
@@ -355,6 +401,8 @@ def _render(values: dict[str, str], *, saved: bool, errors: dict[str, str]) -> s
                 control = f'<textarea name="{f.key}" rows="4" placeholder="{esc(ph)}">{esc(cur)}</textarea>'
             elif f.kind == "select":
                 opts = list(f.choices)
+                if f.key == "OPENAI_MODEL":
+                    opts = list(_openai_model_choices(values.get("OPENAI_API_KEY", "")))
                 if cur and cur not in {v for v, _ in opts}:
                     opts = [(cur, f"{cur} (custom)")] + opts
                 options = "".join(
