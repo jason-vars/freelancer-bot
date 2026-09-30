@@ -320,6 +320,9 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     # user's instructions asked for one) also belongs on the first sentence's line.
     if data.prefix_inline:
         body = _merge_greeting_line(body)
+    # Models drop the template's fixed lines now and then (the greeting, the
+    # "I have two questions:" lead-in) — restore whatever THIS template has.
+    body = _enforce_template_framing(body, template)
     # Client-required verification word (anti-AI check) goes ABOVE everything else.
     lead = detect_required_lead(api_key, model, data.description)
     return _assemble(
@@ -385,6 +388,82 @@ def _merge_greeting_line(text: str) -> str:
     if not rest:
         return text
     return "\n".join([lines[0].strip() + " " + rest[0].lstrip()] + rest[1:])
+
+
+_LEAD_GREETING = re.compile(
+    r"^\s*(hi|hello|hey|good (?:morning|afternoon|evening))\b[,!.:]*",
+    re.IGNORECASE,
+)
+_QUESTION_LINE = re.compile(r"^\s*Q\d+\s*[:.)]", re.IGNORECASE)
+_QUESTION_COUNT = re.compile(r"\b(one|two|three|four|five|\d+)(\s+)questions?\b", re.IGNORECASE)
+_COUNT_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
+_I_WORDS = {"i", "i'm", "i’m", "i'd", "i’d", "i've", "i’ve", "i'll", "i’ll"}
+
+
+def _template_question_lead_in(template: str) -> str:
+    """The template's line right before its first 'Q1:' line (e.g. 'I have two
+    questions:'), or '' when the template has no question block or no lead-in."""
+    lines = [ln.strip() for ln in (template or "").splitlines()]
+    for i, ln in enumerate(lines):
+        if _QUESTION_LINE.match(ln):
+            prev = next((p for p in reversed(lines[:i]) if p), "")
+            # Only a real lead-in ("I have two questions:"), not a content sentence
+            # that happens to sit above Q1.
+            is_lead_in = prev.endswith(":") or "question" in prev.lower()
+            return prev if is_lead_in and not _QUESTION_LINE.match(prev) else ""
+    return ""
+
+
+def _with_question_count(lead_in: str, n: int) -> str:
+    """'I have two questions:' -> 'I have one question:' when n == 1, etc."""
+    word = _COUNT_WORDS.get(n, str(n))
+
+    def repl(m: re.Match) -> str:
+        w = word.capitalize() if m.group(1)[0].isupper() else word
+        return f"{w}{m.group(2)}{'question' if n == 1 else 'questions'}"
+
+    return _QUESTION_COUNT.sub(repl, lead_in, count=1)
+
+
+def _enforce_template_framing(body: str, template: str) -> str:
+    """Restore the fixed framing lines of the user's OWN template when the model
+    dropped them: its opening greeting and the lead-in line before its Q1/Q2 block.
+
+    Everything is derived from the template, nothing is hard-coded — a template
+    without a greeting or lead-in gets neither. The lead-in's question count is
+    adjusted to the number of Q-lines actually written."""
+    if not (template or "").strip() or not body.strip():
+        return body
+
+    # 1) Opening greeting ("Hi," in "Hi, I'd trace the flow ...").
+    g = _LEAD_GREETING.match(template.strip())
+    if g and not _LEAD_GREETING.match(body):
+        greeting = g.group(0).strip()
+        first, _, rest = body.partition(" ")
+        word = re.sub(r"[^\w'’]", "", first)
+        # Lower-case the old first word unless it is "I..." or a proper noun
+        # (the same capitalised word appears again later, e.g. "Shopify").
+        keep = (word.lower() in _I_WORDS or word.isupper()
+                or re.search(r"\b" + re.escape(word) + r"\b", rest) is not None)
+        if not keep and first:
+            first = first[0].lower() + first[1:]
+        body = f"{greeting} {first}" + (f" {rest}" if rest else "")
+
+    # 2) Lead-in line before the questions ("I have two questions:").
+    lead_in = _template_question_lead_in(template)
+    lines = body.split("\n")
+    q_idx = [i for i, ln in enumerate(lines) if _QUESTION_LINE.match(ln)]
+    if lead_in and q_idx:
+        wanted = _with_question_count(lead_in, len(q_idx))
+        first_q = q_idx[0]
+        prev_i = next((i for i in range(first_q - 1, -1, -1) if lines[i].strip()), None)
+        norm = lambda s: _QUESTION_COUNT.sub("N questions", s.strip().lower().rstrip(":."))
+        if prev_i is not None and norm(lines[prev_i]) == norm(lead_in):
+            lines[prev_i] = wanted  # present — just fix the count
+        else:
+            lines.insert(first_q, wanted)
+        body = "\n".join(lines)
+    return body
 
 
 def _strip_leading_greeting(body: str, prefix: str) -> str:

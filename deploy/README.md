@@ -1,5 +1,9 @@
 # Automatic Telegram notifications
 
+> Running **several Freelancer accounts** on one always-on server? See
+> [Several accounts on one server](#several-accounts-on-one-server) at the end.
+
+
 Two ways to run, both notify **only for "great" projects** (pass all filters and
 score >= BOT_MIN_SCORE); INR/stale/rejected projects are processed silently.
 
@@ -131,3 +135,82 @@ journalctl -u freelancer-webhook -f           # live logs
 ```
 
 Open the port if a firewall is on: `sudo ufw allow 8080/tcp`.
+
+
+## Several accounts on one server
+
+One code checkout, one systemd instance per Freelancer account. Each account keeps
+its own `.env`, its own `bot.sqlite3` and its own web UI port, so filters, proposals,
+Telegram chat and bid history never mix.
+
+**A Freelancer token belongs to one account** — there is no way to bid for several
+accounts with one token. Each account authorises your app once and gets its own
+token. What you share is the app (one Client ID/Secret) and, if you want, the
+OpenAI key.
+
+### Layout
+
+```
+/opt/freelancer-bot/app/                     the repo + .venv (shared code)
+/opt/freelancer-bot/accounts/jaison/.env     account settings + tokens  (port 8765)
+/opt/freelancer-bot/accounts/jaison/bot.sqlite3
+/opt/freelancer-bot/accounts/user2/.env                                 (port 8766)
+```
+
+### Install
+
+```bash
+sudo useradd -r -m -d /opt/freelancer-bot botuser
+sudo -u botuser git clone <your-repo> /opt/freelancer-bot/app
+cd /opt/freelancer-bot/app
+sudo -u botuser python3 -m venv .venv
+sudo -u botuser .venv/bin/pip install -r requirements.txt
+sudo mkdir -p /opt/freelancer-bot/accounts
+
+sudo cp deploy/freelancer-bot@.service /etc/systemd/system/
+sudo systemctl daemon-reload
+```
+
+### Add an account
+
+```bash
+sudo deploy/new-account.sh jaison        # creates the dir, copies .env.example, picks a free port
+sudoedit /opt/freelancer-bot/accounts/jaison/.env
+sudo systemctl enable --now freelancer-bot@jaison
+journalctl -u freelancer-bot@jaison -f
+```
+
+Repeat per account. `systemctl … freelancer-bot@user2` is a completely separate
+instance; stopping or restarting one never touches the others.
+
+### Reaching the settings page
+
+The web UI has **no login and displays the account's tokens**, so the unit binds it
+to `127.0.0.1`. Tunnel in from your own machine instead of opening the port:
+
+```bash
+ssh -L 8765:127.0.0.1:8765 you@your-server     # then http://127.0.0.1:8765
+```
+
+The browser userscript talks to `http://127.0.0.1:8765` too, so with the tunnel open
+it keeps working unchanged against the server-side bot.
+
+**Never** put this UI on a public port. Anyone who reaches it can read your
+Freelancer token, your OpenAI key and your Telegram token.
+
+### Two things to watch
+
+- **Shared IP.** Every account bids from the server's one IP, which is how platforms
+  spot linked accounts — and a ban usually hits all of them. Fine for accounts that
+  are genuinely yours to run; for several *different people*, give each instance its
+  own outbound proxy or run it on their own machine.
+- **One Telegram bot per account.** Two `getUpdates` pollers on the same bot token
+  conflict, so give each account its own bot from @BotFather (or at least its own
+  chat id and only one listener).
+
+### Why `BOT_ENV_FILE` is set in the unit
+
+`bot.sqlite3` and `bot.pid` are resolved relative to the working directory, so those
+separate themselves. Settings do not: without `BOT_ENV_FILE` the bot finds the
+`.env` next to the shared code checkout, and the Settings page would write there —
+every account editing the same file. The unit sets it per instance.
