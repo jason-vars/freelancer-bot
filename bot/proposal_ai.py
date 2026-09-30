@@ -147,6 +147,13 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
         "signature. End with the last sentence of your pitch or your question — a closing and signature are added "
         "automatically afterwards."
     )
+    # Long custom prompts describe a "silent" analysis pass (real goal, friction,
+    # client type...). Weaker models print it as the opening ("The real goal is to...").
+    lines.append(
+        "- Any analysis, extraction or classification step described in the instructions is SILENT: never print "
+        "its labels or results (e.g. 'The real goal is', 'Core friction', 'Client type', 'Niche'). The first "
+        "words of your output are the first words of the proposal itself."
+    )
     lines.append(
         "- If the job post asks bidders to begin with a specific verification word, code, or phrase (an anti-AI "
         "check, e.g. 'start with the word Bundle'), do NOT write it yourself — it is prepended automatically as the "
@@ -157,7 +164,11 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
         lines += [
             "",
             "Follow the STYLE, TONE and STRUCTURE of the user's template below, adapting its wording to THIS job. "
-            "Do not copy it word-for-word, and drop any of its lines that are irrelevant to this job.",
+            "Rewrite its job-specific content for this post, but KEEP whatever fixed framing lines the template "
+            "itself has (its greeting, any lead-in sentence before a question block, and the like), only "
+            "adjusting a number in them to match what you actually write. If the template has no such line, do "
+            "not add one. Drop only content sentences that do not apply to this job. Where the template and the "
+            "USER INSTRUCTIONS disagree, the instructions win.",
         ]
     elif not custom:
         # A built-in structure would fight a custom prompt that lays out its own
@@ -376,6 +387,25 @@ def _merge_greeting_line(text: str) -> str:
     return "\n".join([lines[0].strip() + " " + rest[0].lstrip()] + rest[1:])
 
 
+def _strip_leading_greeting(body: str, prefix: str) -> str:
+    """Drop the model's own opening greeting when the "Text at start" prefix is that
+    same greeting. A custom prompt or template that says "start with Hi," makes the
+    model write it too, which would otherwise read "Hi, Hi, ..." once the prefix is
+    added. Only an exact greeting match (case and trailing punctuation ignored) is
+    removed, so a prefix like "I am a senior developer" never eats real content."""
+    norm = lambda s: re.sub(r"[\s,!:.\-]+$", "", (s or "").strip()).lower()
+    greeting = norm(prefix)
+    if not greeting or not _GREETING_LINE.match(greeting):
+        return body
+    m = re.match(re.escape(greeting) + r"\b[\s,!:.\-]*", body, re.IGNORECASE)
+    if not m:
+        return body
+    rest = body[m.end():].lstrip()
+    if not rest:
+        return body
+    return rest[0].upper() + rest[1:]
+
+
 def _sanitize(text: str) -> str:
     """Enforce two of the formatting rules deterministically (models still slip):
     drop backslash characters, and collapse runs of blank lines to at most one."""
@@ -412,6 +442,7 @@ def _assemble(body: str, *, lead: str = "", prefix: str, suffix: str, signature:
         out.append(f'"{lead.strip().strip(chr(34)).strip(chr(39)).strip()}"')
     body = body.strip()
     if (prefix or "").strip():
+        body = _strip_leading_greeting(body, prefix)
         if prefix_inline:
             # Greeting glued to the first sentence: "Hi, I am a senior ...". The model
             # writes one sentence per line, so a prefix appended as its own element
