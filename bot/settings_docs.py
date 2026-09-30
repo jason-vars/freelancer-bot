@@ -188,6 +188,12 @@ FIELD_DOCS: dict[str, str] = {
         "= nothing is generated until you press the panel's Generate button (Alt+G), so "
         "browsing jobs costs nothing. Auto-bid still only runs after a successful fill."
     ),
+    "BOT_PROPOSAL_PREFIX_INLINE": (
+        "On = 'Text at start' is glued to the first sentence, e.g. 'Hi, I am a senior "
+        "developer...'. Off (default) = it keeps its own line above the proposal. The "
+        "AI writes one sentence per line, so this switch is the reliable way to get the "
+        "inline greeting."
+    ),
     "BOT_SEAL_BIDS": (
         "On (default) = the browser userscript ticks Freelancer's FREE 'Sealed' upgrade "
         "when it fills a bid form, so other freelancers can't see your bid. Only the free "

@@ -51,6 +51,9 @@ class ProposalInput:
     template: str = ""
     prefix: str = ""
     suffix: str = ""
+    # Put the prefix on the SAME line as the first sentence ("Hi, I am a senior...")
+    # instead of its own line. See _assemble.
+    prefix_inline: bool = False
 
 
 def _system_rules(*, ask_question: bool, include_profile: bool,
@@ -62,37 +65,67 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
     toggles add/remove the portfolio and question. A user template drives the
     structure, and the user's free-text instructions are the HIGHEST authority — if
     anything conflicts, the model obeys the user. The closing line(s) and signature
-    are appended deterministically AFTER generation, so the model never writes them."""
+    are appended deterministically AFTER generation, so the model never writes them.
+
+    Custom instructions are a WHOLE prompt of the user's own — it may set the length,
+    the language, the opening, the layout, the structure and a fixed question block. So
+    when they are present EVERY built-in about how the letter reads becomes a DEFAULT
+    the user overrides, not a hard rule, and the absolutist wording ('NEVER', 'Do NOT',
+    'ask NOTHING') is dropped along with it: stating both sides as absolute left the
+    model obeying whichever sat higher in the prompt. That is how a prompt ending in
+    'I have two questions. Q1: ... Q2: ...' silently lost its question block (the
+    built-in said ask nothing when the post is clear, and Q1/Q2 read as the banned
+    numbered list). Only the rules the PIPELINE depends on stay hard in every case: no
+    closing salutation or signature, and no verification word (both are appended
+    deterministically afterwards), plus 'output the proposal text only'."""
+    custom = bool((user_instructions or "").strip())
+
+    def rule(default: str, hard: str) -> str:
+        """Pick the wording: a soft default when the user brought their own prompt,
+        the strict built-in otherwise."""
+        return default if custom else hard
+
     lines = [
         "You write short, human cover letters (proposals) for Freelancer.com jobs.",
         "Output ONLY the proposal text itself — no preamble, no headings, no markdown, no code fences.",
         "",
-        "HARD RULES (never break these):",
-        "- English only.",
-        "- Keep it UNDER 200 words AND under 1200 characters.",
-        "- Open with a strong one-line hook that immediately shows you understand THIS specific project.",
-        "- Plain text only: NO bullet points, NO numbered lists, NO markdown, NO backslash (\\) characters.",
-        # Blank-line policy is the one built-in rule custom instructions routinely
-        # contradict (a three-block layout needs blank lines between the blocks). When
-        # the user supplies instructions, their layout wins and only the
-        # one-sentence-per-line habit is kept; otherwise the tight default stands.
-        (
-            "- Write one sentence per line. Your own instructions below decide where blank lines go."
-            if (user_instructions or "").strip()
-            else "- Write one sentence per line. Do NOT use empty lines, except at most a single blank line right before the closing."
-        ),
-        "- Confident, natural, human. No emojis, no fluff, no fake claims. Use ',' never ';'.",
+        rule("BASE RULES (defaults only — YOUR INSTRUCTIONS at the end override any of these):",
+             "HARD RULES (never break these):"),
+        rule("- English, unless your instructions ask for another language.",
+             "- English only."),
+        rule("- Keep it short: your own instructions set the exact length.",
+             "- Keep it UNDER 200 words AND under 1200 characters."),
+        rule("- Open in a way that shows you understand THIS specific project, following whatever "
+             "opening your instructions describe.",
+             "- Open with a strong one-line hook that immediately shows you understand THIS specific project."),
+        rule("- Plain text: no markdown, no code fences, no backslash (\\) characters. Numbered or "
+             "labelled lines (e.g. 'Q1:') where your instructions ask for them.",
+             "- Plain text only: NO bullet points, NO numbered lists, NO markdown, NO backslash (\\) characters."),
+        rule("- Your instructions decide the layout: line breaks, blank lines, paragraphs.",
+             "- Write one sentence per line. Do NOT use empty lines, except at most a single blank line right before the closing."),
+        rule("- Confident, natural, human. No fluff, no fake claims.",
+             "- Confident, natural, human. No emojis, no fluff, no fake claims. Use ',' never ';'."),
     ]
     if include_profile and has_portfolio:
         lines.append(
             "- A tagged portfolio list follows. Each link shows the tech/role it demonstrates. "
             "Include ONLY the link(s) whose tags best match THIS job's skills and description — "
             "usually 1, at most 2-3. Omit every unrelated link. If none clearly fit, include none. "
-            "Put each chosen link on its own line, and NEVER print the tags or invent links."
+            + rule("Place them where your instructions say, and never print the tags or invent links.",
+                   "Put each chosen link on its own line, and NEVER print the tags or invent links.")
         )
     elif not include_profile:
         lines.append("- Do NOT include portfolio links or a profile/experience dump.")
-    if ask_question:
+    if ask_question and custom:
+        # The user's own prompt decides the question policy (how many, what wording,
+        # whether a fixed closing block like "I have two questions. Q1: ... Q2: ..." is
+        # always present). Repeating the built-in "ask nothing when the post is clear"
+        # here would contradict it and, in practice, win.
+        lines.append(
+            "- Your own instructions below decide whether to ask questions, how many, and in what format. "
+            "Follow them exactly, including any fixed wording or Q1/Q2 labels they specify."
+        )
+    elif ask_question:
         # Questions are earned, not mandatory. Forcing one onto a fully-specified post
         # produces filler the client reads as a template ("what's your ideal deadline?").
         # So: ask only when the post is genuinely ambiguous, otherwise spend the last
@@ -126,7 +159,10 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
             "Follow the STYLE, TONE and STRUCTURE of the user's template below, adapting its wording to THIS job. "
             "Do not copy it word-for-word, and drop any of its lines that are irrelevant to this job.",
         ]
-    else:
+    elif not custom:
+        # A built-in structure would fight a custom prompt that lays out its own
+        # sections (opening, approach, questions), so it is only offered when the user
+        # has given neither a template nor instructions of their own.
         lines += [
             "",
             "Structure: the hook, then 1-2 sentences on your directly-relevant experience with this job's exact stack, "
@@ -269,6 +305,10 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     )
     # The SDK returns a structured response; simplest is `output_text`.
     body = _sanitize(resp.output_text.strip())
+    # Same switch, other source: a greeting the model wrote itself (because the
+    # user's instructions asked for one) also belongs on the first sentence's line.
+    if data.prefix_inline:
+        body = _merge_greeting_line(body)
     # Client-required verification word (anti-AI check) goes ABOVE everything else.
     lead = detect_required_lead(api_key, model, data.description)
     return _assemble(
@@ -277,6 +317,7 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
         prefix=data.prefix,
         suffix=data.suffix,
         signature=signature if data.include_name else "",
+        prefix_inline=data.prefix_inline,
     )
 
 
@@ -306,6 +347,35 @@ def _strip_lead_from_body(body: str, lead: str) -> str:
     return body
 
 
+_GREETING_LINE = re.compile(
+    r"^(hi|hello|hey|good (?:morning|afternoon|evening)|dear [a-z .'-]{0,24})[,!:.]*$",
+    re.IGNORECASE,
+)
+
+
+def _merge_greeting_line(text: str) -> str:
+    """Join a greeting the MODEL wrote on its own first line to the sentence below it.
+
+    The "one sentence per line" rule makes the model put a greeting on its own line,
+    so an instruction like "start the proposal with Hi," yields::
+
+        Hi,
+        I am a senior developer ...
+
+    With the inline option on, the user wants ``Hi, I am a senior developer ...``.
+    Only a bare greeting line is merged — a first line that carries real content is
+    never touched."""
+    lines = text.split("\n")
+    if len(lines) < 2 or not _GREETING_LINE.match(lines[0].strip()):
+        return text
+    rest = lines[1:]
+    while rest and not rest[0].strip():  # greeting followed by a blank line
+        rest.pop(0)
+    if not rest:
+        return text
+    return "\n".join([lines[0].strip() + " " + rest[0].lstrip()] + rest[1:])
+
+
 def _sanitize(text: str) -> str:
     """Enforce two of the formatting rules deterministically (models still slip):
     drop backslash characters, and collapse runs of blank lines to at most one."""
@@ -314,7 +384,8 @@ def _sanitize(text: str) -> str:
     return text.strip()
 
 
-def _assemble(body: str, *, lead: str = "", prefix: str, suffix: str, signature: str) -> str:
+def _assemble(body: str, *, lead: str = "", prefix: str, suffix: str, signature: str,
+              prefix_inline: bool = False) -> str:
     """Build the final letter: [lead] -> [prefix] -> body -> [closing suffix] -> [name].
 
     ``lead`` is a client-required verification word/phrase (an anti-AI check pulled
@@ -339,9 +410,21 @@ def _assemble(body: str, *, lead: str = "", prefix: str, suffix: str, signature:
         # Present the required word quoted, e.g. "Bundle" (strip any quotes the
         # detector already captured so we never double-wrap).
         out.append(f'"{lead.strip().strip(chr(34)).strip(chr(39)).strip()}"')
+    body = body.strip()
     if (prefix or "").strip():
-        out.append(prefix.strip())
-    out.append(body.strip())
+        if prefix_inline:
+            # Greeting glued to the first sentence: "Hi, I am a senior ...". The model
+            # writes one sentence per line, so a prefix appended as its own element
+            # always lands on its own line — joining here is the only deterministic
+            # way to get the inline form. Whatever punctuation the prefix ends with
+            # ("Hi," / "Hello -") is kept; the two are joined by a single space.
+            head, sep, rest = body.partition("\n")
+            body = prefix.strip() + " " + head.lstrip()
+            if sep:
+                body += sep + rest
+        else:
+            out.append(prefix.strip())
+    out.append(body)
     closing = []
     if (suffix or "").strip():
         closing.append(suffix.strip())
@@ -375,6 +458,7 @@ def build_proposal_input(s, *, title: str, description: str, skills: str,
         template=s.proposal_template,
         prefix=s.proposal_prefix,
         suffix=s.proposal_suffix,
+        prefix_inline=s.proposal_prefix_inline,
     )
 
 

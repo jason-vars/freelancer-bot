@@ -188,6 +188,9 @@ class Settings:
     ask_question: bool
     # Literal text wrapped around the generated body ("Hello," / "Thanks!").
     proposal_prefix: str
+    # True = the prefix opens the first sentence ("Hi, I am ...") instead of sitting
+    # on a line of its own.
+    proposal_prefix_inline: bool
     proposal_suffix: str
 
     # --- AI project filtering (natural-language accept/reject) ---
@@ -324,6 +327,7 @@ def load_settings() -> Settings:
         include_profile=_get_bool("BOT_INCLUDE_PROFILE", True),
         ask_question=_get_bool("BOT_ASK_QUESTION", True),
         proposal_prefix=_get_text("BOT_PROPOSAL_PREFIX"),
+        proposal_prefix_inline=_get_bool("BOT_PROPOSAL_PREFIX_INLINE", False),
         proposal_suffix=_get_text("BOT_PROPOSAL_SUFFIX"),
         # AI project filtering.
         ai_filter_enabled=_get_bool("BOT_AI_FILTER_ENABLED", False),

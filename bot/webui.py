@@ -111,6 +111,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
               "A sample proposal the AI imitates for tone/structure. Blank = built-in style example.", ""),
         Field("BOT_PROPOSAL_PREFIX", "Text at start", "text",
               "Literal text put at the very top of every proposal, e.g. \"Hello,\".", ""),
+        Field("BOT_PROPOSAL_PREFIX_INLINE", "Text at start on the same line", "bool",
+              "ON = the text above opens the first sentence (\"Hi, I am a senior...\"). OFF = it sits on its own line above the proposal.", "0"),
         Field("BOT_PROPOSAL_SUFFIX", "Text at end (closing)", "textarea",
               "Closing line(s) placed at the very end, just BEFORE your name. One per line, e.g. \"Hope to dive into your project asap.\" then \"Thank you.\". Your name (if Include name is On) is added on the last line after this.", ""),
     ]),
