@@ -27,11 +27,23 @@ class Field:
 
 # Model dropdown with cost/throughput hints (FABB-style). Verify exact pricing at
 # https://openai.com/api/pricing — hints are relative guidance, not exact quotes.
+# Newest first. GPT-5.x are reasoning models (slower, stronger rule-following);
+# GPT-4.x answer instantly.
 OPENAI_MODEL_CHOICES: tuple[tuple[str, str], ...] = (
-    ("gpt-5.2-mini", "GPT-5.2 mini — fast & cheap, best default for high-volume bidding"),
-    ("gpt-5.2", "GPT-5.2 — highest quality, higher cost per proposal"),
-    ("gpt-4o-mini", "GPT-4o mini — very cheap, fine for most proposals"),
-    ("gpt-4o", "GPT-4o — strong general model, mid cost"),
+    ("gpt-5.6-luna", "GPT-5.6 Luna — newest, cost-efficient, recommended for proposals"),
+    ("gpt-5.6-terra", "GPT-5.6 Terra — newest, balanced quality/cost"),
+    ("gpt-5.6-sol", "GPT-5.6 Sol — newest frontier, premium cost"),
+    ("gpt-5.5", "GPT-5.5 — previous frontier, high cost"),
+    ("gpt-5.2", "GPT-5.2 — high quality, higher cost per proposal"),
+    ("gpt-5.2-mini", "GPT-5.2 mini — fast & cheap, good for high-volume bidding"),
+    ("gpt-5", "GPT-5 — strong reasoning, mid-high cost"),
+    ("gpt-5-mini", "GPT-5 mini — reasoning, low cost"),
+    ("gpt-5-nano", "GPT-5 nano — reasoning, cheapest"),
+    ("gpt-4.1", "GPT-4.1 — non-reasoning, strong instruction following, fast"),
+    ("gpt-4.1-mini", "GPT-4.1 mini — non-reasoning, cheap, fast"),
+    ("gpt-4.1-nano", "GPT-4.1 nano — non-reasoning, cheapest, weakest"),
+    ("gpt-4o", "GPT-4o — older general model, mid cost"),
+    ("gpt-4o-mini", "GPT-4o mini — older, very cheap, weak on long prompts"),
 )
 
 
