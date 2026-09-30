@@ -99,6 +99,24 @@ FIELD_DOCS: dict[str, str] = {
         "run, the daily cap, and Save-only). The web-UI Apply/Auto-bid buttons are "
         "manual and always work regardless of this switch."
     ),
+    "BOT_FEED_MODE": (
+        "Share ONE Freelancer token's job search across all accounts through Supabase. "
+        "Exactly one account is 'publish': it searches Freelancer, looks up each client once, and "
+        "writes both to Supabase. Every other account is 'subscribe': it reads new jobs from "
+        "Supabase and applies its OWN keywords and filters locally, making no Freelancer search or "
+        "client calls. Bidding, proposals and the userscript still use each account's own token. "
+        "'off' = the account searches Freelancer by itself (the old behaviour)."
+    ),
+    "BOT_FEED_KEYWORDS": (
+        "Publisher only. The search keywords for the whole feed, i.e. every subscriber's Keywords "
+        "combined. A subscriber only ever sees jobs this search returns, so add a keyword here "
+        "whenever a subscriber adds one. Blank = the publisher's own Keywords."
+    ),
+    "SUPABASE_URL": "Your Supabase project URL (Project Settings > API), e.g. https://abcd1234.supabase.co.",
+    "SUPABASE_KEY": (
+        "Supabase API key. Publisher: the service_role key (it inserts and prunes rows). "
+        "Subscribers: the anon key, which deploy/supabase_feed.sql limits to reading."
+    ),
     "SLACK_WEBHOOK_URL": (
         "Slack Incoming Webhook URL (https://hooks.slack.com/services/...). When set, "
         "every job alert is ALSO posted to that channel as a short summary (title link, "

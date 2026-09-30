@@ -214,3 +214,27 @@ Freelancer token, your OpenAI key and your Telegram token.
 separate themselves. Settings do not: without `BOT_ENV_FILE` the bot finds the
 `.env` next to the shared code checkout, and the Settings page would write there —
 every account editing the same file. The unit sets it per instance.
+
+### Shared job feed: one Freelancer token for job searching
+
+By default every account searches Freelancer and looks up every client with its own
+token, so N accounts make N times the API calls for the same jobs. With the shared
+feed, one account does the searching and the rest read the results from Supabase.
+
+1. Create a free Supabase project, open **SQL Editor**, and run
+   [`supabase_feed.sql`](supabase_feed.sql). It creates the `feed_projects` table,
+   readable with the anon key and writable only with the service_role key.
+2. Pick **one** account as the publisher. In its Settings > **Shared job feed**:
+   - Feed mode: `publish`
+   - Feed keywords: every account's Keywords combined (subscribers only ever see
+     jobs this search returns)
+   - Supabase URL and the **service_role** key (Project Settings > API)
+3. Every other account: Feed mode `subscribe`, the same URL, and the **anon** key.
+
+Each subscriber still applies its own Keywords, filters, score and notification
+settings to the feed, and still bids and generates proposals with its own
+Freelancer token. Only the job search and client lookups are shared.
+
+If Supabase is unreachable, the publisher keeps what it couldn't send and retries
+on the next poll. Subscribers simply read nothing until it's back. Rows older than
+3 days are pruned automatically.

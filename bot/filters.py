@@ -433,11 +433,14 @@ def passes_payment_verified(
     return False, "client_payment_unverified" if pv is False else "client_payment_unknown"
 
 
-def evaluate_project(session, project: dict[str, Any], settings) -> tuple[bool, str | None, dict[str, Any]]:
+def evaluate_project(session, project: dict[str, Any], settings,
+                     client_status: dict[str, Any] | None = None) -> tuple[bool, str | None, dict[str, Any]]:
     """Apply the pre-save filters in order: currency -> budget -> country -> client history.
 
     Returns ``(passed, reason, client_status)``. ``client_status`` is ``{}`` when
-    the project is rejected before any API lookup is needed.
+    the project is rejected before any API lookup is needed. Pass ``client_status``
+    when it is already known (the shared job feed ships it with each project) and
+    no Freelancer API call is made for it.
     """
     ok, reason = passes_recency(project.get("created_at"), settings.max_project_age_seconds)
     if not ok:
@@ -477,7 +480,8 @@ def evaluate_project(session, project: dict[str, Any], settings) -> tuple[bool, 
     if not ok:
         return False, reason, {}
 
-    client_status = get_client_status(session, project.get("owner_id"))
+    if client_status is None:
+        client_status = get_client_status(session, project.get("owner_id"))
 
     ok, reason = country_allowed(client_status, settings.allow_countries, settings.skip_countries)
     if not ok:

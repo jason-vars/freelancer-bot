@@ -233,6 +233,12 @@ class Settings:
     # Slack Incoming Webhook URL; blank = no Slack alerts.
     slack_webhook_url: str | None
 
+    # Shared job feed (bot/feed.py): "off" | "publish" | "subscribe".
+    feed_mode: str
+    feed_keywords: list[str]
+    supabase_url: str
+    supabase_key: str
+
 def _telegram_targets() -> list[tuple[str, str]]:
     """Resolve every (token, chat_id) pair an alert should be delivered to.
 
@@ -354,4 +360,8 @@ def load_settings() -> Settings:
         telegram_chat_ids=_csv("TELEGRAM_CHAT_ID"),
         telegram_targets=_telegram_targets(),
         slack_webhook_url=(os.getenv("SLACK_WEBHOOK_URL") or "").strip() or None,
+        feed_mode=(_strip_inline_comment(os.getenv("BOT_FEED_MODE")) or "off").lower(),
+        feed_keywords=_csv("BOT_FEED_KEYWORDS"),
+        supabase_url=(os.getenv("SUPABASE_URL") or "").strip(),
+        supabase_key=(os.getenv("SUPABASE_KEY") or "").strip(),
     )

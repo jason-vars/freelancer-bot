@@ -203,6 +203,21 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("WEBHOOK_DELAY_SECONDS", "Delay before bid (s)", "int", "Wait before proposal/bid in webhook mode.", "5"),
         Field("WEBHOOK_SECRET", "Webhook secret", "secret", "Shared secret required on incoming webhooks.", ""),
     ]),
+    ("Shared job feed", [
+        Field("BOT_FEED_MODE", "Feed mode", "select",
+              "off = this account searches Freelancer itself. publish = this account's token fetches jobs for EVERY account "
+              "and writes them to Supabase (exactly one account). subscribe = read jobs from Supabase, no Freelancer search calls.",
+              "off", (("off", "Off — search Freelancer with this account's token"),
+                      ("publish", "Publish — fetch jobs for all accounts (one account only)"),
+                      ("subscribe", "Subscribe — read jobs from the shared feed"))),
+        Field("BOT_FEED_KEYWORDS", "Feed keywords (publisher)", "csv",
+              "Publisher only: every account's keywords combined, so the feed carries jobs for all of them. "
+              "Blank = this account's own Keywords.", ""),
+        Field("SUPABASE_URL", "Supabase project URL", "text",
+              "e.g. https://abcd1234.supabase.co (Supabase > Project Settings > API).", ""),
+        Field("SUPABASE_KEY", "Supabase key", "secret",
+              "Publisher: the service_role key (it writes and prunes). Subscribers: the anon key (read-only).", ""),
+    ]),
     ("Integrations & secrets", [
         Field("FLN_OAUTH_TOKEN", "Freelancer OAuth token", "secret", "Required. Your Freelancer API token.", ""),
         Field("FLN_URL", "Freelancer base URL", "text", "Override API base URL (e.g. sandbox).", ""),
