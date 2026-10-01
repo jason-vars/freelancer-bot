@@ -112,7 +112,14 @@ export function validate(form: FormData, fields: Field[]): { updates: Values; er
 /** Every admin setting (secrets included). Server only. */
 export async function getAppSettings(): Promise<Values> {
   const { data, error } = await createAdminClient().from("app_settings").select("key,value");
-  if (error) throw new Error(`Couldn't read app settings: ${error.message}`);
+  if (error) {
+    const hint = /api key|jwt|unauthori[sz]ed|401/i.test(error.message)
+      ? " Check that SUPABASE_SECRET_KEY in Vercel is a current secret key (sb_secret_…) of this Supabase project, then redeploy."
+      : /does not exist|relation|schema cache/i.test(error.message)
+        ? " Run supabase/schema.sql in the Supabase SQL Editor."
+        : "";
+    throw new Error(`Couldn't read app settings: ${error.message}.${hint}`);
+  }
   return Object.fromEntries((data ?? []).map((r) => [r.key as string, (r.value as string) ?? ""]));
 }
 

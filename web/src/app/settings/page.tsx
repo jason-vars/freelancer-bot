@@ -2,13 +2,19 @@ import { headers } from "next/headers";
 import { requireApproved } from "@/lib/auth";
 import { GROUPS } from "@/lib/settings/fields";
 import { getAppSettings, getUserValues, userFormValues } from "@/lib/settings/store";
+import { ServerError } from "@/components/ServerError";
 import { SettingsForm } from "@/components/SettingsForm";
 import { saveUserSettings } from "./actions";
 import { ApiKey } from "./ApiKey";
 
 export default async function SettingsPage() {
   const profile = await requireApproved();
-  const [app, mine] = await Promise.all([getAppSettings(), getUserValues(profile.id)]);
+  let app, mine;
+  try {
+    [app, mine] = await Promise.all([getAppSettings(), getUserValues(profile.id)]);
+  } catch (e) {
+    return <ServerError title="Settings couldn't load" error={e} />;
+  }
   const values = userFormValues(app, mine);
   const h = await headers();
   const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
