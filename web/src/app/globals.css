@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f7f7f8;
+  --surface: #ffffff;
+  --fg: #18181b;
+  --muted: #6b7280;
+  --border: #e4e4e7;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --ok: #15803d;
+  --ok-bg: #dcfce7;
+  --warn: #a16207;
+  --warn-bg: #fef9c3;
+  --bad: #b91c1c;
+  --bad-bg: #fee2e2;
+  --chip: #f4f4f5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0b0b0d;
+    --surface: #151518;
+    --fg: #ececee;
+    --muted: #9ca3af;
+    --border: #2a2a2f;
+    --accent: #3b82f6;
+    --accent-fg: #ffffff;
+    --ok: #4ade80;
+    --ok-bg: #14532d55;
+    --warn: #facc15;
+    --warn-bg: #713f1255;
+    --bad: #f87171;
+    --bad-bg: #7f1d1d55;
+    --chip: #232328;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-bad: var(--bad);
+  --color-bad-bg: var(--bad-bg);
+  --color-chip: var(--chip);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+
+@layer components {
+  .card { @apply rounded-xl border border-border bg-surface; }
+  .btn {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5
+      text-sm font-medium hover:bg-chip disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
+  }
+  .btn-primary { @apply border-accent bg-accent text-accent-fg hover:bg-accent hover:opacity-90; }
+  .btn-danger { @apply text-bad; }
+  .input {
+    @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm outline-none
+      focus:border-accent focus:ring-2 focus:ring-accent/20;
+  }
+  .label { @apply mb-1 block text-sm font-medium; }
+  .help { @apply mt-1 text-xs text-muted; }
+  .chip { @apply inline-flex items-center rounded-full bg-chip px-2 py-0.5 text-xs text-muted; }
+  .chip-ok { @apply bg-ok-bg text-ok; }
+  .chip-warn { @apply bg-warn-bg text-warn; }
+  .chip-bad { @apply bg-bad-bg text-bad; }
+}

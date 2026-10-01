@@ -100,6 +100,28 @@ def init_db(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE projects ADD COLUMN filter_reason TEXT")
         if "raw_json" not in cols:
             conn.execute("ALTER TABLE projects ADD COLUMN raw_json TEXT")
+        if "updated_seq" not in cols:
+            conn.execute("ALTER TABLE projects ADD COLUMN updated_seq INTEGER")
+    except sqlite3.Error:
+        pass
+    # Change counter for the cloud sync (bot/cloud.py): every insert/update of a
+    # project stamps the next number, so the sync pushes exactly the rows changed
+    # since its cursor without each writer having to remember to flag them.
+    try:
+        conn.executescript('''
+CREATE INDEX IF NOT EXISTS idx_projects_updated_seq ON projects(updated_seq);
+CREATE TRIGGER IF NOT EXISTS projects_seq_insert AFTER INSERT ON projects
+BEGIN
+  UPDATE projects SET updated_seq = (SELECT COALESCE(MAX(updated_seq), 0) + 1 FROM projects)
+  WHERE id = NEW.id;
+END;
+CREATE TRIGGER IF NOT EXISTS projects_seq_update AFTER UPDATE ON projects
+WHEN NEW.updated_seq IS OLD.updated_seq
+BEGIN
+  UPDATE projects SET updated_seq = (SELECT COALESCE(MAX(updated_seq), 0) + 1 FROM projects)
+  WHERE id = NEW.id;
+END;
+''')
     except sqlite3.Error:
         pass
     # Enforce one bid per project at the DB level so two concurrent webhook
@@ -267,12 +289,51 @@ def upsert_project(conn: sqlite3.Connection, p: dict) -> None:
     )
     conn.commit()
 
+def get_project(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM projects WHERE id=?", (int(project_id),)
+    ).fetchone()
+
+def get_project_by_url(conn: sqlite3.Connection, url: str) -> sqlite3.Row | None:
+    """Look up a project by its stored ``seo_url`` (the bare ``category/slug`` path
+    Freelancer uses, e.g. ``ui-design/app-application``). Used by the browser
+    userscript, which derives the slug from the freelancer project page URL. Matches
+    with or without a trailing slash; newest row wins if somehow duplicated."""
+    u = (url or "").strip().strip("/")
+    if not u:
+        return None
+    return conn.execute(
+        "SELECT * FROM projects WHERE url=? OR url=? ORDER BY created_at DESC LIMIT 1",
+        (u, u + "/"),
+    ).fetchone()
+
 def set_project_score_and_status(conn: sqlite3.Connection, project_id: int, score: int, status: str) -> None:
     conn.execute(
         "UPDATE projects SET score=?, status=? WHERE id=?",
         (score, status, project_id),
     )
     conn.commit()
+
+
+def claim_project_for_notify(conn: sqlite3.Connection, project_id: int, score: int) -> bool:
+    """Atomically claim a project for exactly ONE notification attempt.
+
+    Flips status ``new``/``alert_failed`` -> ``alerting`` in a single UPDATE and
+    returns True only for the caller that actually changed the row. Because SQLite
+    serializes writes, when two poll cycles OR two bot instances sharing this DB
+    race for the same project, only the first UPDATE matches a row (rowcount 1);
+    the rest see the status already moved to ``alerting`` (rowcount 0) and MUST
+    NOT send. This is what prevents the same job being alerted twice.
+
+    The winner later sets the final status: ``alerted`` on success, or
+    ``alert_failed`` to release it for a retry next cycle."""
+    cur = conn.execute(
+        "UPDATE projects SET score=?, status='alerting' "
+        "WHERE id=? AND status IN ('new', 'alert_failed')",
+        (int(score), int(project_id)),
+    )
+    conn.commit()
+    return cur.rowcount == 1
 
 def delete_project(conn: sqlite3.Connection, project_id: int) -> None:
     conn.execute("DELETE FROM projects WHERE id=?", (project_id,))
@@ -282,6 +343,51 @@ def list_projects_by_status(conn: sqlite3.Connection, status: str, limit: int = 
     return conn.execute(
         "SELECT * FROM projects WHERE status=? ORDER BY created_at DESC LIMIT ?",
         (status, limit),
+    ).fetchall()
+
+
+def list_all_projects(
+    conn: sqlite3.Connection,
+    statuses: list[str] | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[sqlite3.Row]:
+    """A page of stored projects, newest first.
+
+    ``statuses`` restricts to one OR MORE statuses (e.g. ['alerted', 'applied'] for the
+    merged Jobs chip); None returns every status. NULL statuses count as 'new'.
+    ``limit``/``offset`` drive the Jobs-page pagination."""
+    if statuses:
+        placeholders = ",".join("?" for _ in statuses)
+        return conn.execute(
+            f"SELECT * FROM projects WHERE COALESCE(status, 'new') IN ({placeholders}) "
+            "ORDER BY COALESCE(created_at, '') DESC, id DESC LIMIT ? OFFSET ?",
+            (*statuses, limit, offset),
+        ).fetchall()
+    return conn.execute(
+        "SELECT * FROM projects ORDER BY COALESCE(created_at, '') DESC, id DESC LIMIT ? OFFSET ?",
+        (limit, offset),
+    ).fetchall()
+
+
+def count_projects(conn: sqlite3.Connection, statuses: list[str] | None = None) -> int:
+    """Total stored projects matching ``statuses`` (None = all). Used to size the
+    Jobs-page pager. NULL statuses count as 'new', mirroring :func:`list_all_projects`."""
+    if statuses:
+        placeholders = ",".join("?" for _ in statuses)
+        row = conn.execute(
+            f"SELECT COUNT(*) AS c FROM projects WHERE COALESCE(status, 'new') IN ({placeholders})",
+            tuple(statuses),
+        ).fetchone()
+    else:
+        row = conn.execute("SELECT COUNT(*) AS c FROM projects").fetchone()
+    return int(row["c"])
+
+
+def count_projects_by_status(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    return conn.execute(
+        "SELECT COALESCE(status, 'new') AS status, COUNT(*) AS c FROM projects "
+        "GROUP BY COALESCE(status, 'new') ORDER BY c DESC",
     ).fetchall()
 
 
@@ -334,6 +440,15 @@ def insert_bid(conn: sqlite3.Connection, project_id: int, bid_id: int | None, am
         (project_id, bid_id, amount, period_days, milestone_percent, proposal, utc_now_str(), status),
     )
     conn.commit()
+
+def get_latest_bid(conn: sqlite3.Connection, project_id: int) -> sqlite3.Row | None:
+    """The most recent bid/draft row for a project (the proposal that was sent),
+    or None if none exists. Used by the web UI to show what was submitted."""
+    return conn.execute(
+        "SELECT bid_id, amount, period_days, milestone_percent, proposal, status, created_at "
+        "FROM bids WHERE project_id=? ORDER BY id DESC LIMIT 1",
+        (int(project_id),),
+    ).fetchone()
 
 def bid_exists_for_project(conn: sqlite3.Connection, project_id: int) -> bool:
     """True if any bid row (real, dry-run, or saved draft) already exists for this

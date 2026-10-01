@@ -10,6 +10,8 @@ from freelancersdk.resources.users import users as fln_users
 
 from .config import load_settings
 from .db import (
+    bid_exists_for_project,
+    claim_project_for_notify,
     connect,
     count_bids_today,
     count_projects_by_filter_reason,
@@ -24,18 +26,25 @@ from .db import (
     set_project_score_and_status,
     clear_seen_projects,
 )
+from . import cloud
 from .freelancer_client import make_session
 from .collector import fetch_and_store_projects
-from .filters import passes_recency
+from .filters import passes_recency, _to_epoch_seconds
+from .util import within_active_hours, current_minutes, fmt_minutes
 from .scorer import score_project
-from .proposal_ai import DEFAULT_PROFILE_BULLETS, ProposalInput, generate_proposal_openai
+from .proposal_ai import (
+    ai_price_and_duration,
+    build_proposal_input,
+    generate_proposal_openai,
+)
 from .bidder import BidRequest, place_bid
 from .telegram_notify import (
     build_project_notification,
     send_telegram_message,
 )
+from .slack_notify import notify_slack
 from .telegram_listener import run_telegram_listener
-from .webhook import process_webhook_file, serve_webhook
+from .webhook import process_webhook_file, serve_webhook, _build_proposal, choose_bid_from_rules
 
 
 def _print_json_block(label: str, raw: str | None) -> None:
@@ -183,12 +192,12 @@ def _gen_one_proposal(s, conn, project: dict, save: bool) -> None:
         proposal = generate_proposal_openai(
             api_key=s.openai_api_key,
             model=s.openai_model,
-            data=ProposalInput(
+            data=build_proposal_input(
+                s,
                 title=title, description=description,
                 budget_min=budget_min, budget_max=budget_max, currency=currency,
-                your_profile_bullets=DEFAULT_PROFILE_BULLETS,
-                questions=["What is your ideal deadline?"],
                 skills=skills,
+                questions=[],  # see _generate_proposal in webui.py — no canned closers
             ),
         )
     except Exception as exc:
@@ -200,8 +209,18 @@ def _gen_one_proposal(s, conn, project: dict, save: bool) -> None:
     print(f"\n=== CHECKS === chars: {len(proposal)} (<1200: {len(proposal) < 1200}) | has ';': {';' in proposal} | empty-line: {chr(10)+chr(10) in proposal}")
 
     if save and project_id is not None:
-        amount = choose_bid_amount(budget_min, budget_max)
-        period = choose_period_days(budget_min, budget_max)
+        priced = None
+        if s.ai_pricing_enabled and s.ai_pricing_rules.strip():
+            priced = ai_price_and_duration(
+                s.openai_api_key, s.openai_model, s.ai_pricing_rules,
+                title=title, description=description, skills=skills,
+                budget_min=budget_min, budget_max=budget_max, currency=currency,
+            )
+        if priced is not None:
+            amount, period = priced
+        else:
+            amount = choose_bid_amount(budget_min, budget_max)
+            period = choose_period_days(budget_min, budget_max)
         insert_bid(conn, int(project_id), None, float(amount), period, s.default_milestone_percent, proposal, status="proposal_test")
         print(f"Saved to DB: bids row (project_id={project_id}, status='proposal_test', amount={amount}, period_days={period})")
 
@@ -286,11 +305,12 @@ def test_telegram(text: str | None = None, project_id: int | None = None, query:
     notification layout (expandable description + skills + full-copy block).
     """
     s = load_settings()
-    if not s.telegram_bot_token or not s.telegram_chat_id:
+    if not s.telegram_targets:
         print(
             "Telegram not configured. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID in .env.\n"
             f"  TELEGRAM_BOT_TOKEN set: {bool(s.telegram_bot_token)}\n"
-            f"  TELEGRAM_CHAT_ID set:   {bool(s.telegram_chat_id)}"
+            f"  TELEGRAM_CHAT_ID set:   {bool(s.telegram_chat_ids)}\n"
+            f"  delivery targets:       {len(s.telegram_targets)}"
         )
         return
 
@@ -343,11 +363,16 @@ def test_telegram(text: str | None = None, project_id: int | None = None, query:
     else:
         message = text or "<b>freelancer-bot</b>\nTest notification — Telegram is working."
 
-    try:
-        resp = send_telegram_message(s.telegram_bot_token, s.telegram_chat_id, message)
-        print(f"Sent. ok={resp.get('ok')} | chat_id={s.telegram_chat_id} | chars={len(message)}")
-    except Exception as exc:
-        print(f"Failed to send: {exc}")
+    sent, failed = 0, 0
+    for token, chat_id in s.telegram_targets:
+        try:
+            resp = send_telegram_message(token, chat_id, message)
+            print(f"Sent. ok={resp.get('ok')} | chat_id={chat_id} | chars={len(message)}")
+            sent += 1
+        except Exception as exc:
+            print(f"Failed to send to {chat_id}: {exc}")
+            failed += 1
+    print(f"Done. {sent} sent, {failed} failed across {len(s.telegram_targets)} target(s).")
 
 
 def reset_seen() -> None:
@@ -402,16 +427,68 @@ def choose_period_days(budget_min: float | None, budget_max: float | None) -> in
 
 
 def _notify_telegram_polling(conn, settings, project: dict[str, Any], client_status: dict[str, Any] | None, result: dict[str, Any]) -> dict[str, Any] | None:
-    if not settings.telegram_bot_token or not settings.telegram_chat_id:
+    # Notifications muted (master switch off): treat like "not configured" — the
+    # project is still collected and marked handled, just no alert is sent.
+    if not settings.notify_enabled or not (settings.telegram_targets or settings.slack_webhook_url):
         return None
-    try:
-        msg = build_project_notification(project=project, client_status=client_status, result=result)
-        resp = send_telegram_message(settings.telegram_bot_token, settings.telegram_chat_id, msg)
-        return {"sent": True, "ok": resp.get("ok", True)}
-    except Exception as exc:
-        return {"sent": False, "error": str(exc)}
+    # Outside the notification window: DROP the alert (don't defer). The project is
+    # still collected/browsable, but it is not alerted now and never later — the user
+    # wants alerts only for jobs found from the window start onward, not a backlog
+    # replayed when the window opens. Returned as a distinct outcome the caller marks
+    # handled so it isn't retried.
+    if not settings.notify_window_open():
+        return {"sent": False, "out_of_window": True}
+    msg = build_project_notification(project=project, client_status=client_status, result=result)
+    # Slack is a parallel destination, not a replacement: a Slack failure never
+    # affects the Telegram outcome (and vice versa).
+    sent_any = notify_slack(settings, project, client_status, result)
+    last_err: str | None = None
+    for token, chat_id in settings.telegram_targets:
+        try:
+            send_telegram_message(token, chat_id, msg)
+            sent_any = True
+        except Exception as exc:
+            last_err = str(exc)
+            print(f"[telegram] send to {chat_id} failed: {exc}")
+    # Sent if it reached at least one chat. Only when ALL chats fail do we report a
+    # failure so the row retries (avoids re-spamming chats that already got it).
+    if sent_any:
+        return {"sent": True, "ok": True}
+    return {"sent": False, "error": last_err}
 
-def run(dry_run_override: bool | None = None) -> None:
+def _maybe_save_proposal(conn, settings, p) -> None:
+    """When BOT_SAVE_PROPOSALS is on, generate a proposal for a matching project and
+    save it to the bids table (status 'proposal_saved') for review — no bid placed.
+
+    Idempotent: skips projects that already have any bid/draft row, so each project
+    is only generated once even though polling re-scans every cycle. Failures are
+    logged but never abort the polling cycle."""
+    if not settings.save_proposals:
+        return
+    pid = int(p["id"])
+    if bid_exists_for_project(conn, pid):
+        return
+    try:
+        project = dict(p)
+        proposal = _build_proposal(settings, project)
+        ruled = choose_bid_from_rules(project.get("currency"), project.get("budget_min"), project.get("budget_max"), settings.bid_rules)
+        if ruled is not None:
+            amount, period = ruled
+        else:
+            amount = choose_bid_amount(project.get("budget_min"), project.get("budget_max"))
+            period = choose_period_days(project.get("budget_min"), project.get("budget_max"))
+        insert_bid(conn, pid, None, float(amount), int(period), settings.default_milestone_percent, proposal, status="proposal_saved")
+        print(f"[{pid}] proposal saved to DB (status='proposal_saved', amount={amount}, period_days={period})")
+    except Exception as exc:
+        print(f"[{pid}] proposal save FAILED: {exc}")
+
+def run(dry_run_override: bool | None = None, notify_floor_epoch: float | None = None) -> None:
+    """One fetch -> score -> notify cycle.
+
+    ``notify_floor_epoch`` is an absolute cutoff: projects posted BEFORE this epoch
+    are never alerted (the continuous loop passes its own start time, so a launch at
+    9:00 AM never notifies jobs posted earlier, even ones still inside the recency
+    window). ``None`` disables the floor (one-shot ``run`` behaves as before)."""
     s = load_settings()
     if dry_run_override is not None:
         dry_run = dry_run_override
@@ -446,6 +523,14 @@ def run(dry_run_override: bool | None = None) -> None:
             print(f"[{p['id']}] skip (stale): {rec_reason}")
             set_project_filtered(conn, int(p["id"]), rec_reason)
             continue
+        # Absolute launch-time floor: never alert on jobs posted before the bot
+        # started this session. Marked handled so it is not retried next cycle.
+        if notify_floor_epoch is not None:
+            ts = _to_epoch_seconds(p["created_at"])
+            if ts is not None and ts < notify_floor_epoch:
+                set_project_filtered(conn, int(p["id"]), "posted_before_session_start")
+                print(f"[{p['id']}] skip (posted before bot started this session)")
+                continue
         res = score_project(
             title=p["title"],
             description=p["description"] or "",
@@ -465,10 +550,30 @@ def run(dry_run_override: bool | None = None) -> None:
             print(f"[{p['id']}] score={res.score} min_score={s.min_score} -> skip")
             continue
 
-        # Mark the final status by the SEND OUTCOME, not before attempting it, so a
-        # failed delivery can never masquerade as 'alerted'. send_telegram_message
-        # already retries transient errors; if it still fails we record
-        # 'alert_failed' and pick it up again next cycle.
+        # Outside the notification window: collect but DON'T alert, and mark it
+        # handled ('notify_skipped') so it is never alerted later either. Checked
+        # BEFORE the claim below so out-of-window jobs are not left stuck mid-claim.
+        # This is what makes alerts start fresh at the window edge instead of
+        # replaying a backlog of jobs found while the window was closed.
+        if s.notify_enabled and s.telegram_targets and not s.notify_window_open():
+            set_project_score_and_status(conn, int(p["id"]), int(res.score), "notify_skipped")
+            print(f"[{p['id']}] score={res.score} -> alert skipped (outside notification window)")
+            continue
+
+        # ATOMIC CLAIM: transition the row out of 'new'/'alert_failed' in one UPDATE
+        # so exactly ONE cycle/instance can send this job. Losers skip — this is the
+        # guard against duplicate notifications (same job sent twice).
+        if not claim_project_for_notify(conn, int(p["id"]), int(res.score)):
+            print(f"[{p['id']}] already claimed for alert (another cycle/instance) -> skip")
+            continue
+
+        # Optionally generate + save a proposal draft to the DB for review (testing
+        # before enabling real bids). Guarded by BOT_SAVE_PROPOSALS; idempotent.
+        _maybe_save_proposal(conn, s, p)
+
+        # Mark the final status by the SEND OUTCOME. send_telegram_message already
+        # retries transient errors; if it still fails we record 'alert_failed' and
+        # re-claim it next cycle.
         outcome = _notify_telegram_polling(
             conn, s, dict(p), None,
             {"ok": True, "project_id": int(p["id"]), "score": int(res.score)},
@@ -485,6 +590,23 @@ def run(dry_run_override: bool | None = None) -> None:
             failed += 1
 
     print(f"Notified {notified} project(s)." + (f" {failed} failed (will retry)." if failed else ""))
+    cloud.sync_jobs(conn)
+    cloud.heartbeat(f"Stored {new_count} new job(s), alerted {notified}"
+                    + (f", {failed} alert(s) failed" if failed else "") + ".")
+
+def _sleep(seconds: int) -> None:
+    """Sleep between cycles. In cloud mode, wake early when the admin presses
+    "Fetch now" in the web app (checked every 10s)."""
+    if not cloud.enabled():
+        time.sleep(seconds)
+        return
+    end = time.time() + seconds
+    while (left := end - time.time()) > 0:
+        time.sleep(min(10.0, left))
+        if cloud.take_run_request():
+            print("Fetch requested from the web app.")
+            return
+
 
 def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None = None) -> None:
     s = load_settings()
@@ -492,21 +614,171 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
     if interval <= 0:
         raise ValueError("interval must be > 0 seconds")
 
-    print(f"Auto polling started. interval={interval}s dry_run={'yes' if dry_run_override else 'env/default'}")
+    # Absolute floor captured at launch: jobs posted before the bot started this
+    # session are treated as backlog and never alerted (tighter than the rolling
+    # recency window). A restart re-floors to the new start time.
+    session_start = time.time()
+    print(f"Auto polling started. interval={interval}s dry_run={'yes' if dry_run_override else 'env/default'} "
+          f"(alerting only jobs posted from launch onward)")
+    paused = False
     while True:
         started = int(time.time())
+        # Reload settings each cycle so interval / active-hours edits made in the
+        # web UI take effect without a restart.
+        cur = load_settings()
+        if interval_seconds is None:
+            interval = max(1, int(cur.poll_interval_seconds))
+
+        # "Fetch jobs" OFF in the web UI pauses polling without stopping the process.
+        # On resume the alert floor moves to now, so jobs posted while paused are not
+        # replayed as a backlog (same idea as the notification window).
+        if not cur.fetch_enabled:
+            if not paused:
+                print(f"\n[{started}] Fetching paused (Fetch jobs = OFF in Settings).")
+            paused = True
+            cloud.heartbeat("Fetching paused (Fetch jobs is off).")
+            _sleep(interval)
+            continue
+        if paused:
+            paused = False
+            session_start = time.time()
+            print(f"\n[{started}] Fetching resumed; alerting only jobs posted from now on.")
+
+        # Evaluate the active window in the configured timezone (or machine local
+        # time when no offset is set). Logs the perceived clock so a timezone
+        # mismatch is obvious.
+        now_min = current_minutes(cur.active_tz_offset)
+        tz_label = "machine local" if cur.active_tz_offset is None else f"UTC{cur.active_tz_offset:+g}"
+        if not within_active_hours(cur.active_start, cur.active_end, now_minutes=now_min):
+            print(f"\n[{started}] Outside active hours (window {cur.active_start}-{cur.active_end}, "
+                  f"now {fmt_minutes(now_min)} {tz_label}); skipping cycle.")
+            cloud.heartbeat(f"Outside active hours ({cur.active_start}-{cur.active_end}, "
+                            f"now {fmt_minutes(now_min)} {tz_label}).")
+            _sleep(interval)
+            continue
+
         print(f"\n[{started}] Running fetch/score cycle...")
         try:
-            run(dry_run_override=dry_run_override)
+            run(dry_run_override=dry_run_override, notify_floor_epoch=session_start)
         except KeyboardInterrupt:
             raise
         except Exception as exc:
             print(f"Run failed: {exc}")
+            cloud.heartbeat(f"Cycle failed: {exc}")
 
         elapsed = max(0, int(time.time()) - started)
         sleep_for = max(1, interval - elapsed)
         print(f"Cycle complete in {elapsed}s. Sleeping {sleep_for}s...")
-        time.sleep(sleep_for)
+        _sleep(sleep_for)
+
+def _read_pid(path: str = "bot.pid") -> int | None:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _pid_alive(pid: int) -> bool:
+    """True if a process with this id is currently running. Used to detect a still-
+    running bot. A stale pid (dead process) returns False so it can be overwritten."""
+    import os
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+        if not handle:
+            return False
+        kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _port_in_use(host: str, port: int) -> bool:
+    """True if something is already accepting TCP connections on ``host:port``.
+
+    Used as the reliable single-instance lock for ``serve`` — if the web UI port
+    answers, another bot is already running, so a second one must not start (two
+    polling loops would double-send every notification)."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.5)
+        # connect_ex == 0 means the port accepted the connection (someone's listening).
+        return sock.connect_ex((host, port)) == 0
+
+
+def serve_app(host: str = "127.0.0.1", port: int = 8765) -> None:
+    """Run the web UI and the polling loop together in ONE process.
+
+    Used by the double-click launcher so there's a single thing to start/stop. The
+    polling loop runs in a daemon background thread (it dies with the process); the
+    web UI owns the main thread. When launched headless (pythonw, no console),
+    stdout/stderr are redirected to bot.log and the PID is written to bot.pid so the
+    stop script can find this exact process.
+
+    A single-instance guard refuses to start if another bot is already running —
+    two polling loops would double-send every notification.
+    """
+    import os
+    import threading
+    from .webui import serve_webui
+
+    # Headless launch (pythonw) has no console: capture output to a log file.
+    if sys.stdout is None or sys.stderr is None:
+        log = open("bot.log", "a", encoding="utf-8", buffering=1)
+        sys.stdout = log
+        sys.stderr = log
+
+    pid_path = "bot.pid"
+    # Single-instance guard #1 (primary, reliable): if the web UI port is already
+    # accepting connections, another bot is live. This does NOT depend on writing
+    # bot.pid (which can silently fail on macOS / in protected folders, leaving the
+    # file guard useless) and is checked BEFORE the polling thread starts, so a
+    # second launch can never sneak in a duplicate poll loop and double-notify.
+    if _port_in_use(host, port):
+        print(
+            f"A bot is already running on {host}:{port}; not starting a second one "
+            f"(that would send every notification twice). Open http://{host}:{port}, "
+            f"or stop the existing one first."
+        )
+        return
+    # Single-instance guard #2 (best-effort): a live PID from a previous run.
+    existing = _read_pid(pid_path)
+    if existing and existing != os.getpid() and _pid_alive(existing):
+        print(
+            f"A bot is already running (PID {existing}); not starting a second one. "
+            f"Open http://{host}:{port}, or run stop-bot first if you want to restart."
+        )
+        return
+    try:
+        with open(pid_path, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+
+    def _loop() -> None:
+        try:
+            run_loop()
+        except Exception as exc:  # never let a loop crash take down the web UI
+            print(f"[poll-loop] stopped: {type(exc).__name__}: {exc}")
+
+    threading.Thread(target=_loop, name="poll-loop", daemon=True).start()
+    print(f"Bot started. Web UI: http://{host}:{port} | polling loop running in background.")
+    try:
+        serve_webui(host=host, port=port)
+    finally:
+        try:
+            os.remove(pid_path)
+        except OSError:
+            pass
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="freelancer-bid-bot")
@@ -559,6 +831,16 @@ def main(argv: list[str] | None = None) -> int:
     tg_p.add_argument("--query", default=None, help="Search keyword; send the first matching project's notification")
 
     sub.add_parser("telegram-listen", help="Long-poll Telegram for 'Mark read' button presses (run alongside run-loop)")
+
+    webui_p = sub.add_parser("webui", help="Launch the local settings web UI to edit .env (filters, search, bidding)")
+    webui_p.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1 = localhost only)")
+    webui_p.add_argument("--port", type=int, default=8765, help="Bind port (default: 8765)")
+
+    serve_p = sub.add_parser("serve", help="Run the web UI AND the polling loop together in one process")
+    serve_p.add_argument("--host", default="127.0.0.1", help="Web UI bind host (default: 127.0.0.1)")
+    serve_p.add_argument("--port", type=int, default=8765, help="Web UI bind port (default: 8765)")
+
+    sub.add_parser("sync-applied", help="Mark every project you have a live bid on (from the Freelancer API) as applied")
 
     args = parser.parse_args(argv)
 
@@ -624,6 +906,24 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd == "telegram-listen":
         run_telegram_listener()
+        return 0
+    if args.cmd == "webui":
+        from .webui import serve_webui
+        serve_webui(host=args.host, port=args.port)
+        return 0
+    if args.cmd == "serve":
+        serve_app(host=args.host, port=args.port)
+        return 0
+
+    if args.cmd == "sync-applied":
+        from .webui import _sync_applied_from_freelancer
+        _code, res = _sync_applied_from_freelancer()
+        if not res.get("ok"):
+            print(f"Sync failed: {res.get('message')}")
+            return 1
+        n = int(res.get("marked_existing", 0)) + int(res.get("stored_new", 0))
+        print(f"Synced {res.get('bids_projects', 0)} bid(s): {n} marked applied "
+              f"({res.get('stored_new', 0)} newly stored, {res.get('already_marked', 0)} already).")
         return 0
 
     parser.print_help()

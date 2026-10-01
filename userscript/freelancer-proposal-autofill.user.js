@@ -1,0 +1,883 @@
+// ==UserScript==
+// @name         Freelancer Bid Bot — Proposal Auto-Fill
+// @namespace    freelancer-bid-bot
+// @version      1.16.0
+// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; toggle with Alt+A). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
+// @match        https://www.freelancer.com/projects/*
+// @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
+// @run-at       document-idle
+// @grant        GM_xmlhttpRequest
+// @grant        GM_setClipboard
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @connect      127.0.0.1
+// @connect      localhost
+// @updateURL    http://127.0.0.1:8765/userscript.user.js
+// @downloadURL  http://127.0.0.1:8765/userscript.user.js
+// ==/UserScript==
+
+// The @include above exists because Freelancer redirects logged-in users to their
+// regional site (freelancer.in, freelancer.com.au, freelancer.pk, …), where the
+// www.freelancer.com @match alone never fires and the panel simply never appears.
+
+(function () {
+  "use strict";
+
+  // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
+  // isn't running the script here — check that it's enabled and that the URL matches.
+  console.log("[fbb] userscript 1.16.0 loaded on", location.href);
+
+  // ── Config ────────────────────────────────────────────────────────────────
+  // Where your bot's web UI is listening (python -m bot webui / serve).
+  const BOT_BASE = "http://127.0.0.1:8765";
+  // Your personal API key for the hosted (multi-user) bot, sent as X-Bot-Key. Kept in
+  // Tampermonkey's own storage, which freelancer.com's page scripts can't read. The
+  // local bot ignores it, so it's only needed for the hosted one.
+  const API_KEY_STORE = "fbb_api_key";
+  function botHeaders() {
+    let key = "";
+    try { key = GM_getValue(API_KEY_STORE, "") || ""; } catch (e) {}
+    return key ? { "X-Bot-Key": key } : {};
+  }
+  function promptApiKey() {
+    const cur = (function () { try { return GM_getValue(API_KEY_STORE, "") || ""; } catch (e) { return ""; } })();
+    const key = window.prompt("Bot API key (from your Settings page on the bot's website):", cur);
+    if (key !== null) {
+      try { GM_setValue(API_KEY_STORE, key.trim()); } catch (e) {}
+      location.reload();
+    }
+  }
+  try { GM_registerMenuCommand("Set bot API key", promptApiKey); } catch (e) {}
+  // Re-use an already-fetched proposal for the same project within this tab so a
+  // page refresh doesn't spend a second OpenAI call. Cleared when the tab closes.
+  const CACHE = window.sessionStorage;
+  // How long the auto-bid countdown runs after the form is filled. Placing a bid
+  // spends a bid credit and is visible to the client, so there's always a window to
+  // read the proposal and hit Esc before it submits. Set to 0 to submit immediately.
+  const AUTO_BID_DELAY_MS = 5000;
+  // Default for the auto-bid toggle the first time the script runs in a browser
+  // (afterwards the panel button / Alt+A decides, persisted in localStorage).
+  const AUTO_BID_DEFAULT = true;
+  // Fallback for the Sealed toggle until the bot answers (it owns the real value in
+  // BOT_SEAL_BIDS on the Settings page). ON = tick Freelancer's FREE "Sealed" upgrade,
+  // which hides your bid from other freelancers. Paid upgrades are never touched.
+  const SEAL_DEFAULT = true;
+  // Fallback for the auto-generate toggle until the bot answers (it owns the real
+  // value in BOT_AUTO_GENERATE on the Settings page). ON = opening a project writes
+  // the proposal immediately; OFF = wait for the ✨ Generate button.
+  const AUTOGEN_DEFAULT = true;
+
+  // ── Derive the project's seo slug from the page URL ───────────────────────
+  // /projects/<category>/<slug>/details  ->  <category>/<slug>
+  // That is exactly the string the bot stored as the project's `url`, so it can
+  // look up an already-collected project without the numeric id.
+  function currentSeo() {
+    let p = location.pathname.replace(/^\/+/, "").replace(/\/+$/, "");
+    p = p.replace(/^projects\//, "").replace(/\/details$/, "");
+    return p || null;
+  }
+
+  // ── Scrape the numeric project id from the page ───────────────────────────
+  // The seo slug only finds projects the bot ALREADY collected. To also generate
+  // for projects you merely browsed to (which the backend fetches live), we send
+  // the numeric id too. Freelancer renders it as a "Project ID: 40572991" label;
+  // we fall back to canonical/og URLs and the SPA's embedded state. Returns a
+  // string of digits or null (in which case only collected projects will resolve).
+  function currentProjectId() {
+    const txt = (document.body && document.body.innerText) || "";
+    let m = txt.match(/project\s*id[\s:#]*([0-9]{5,})/i);
+    if (m) return m[1];
+    const metas = document.querySelectorAll(
+      'link[rel="canonical"], meta[property="og:url"], meta[name="twitter:url"]'
+    );
+    for (const el of metas) {
+      const v = el.getAttribute("href") || el.getAttribute("content") || "";
+      m = v.match(/[?&]project[_-]?id=(\d{5,})/i) || v.match(/-(\d{6,})(?:[/?#]|$)/);
+      if (m) return m[1];
+    }
+    const html = (document.documentElement && document.documentElement.innerHTML) || "";
+    m = html.match(/"project[_]?[iI]d"\s*:\s*(\d{5,})/);
+    if (m) return m[1];
+    return null;
+  }
+
+  // ── Read the "About the Client" panel text (for the country filter) ────────
+  // Freelancer's API hides the client's country from our token, so we read what the
+  // page shows and let the bot match BOT_SKIP_COUNTRIES / BOT_ALLOW_COUNTRIES against
+  // it. We send the WHOLE "About the Client" text block (not a lone country word):
+  // Freelancer renders the flag as an emoji (🇮🇳), so element-based flag scraping
+  // missed it — but the country name ("India") is always present as plain text in
+  // this block, and the bot matches country names within it. Returns the text (capped)
+  // or null (then no country filter is applied and it generates as before).
+  function currentClientCountry() {
+    const clean = (s) => (s || "").replace(/\s+/g, " ").trim();
+    let head = null;
+    for (const el of document.querySelectorAll("h1,h2,h3,h4,h5,strong,span,div")) {
+      const t = clean(el.textContent);
+      if (t.length < 40 && /about the client/i.test(t)) { head = el; break; }
+    }
+    if (!head) return null;
+    // Climb to the card that holds the client's location/verification, but not so far
+    // that we swallow the project description (which could mention other countries).
+    let card = head;
+    for (let i = 0; i < 6 && card.parentElement; i++) {
+      card = card.parentElement;
+      if ((card.innerText || "").length > 400) break;
+    }
+    const txt = clean(card.innerText || card.textContent);
+    return txt ? txt.slice(0, 300) : null;
+  }
+
+  // ── Detect that YOU have already bid on this project ──────────────────────
+  // Freelancer replaces the bid form with a "retract / revise your bid" UI once
+  // you've bid. We match ONLY phrases that appear AFTER you've bid — never text
+  // shown on a fresh bid form. (In particular NOT "edit your bid": the fresh form
+  // says "You will be able to edit your bid until the project is awarded", which
+  // used to false-flag every open project.) If the proposal textarea is present
+  // we treat the page as biddable regardless — see waitForBidState.
+  function hasAlreadyBid() {
+    const ta = findProposalTextarea();
+    // An EMPTY proposal box means the fresh bid form is open => you haven't bid yet.
+    if (ta && !(ta.value || "").trim()) return false;
+    // Otherwise require a STRONG, current signal: a visible Retract control (exists only
+    // when you have an active bid) or the explicit "already placed a bid" message.
+    // Loose body-text scanning used to false-fire on slow/partial loads and SPA
+    // transitions (stale text), flagging fresh projects as already bid.
+    for (const c of document.querySelectorAll('button, a, [role="button"]')) {
+      if (c.offsetParent !== null && /\bretract\b/i.test((c.textContent || "").trim())) return true;
+    }
+    const txt = (document.body && document.body.innerText) || "";
+    return /you(?:'ve| have)?\s+already\s+placed\s+a\s+bid/i.test(txt);
+  }
+
+  // ── Floating control panel: status + manual buttons (always available, even
+  // when auto-fill couldn't find the bid box on a slow page) ─────────────────
+  let statusEl = null;
+  let autoBtn = null;
+  let sealBtn = null;
+  let genBtn = null;
+  function mkBtn(label, color, onClick) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.style.cssText =
+      "flex:1;cursor:pointer;border:0;border-radius:8px;padding:8px 6px;color:#fff;" +
+      "font:600 12px system-ui,sans-serif;background:" + color + ";";
+    b.addEventListener("click", (e) => { e.preventDefault(); onClick(); });
+    return b;
+  }
+  function buildPanel() {
+    if (statusEl) return;
+    const panel = document.createElement("div");
+    // Tag the panel so findPlaceBidButton() can exclude our own "Place bid" button —
+    // it matches the same text as Freelancer's and would otherwise make auto-bid click
+    // itself in a loop on pages where the real bid form isn't rendered.
+    panel.setAttribute("data-fbb-panel", "1");
+    panel.style.cssText =
+      "position:fixed;z-index:2147483647;right:16px;bottom:16px;display:flex;flex-direction:column;" +
+      "gap:8px;width:250px;padding:12px;border-radius:12px;background:#12172a;border:1px solid #2c3550;" +
+      "box-shadow:0 8px 30px rgba(0,0,0,.45);font:600 13px system-ui,sans-serif;color:#cdd5ee;";
+    statusEl = document.createElement("div");
+    statusEl.style.cssText = "padding:6px 8px;border-radius:8px;background:#1e2740;line-height:1.35;";
+    statusEl.textContent = "🤖 Bid bot ready";
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex;gap:8px;";
+    row.appendChild(mkBtn("✨ Generate", "#3b82f6", () => run(true)));
+    row.appendChild(mkBtn("🚀 Place bid", "#e0218a", () => placeBid(0)));
+    autoBtn = mkBtn("", "#334155", () => setAutoBid(!autoBidOn()));
+    sealBtn = mkBtn("", "#334155", () => setSeal(!sealOn()));
+    genBtn = mkBtn("", "#334155", () => setAutoGen(!autoGenOn()));
+    paintAutoBtn();
+    paintSealBtn();
+    paintGenBtn();
+    const autoRow = document.createElement("div");
+    autoRow.style.cssText = "display:flex;gap:8px;";
+    autoRow.appendChild(autoBtn);
+    autoRow.appendChild(sealBtn);
+    const copyRow = document.createElement("div");
+    copyRow.style.cssText = "display:flex;gap:8px;";
+    copyRow.appendChild(genBtn);
+    copyRow.appendChild(mkBtn("📋 Copy job", "#7c3aed", () => copyJobText()));
+    const hint = document.createElement("div");
+    hint.style.cssText = "font-weight:400;font-size:11px;color:#7a85a6;";
+    hint.textContent = "Alt+G generate · Alt+B bid · Alt+S seal · Alt+A auto-bid · Alt+N auto-gen · Alt+C copy";
+    panel.appendChild(statusEl);
+    panel.appendChild(row);
+    panel.appendChild(autoRow);
+    panel.appendChild(copyRow);
+    panel.appendChild(hint);
+    document.body.appendChild(panel);
+  }
+  function badge(text, kind) {
+    if (!statusEl) buildPanel();
+    const colors = {
+      ok: "background:#10341f;color:#7ee2a8;",
+      err: "background:#3a1717;color:#f8a3a3;",
+      info: "background:#1e2740;color:#cdd5ee;",
+    };
+    statusEl.style.cssText =
+      "padding:6px 8px;border-radius:8px;line-height:1.35;" + (colors[kind] || colors.info);
+    statusEl.textContent = "🤖 " + text;
+  }
+
+  // ── Auto-bid toggle (persisted per browser, not per tab) ───────────────────
+  const AUTO_KEY = "fbb:autobid";
+  function autoBidOn() {
+    try {
+      const v = window.localStorage.getItem(AUTO_KEY);
+      return v === null ? AUTO_BID_DEFAULT : v === "1";
+    } catch (e) { return AUTO_BID_DEFAULT; }
+  }
+  function setAutoBid(on) {
+    try { window.localStorage.setItem(AUTO_KEY, on ? "1" : "0"); } catch (e) {}
+    if (!on) cancelAutoBid("Auto-bid off — bids are placed only when you say so.");
+    paintAutoBtn();
+  }
+  function paintAutoBtn() {
+    if (!autoBtn) return;
+    const on = autoBidOn();
+    autoBtn.textContent = on ? "🤖 Auto-bid: ON" : "✋ Auto-bid: OFF";
+    autoBtn.style.background = on ? "#166534" : "#334155";
+  }
+
+  // ── Sealed toggle (owned by the bot's Settings page: BOT_SEAL_BIDS) ────────
+  // ON = every fill ticks the FREE Sealed upgrade. The panel button and the Settings
+  // page are the SAME switch: the button writes .env through /jobs/seal, and every
+  // proposal response carries the current value back. localStorage only mirrors it,
+  // so the buttons still show the right state before the bot answers (or if it's
+  // down). Flipping it also applies to the form already open.
+  const SEAL_KEY = "fbb:seal";
+  function sealOn() {
+    try {
+      const v = window.localStorage.getItem(SEAL_KEY);
+      return v === null ? SEAL_DEFAULT : v === "1";
+    } catch (e) { return SEAL_DEFAULT; }
+  }
+  // Remember what the bot told us, without asking it again.
+  function cacheSeal(on) {
+    try { window.localStorage.setItem(SEAL_KEY, on ? "1" : "0"); } catch (e) {}
+    paintSealBtn();
+  }
+  // Read the panel switches from the bot (no args) or change one of them:
+  // optionsRequest({seal: true}) / optionsRequest({autogen: false}). Resolves with
+  // the bot's stored values, so what we paint is always what it saved.
+  function optionsRequest(sets) {
+    const q = Object.keys(sets || {})
+      .map((k) => k + "=" + (sets[k] ? "1" : "0"))
+      .join("&");
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        headers: botHeaders(),
+        url: BOT_BASE + "/jobs/options" + (q ? "?" + q : ""),
+        timeout: 15000,
+        onload: (r) => {
+          let d;
+          try { d = JSON.parse(r.responseText); } catch (e) { return reject("Bad response from bot."); }
+          if (r.status >= 200 && r.status < 300 && d.ok) resolve(d);
+          else reject(d.message || ("Bot returned HTTP " + r.status));
+        },
+        onerror: () => reject("Cannot reach the bot at " + BOT_BASE + "."),
+        ontimeout: () => reject("Bot timed out."),
+      });
+    });
+  }
+  // Paint both toggles from one bot reply.
+  function cacheOptions(d) {
+    if (typeof d.seal === "boolean") cacheSeal(d.seal);
+    if (typeof d.autogen === "boolean") cacheAutoGen(d.autogen);
+  }
+  async function setSeal(on) {
+    cacheSeal(on);                 // paint immediately; the bot confirms below
+    const applied = applySealed(on);
+    const here = applied
+      ? (on ? " — bid sealed." : " — unticked on this bid.")
+      : (on ? " — will tick it when the form fills." : " — the free upgrade won't be ticked.");
+    try {
+      const d = await optionsRequest({ seal: on });
+      cacheOptions(d);
+      badge("Seal " + (d.seal ? "ON" : "OFF") + " (saved to Settings)" + here, "info");
+    } catch (msg) {
+      badge("Seal " + (on ? "ON" : "OFF") + " for this browser only — couldn't save to Settings: " + msg, "err");
+    }
+  }
+
+  // ── Auto-generate toggle (Settings page: BOT_AUTO_GENERATE) ────────────────
+  // ON = opening a project generates the proposal and fills the form (one OpenAI
+  // call per new project). OFF = the page is left alone until you press ✨ Generate,
+  // so browsing jobs is free. Same two-way sync as the Sealed switch.
+  const AUTOGEN_KEY = "fbb:autogen";
+  function autoGenOn() {
+    try {
+      const v = window.localStorage.getItem(AUTOGEN_KEY);
+      return v === null ? AUTOGEN_DEFAULT : v === "1";
+    } catch (e) { return AUTOGEN_DEFAULT; }
+  }
+  function cacheAutoGen(on) {
+    try { window.localStorage.setItem(AUTOGEN_KEY, on ? "1" : "0"); } catch (e) {}
+    paintGenBtn();
+  }
+  async function setAutoGen(on) {
+    cacheAutoGen(on);
+    try {
+      const d = await optionsRequest({ autogen: on });
+      cacheOptions(d);
+      badge(
+        d.autogen
+          ? "Auto-generate ON (saved) — opening a project writes the proposal."
+          : "Auto-generate OFF (saved) — press ✨ Generate / Alt+G on the jobs you want.",
+        "info"
+      );
+    } catch (msg) {
+      badge("Auto-generate " + (on ? "ON" : "OFF") + " for this browser only — couldn't save to Settings: " + msg, "err");
+    }
+  }
+  function paintGenBtn() {
+    if (!genBtn) return;
+    const on = autoGenOn();
+    genBtn.textContent = on ? "✨ Auto-gen: ON" : "✋ Auto-gen: OFF";
+    genBtn.style.background = on ? "#166534" : "#334155";
+  }
+  function paintSealBtn() {
+    if (!sealBtn) return;
+    const on = sealOn();
+    sealBtn.textContent = on ? "🔒 Seal: ON" : "🔓 Seal: OFF";
+    sealBtn.style.background = on ? "#166534" : "#334155";
+  }
+
+  // ── Value setter that frameworks (Angular/React) actually notice ──────────
+  function setNativeValue(el, value) {
+    const proto =
+      el.tagName === "TEXTAREA"
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value").set;
+    setter.call(el, value);
+    for (const type of ["input", "change", "blur"]) {
+      el.dispatchEvent(new Event(type, { bubbles: true }));
+    }
+  }
+
+  // ── Field locators (freelancer's DOM changes; edit these if it stops working) ──
+  // The bid proposal box is specifically <textarea id="descriptionTextArea">. We
+  // require THIS element: it's the only thing that means "you can bid here", so the
+  // script never generates a proposal (spends OpenAI) on pages without a real bid
+  // form, and never fills an unrelated textarea (e.g. the Clarification Board box).
+  function findProposalTextarea() {
+    const ta =
+      document.querySelector("textarea#descriptionTextArea") ||
+      document.querySelector('textarea[name="descriptionTextArea"]');
+    if (!ta || ta.offsetParent === null || ta.readOnly || ta.disabled) return null;
+    return ta;
+  }
+
+  function findNumberInput(hintRe) {
+    const inputs = Array.from(
+      document.querySelectorAll('input[type="number"], input[inputmode="numeric"], input')
+    ).filter((i) => i.offsetParent !== null && !i.readOnly && !i.disabled);
+    return (
+      inputs.find((i) =>
+        hintRe.test(
+          (i.getAttribute("name") || "") + " " + (i.id || "") + " " +
+          (i.getAttribute("formcontrolname") || "") + " " + (i.getAttribute("aria-label") || "")
+        )
+      ) || null
+    );
+  }
+
+  // Is *this specific* upgrade row free? Freelancer shows a positive price like
+  // "$0.11 USD" when it costs money and "FREE"/"$0.00" when it doesn't. We judge on
+  // the price shown in the row, NOT on the word "free" appearing somewhere — that word
+  // also shows up elsewhere on the bid form (e.g. the "free bids remaining" counter),
+  // which is exactly what caused a $0.11 Sealed upgrade to be auto-ticked.
+  function rowIsFree(text) {
+    const t = (text || "").toLowerCase();
+    const priced = /\$\s*(\d+(?:\.\d+)?)/.exec(t);
+    if (priced && parseFloat(priced[1]) > 0) return false; // has a positive price → paid
+    return /\bfree\b/.test(t) || /\$\s*0(?:\.0+)?\b/.test(t);
+  }
+
+  // The free "Sealed" upgrade checkbox (hides your bid from other freelancers).
+  // Preferred anchors are Freelancer's stable attributes (fltrackinglabel /
+  // data-upgrade-type); the checkbox lives in a sibling subtree of the "Sealed" tag,
+  // ~7 levels away, which the old shallow text-climb never reached. We return the
+  // checkbox only when the Sealed row is actually free, so a paid upgrade is never
+  // auto-ticked.
+  function findSealedCheckbox() {
+    const anchors = document.querySelectorAll(
+      'fl-list-item[fltrackinglabel="BidFormUpgrades.Sealed"], fl-upgrade-tag[data-upgrade-type="sealed"]'
+    );
+    for (const a of anchors) {
+      const row = a.closest("fl-list-item") || a.parentElement;
+      if (!row) continue;
+      const cb = row.querySelector('input[type="checkbox"]');
+      if (cb && rowIsFree(row.textContent)) return cb;
+    }
+    // Fallback: find the "Sealed" leaf and climb to the FIRST ancestor that owns a
+    // checkbox — that ancestor is the Sealed row itself (each upgrade has its own
+    // checkbox in a separate subtree). Judge free-ness on that tightly-scoped row only;
+    // don't keep climbing into larger containers that mention "free" for other reasons.
+    const leaves = Array.from(document.querySelectorAll("*")).filter(
+      (el) => !el.children.length && /^\s*sealed\s*$/i.test(el.textContent || "")
+    );
+    for (const leaf of leaves) {
+      let row = leaf;
+      for (let i = 0; i < 10 && row; i++) {
+        const cb = row.querySelector ? row.querySelector('input[type="checkbox"]') : null;
+        if (cb) return rowIsFree(row.textContent) ? cb : null;
+        row = row.parentElement;
+      }
+    }
+    return null;
+  }
+  // Set the free Sealed checkbox to ``on``. Returns true when the checkbox exists and
+  // now matches ``on`` (so the caller can report what actually happened).
+  function applySealed(on) {
+    const cb = findSealedCheckbox();
+    if (!cb) return false;
+    if (cb.checked !== !!on) {
+      // Click the LABEL (fl-checkbox hides the native input); the label's `for` toggles
+      // it and fires Angular's handler. Falls back to clicking the input directly.
+      const esc = (window.CSS && CSS.escape) ? CSS.escape(cb.id) : cb.id;
+      const label = cb.id ? document.querySelector('label[for="' + esc + '"]') : null;
+      (label || cb).click();
+    }
+    return cb.checked === !!on;
+  }
+
+  // Freelancer's submit button is "Place Bid" or "Create Bid" (never "Write my bid",
+  // which is their own AI writer — excluded by the verb list). Buttons inside our own
+  // panel are skipped (ours says "Place bid" too), and so are disabled ones: Angular
+  // keeps the real button disabled until the form validates, and clicking it then is a
+  // silent no-op — auto-bid waits for it to go live instead.
+  function btnDisabled(b) {
+    return (
+      b.disabled === true ||
+      b.getAttribute("aria-disabled") === "true" ||
+      b.classList.contains("disabled") ||
+      /(^|\s)(is-)?disabled(\s|$)/i.test(b.className || "")
+    );
+  }
+  function findPlaceBidButton() {
+    const btns = Array.from(document.querySelectorAll('button, a, [role="button"]'));
+    return (
+      btns.find(
+        (b) =>
+          b.offsetParent !== null &&
+          !b.closest("[data-fbb-panel]") &&
+          !btnDisabled(b) &&
+          /(place|update|submit)\s*bid/i.test((b.textContent || "").trim())
+      ) || null
+    );
+  }
+  // Resolve with the button as soon as it exists AND is clickable, or null on timeout.
+  // timeoutMs = 0 → a single immediate check (what the manual button/Alt+B does).
+  function waitForPlaceBidButton(timeoutMs) {
+    return new Promise((resolve) => {
+      const first = findPlaceBidButton();
+      if (first || !timeoutMs) return resolve(first);
+      const started = Date.now();
+      const iv = setInterval(() => {
+        const b = findPlaceBidButton();
+        if (b || Date.now() - started > timeoutMs) { clearInterval(iv); resolve(b); }
+      }, 300);
+    });
+  }
+  // waitMs: how long to wait for the button to become clickable (0 = check once).
+  // isAuto: submitted by the countdown, not by you — then a bid that already exists is
+  // a hard stop. A manual click still goes through, because on an existing bid the same
+  // button reads "Update bid" and clicking it is exactly what you asked for.
+  async function placeBid(waitMs, isAuto) {
+    cancelAutoBid(null); // a manual place-bid supersedes any pending countdown
+    if (isAuto && hasAlreadyBid()) { badge("Already bid on this project — auto-bid skipped.", "info"); return; }
+    const btn = await waitForPlaceBidButton(waitMs || 0);
+    if (!btn) {
+      badge(
+        waitMs
+          ? "Place Bid never became clickable — check the form and place it manually."
+          : "Place-bid button not found or disabled (is the bid form complete?).",
+        "err"
+      );
+      return;
+    }
+    btn.click();
+    badge("Clicked Place Bid — confirming…", "info");
+    // Only mark applied once Freelancer ACTUALLY confirms the bid (a Retract control or
+    // the "already placed a bid" message appears). A click alone does not mean the bid
+    // went through — it can be rejected (out of bids, project closed, NDA not accepted).
+    // Marking on click alone left jobs you never bid on flagged "applied", which then
+    // blocked regenerating a proposal for them.
+    const seo = currentSeo(), pid = currentProjectId();
+    const started = Date.now();
+    const iv = setInterval(() => {
+      if (hasAlreadyBid()) {
+        clearInterval(iv);
+        markApplied(seo, pid); // record it in the bot's Jobs list
+        badge("Bid confirmed — marked applied.", "ok");
+      } else if (Date.now() - started > 12000) {
+        clearInterval(iv);
+        badge("Couldn't confirm the bid was placed — not marking applied. If it did go through, use 🔄 Sync.", "info");
+      }
+    }, 500);
+  }
+
+  // ── Auto-place the bid once the form is filled ────────────────────────────
+  // Runs after a successful fill when auto-bid is ON. A visible countdown gives you
+  // AUTO_BID_DELAY_MS to read the proposal and hit Esc (or Generate again) before it
+  // submits. It fires at most once per project per tab, so an SPA re-render or a
+  // manual re-generate can never double-submit, and it re-checks "already bid" right
+  // before clicking.
+  let autoTimer = null;
+  function cancelAutoBid(msg) {
+    if (!autoTimer) return false;
+    clearInterval(autoTimer);
+    autoTimer = null;
+    if (msg) badge(msg, "info");
+    return true;
+  }
+  function scheduleAutoBid(filledNote) {
+    if (!autoBidOn()) { badge(filledNote + " — auto-bid off, press 🚀 / Alt+B.", "ok"); return; }
+    const seo = currentSeo();
+    const once = seo ? "fbb:auto:" + seo : null;
+    if (once && CACHE.getItem(once)) {
+      badge(filledNote + " — auto-bid already ran here, press 🚀 / Alt+B.", "ok");
+      return;
+    }
+    cancelAutoBid(null);
+    let left = Math.ceil(AUTO_BID_DELAY_MS / 1000);
+    const tick = () => badge(filledNote + " — placing bid in " + left + "s (Esc cancels).", "ok");
+    const fire = () => {
+      cancelAutoBid(null);
+      if (once) CACHE.setItem(once, "1");
+      badge("Auto-placing bid…", "info");
+      placeBid(15000, true); // the button is often still disabled while Angular validates
+    };
+    if (left <= 0) return fire();
+    tick();
+    autoTimer = setInterval(() => {
+      left -= 1;
+      if (left > 0) tick();
+      else fire();
+    }, 1000);
+  }
+
+  // ── Tell the bot you've applied so the Jobs page shows it as done ──────────
+  // Fire-and-forget: a failure here must never disrupt bidding. The bot stores the
+  // project (fetching it live if it never collected it) with status 'applied'.
+  function markApplied(seo, pid) {
+    if (!seo && !pid) return;
+    const params =
+      (pid ? "id=" + encodeURIComponent(pid) : "") +
+      (seo ? (pid ? "&" : "") + "seo=" + encodeURIComponent(seo) : "");
+    try {
+      GM_xmlhttpRequest({
+        method: "GET",
+        headers: botHeaders(),
+        url: BOT_BASE + "/jobs/applied?" + params,
+        timeout: 15000,
+        onload: () => {}, onerror: () => {}, ontimeout: () => {},
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  // ── Copy the job's description + skills to the clipboard ──────────────────
+  // The text comes from the BOT (/jobs/text), not the page: it's the same full
+  // description the proposal was written from, already stripped of Freelancer's
+  // markup and "read more" truncation. No OpenAI call and no filters, so copying
+  // works on any project — including ones your filters would skip. Cached per
+  // project in the tab so repeat copies don't re-hit the API.
+  function fetchJobText(seo, pid) {
+    const params =
+      (pid ? "id=" + encodeURIComponent(pid) : "") +
+      (seo ? (pid ? "&" : "") + "seo=" + encodeURIComponent(seo) : "");
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        headers: botHeaders(),
+        url: BOT_BASE + "/jobs/text?" + params,
+        timeout: 30000,
+        onload: (r) => {
+          let d;
+          try { d = JSON.parse(r.responseText); } catch (e) { return reject("Bad response from bot."); }
+          if (r.status >= 200 && r.status < 300 && d.ok) resolve(d);
+          else reject(d.message || ("Bot returned HTTP " + r.status));
+        },
+        onerror: () => reject("Cannot reach the bot at " + BOT_BASE + " — is `python -m bot serve` running?"),
+        ontimeout: () => reject("Bot timed out reading the job."),
+      });
+    });
+  }
+
+  // Three routes, because each can fail on its own: the async Clipboard API (needs a
+  // focused document), Tampermonkey's GM_setClipboard, then the execCommand fallback.
+  function toClipboard(text) {
+    return new Promise((resolve, reject) => {
+      const viaGM = () => {
+        try {
+          if (typeof GM_setClipboard === "function") { GM_setClipboard(text, "text"); return resolve(); }
+        } catch (e) { /* fall through */ }
+        viaExec();
+      };
+      const viaExec = () => {
+        try {
+          const ta = document.createElement("textarea");
+          ta.value = text;
+          ta.style.cssText = "position:fixed;top:-1000px;opacity:0;";
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand("copy");
+          ta.remove();
+          return ok ? resolve() : reject("The browser blocked the copy.");
+        } catch (e) { return reject("The browser blocked the copy."); }
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(resolve, viaGM);
+      } else viaGM();
+    });
+  }
+
+  async function copyJobText() {
+    const seo = currentSeo(), pid = currentProjectId();
+    if (!seo && !pid) { badge("Couldn't tell which project this is.", "err"); return; }
+    const key = "fbbtext:" + (pid || seo);
+    try {
+      let d;
+      const cached = CACHE.getItem(key);
+      if (cached) d = JSON.parse(cached);
+      else {
+        badge("Reading the job from the bot…", "info");
+        d = await fetchJobText(seo, pid);
+        CACHE.setItem(key, JSON.stringify(d));
+      }
+      // Description first, skills after it — no title line, so the text pastes
+      // straight into a chat/notes without a header you already saw on the page.
+      const parts = [];
+      if (d.description) parts.push(d.description, "");
+      if (d.skills) parts.push("Skills: " + d.skills);
+      const text = parts.join("\n").trim();
+      if (!text) { badge("The bot has no description/skills for this project.", "err"); return; }
+      await toClipboard(text);
+      badge("Copied description + skills (" + text.length + " chars).", "ok");
+    } catch (msg) {
+      badge("Copy failed: " + String(msg), "err");
+    }
+  }
+
+  function fillForm(data) {
+    let filled = [];
+    const ta = findProposalTextarea();
+    if (ta) {
+      setNativeValue(ta, data.proposal || "");
+      filled.push("proposal");
+    }
+    if (data.amount != null) {
+      const amt = findNumberInput(/amount|bid|budget/i);
+      if (amt) { setNativeValue(amt, String(data.amount)); filled.push("amount"); }
+    }
+    if (data.period != null) {
+      const per = findNumberInput(/period|day|deliver|duration/i);
+      if (per) { setNativeValue(per, String(data.period)); filled.push("period"); }
+    }
+    // Sealed: obey the value the bot sent with this proposal (BOT_SEAL_BIDS on the
+    // Settings page), falling back to the cached one for an older bot build.
+    const wantSeal = typeof data.seal === "boolean" ? data.seal : sealOn();
+    if (typeof data.seal === "boolean") cacheSeal(data.seal);
+    if (wantSeal && applySealed(true)) filled.push("sealed");
+    return filled;
+  }
+
+  // ── Talk to the bot (GM_xmlhttpRequest bypasses CORS + mixed-content) ──────
+  // Resolves with the parsed JSON for any well-formed response (including a
+  // {ok:false, skipped:true} filter-skip); rejects only on transport/parse errors.
+  function fetchProposal(seo, pid, country) {
+    const params =
+      "seo=" + encodeURIComponent(seo) +
+      (pid ? "&id=" + encodeURIComponent(pid) : "") +
+      (country ? "&country=" + encodeURIComponent(country) : "");
+    return new Promise((resolve, reject) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        headers: botHeaders(),
+        url: BOT_BASE + "/jobs/generate?" + params,
+        timeout: 60000,
+        onload: (r) => {
+          let d;
+          try { d = JSON.parse(r.responseText); } catch (e) { return reject("Bad response from bot."); }
+          if (r.status >= 200 && r.status < 300) resolve(d);
+          else reject(d.message || ("Bot returned HTTP " + r.status));
+        },
+        onerror: () => reject("Cannot reach the bot at " + BOT_BASE + " — is `python -m bot serve` running?"),
+        ontimeout: () => reject("Bot timed out generating the proposal."),
+      });
+    });
+  }
+
+  // ── Wait for the bid form to render, OR for an "already bid" state ─────────
+  // Freelancer is a slow SPA. Resolves the instant the proposal textarea appears
+  // ("textarea"), or the instant we can tell you've already bid ("alreadybid"),
+  // via a MutationObserver with a polling fallback and a hard timeout ("timeout").
+  function waitForBidState(timeoutMs) {
+    const check = () =>
+      hasAlreadyBid() ? "alreadybid" : (findProposalTextarea() ? "textarea" : null);
+    return new Promise((resolve) => {
+      const first = check();
+      if (first) return resolve(first);
+      let done = false;
+      const finish = (val) => {
+        if (done) return;
+        done = true;
+        try { obs.disconnect(); } catch (e) {}
+        clearInterval(poll);
+        clearTimeout(timer);
+        resolve(val);
+      };
+      const obs = new MutationObserver(() => {
+        const s = check();
+        if (s) finish(s);
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+      // Belt-and-suspenders: some frameworks reveal the box without a mutation the
+      // observer surfaces (e.g. an existing node un-hidden via CSS).
+      const poll = setInterval(() => {
+        const s = check();
+        if (s) finish(s);
+      }, 600);
+      const timer = setTimeout(() => finish("timeout"), timeoutMs);
+    });
+  }
+
+  let lastSeo = null;
+  // Bumped by every run that goes on to generate. Only the NEWEST run may fill the
+  // form, so a slower earlier request can never overwrite what's already there
+  // (the "proposal changes twice" bug) — e.g. after you pressed ✨ Generate while
+  // the automatic run was still waiting on OpenAI.
+  let runSeq = 0;
+  async function run(force) {
+    const seo = currentSeo();
+    if (!seo) return;
+    if (!force && seo === lastSeo) return; // already handled this project in-tab
+    // Auto-generate OFF: opening a project does nothing, so browsing costs no OpenAI
+    // call. Pressing ✨ Generate / Alt+G passes force=true and always generates. Note
+    // lastSeo is NOT set here — if you switch the toggle on, a re-run still works.
+    if (!force && !autoGenOn()) {
+      badge("Auto-generate is OFF — press ✨ Generate / Alt+G to write a proposal.", "info");
+      return;
+    }
+    lastSeo = seo;
+    const myRun = ++runSeq;
+    // A newer run started, or you moved to another project, while we waited.
+    const superseded = () => myRun !== runSeq || currentSeo() !== seo;
+    cancelAutoBid(null); // a fresh generate restarts the countdown with the new text
+
+    const state = await waitForBidState(90000);
+    if (superseded()) return;
+    if (state === "alreadybid") {
+      // You've already bid — skip generating (don't overwrite your bid). We do NOT mark
+      // applied here: auto-detect can mis-fire on bad networks, and the applied list is
+      // kept accurate by the panel's Place-bid and the "Sync applied" button instead.
+      badge("You've already bid on this — skipping. Use Sync to refresh the list.", "info");
+      return;
+    }
+    if (state !== "textarea") {
+      // 90s and still nothing — either you can't bid here (closed / NDA not accepted)
+      // or the page is extremely slow. Use the Generate button (or Alt+G) to retry.
+      badge("No bid box yet — press Generate / Alt+G to retry.", "info");
+      return;
+    }
+    // An automatic run never touches a form that already has a proposal in it —
+    // whether we filled it earlier or you typed it. Only ✨ Generate / Alt+G
+    // (force) replaces it, so editing the price or days can't trigger a rewrite.
+    const formHasText = () => {
+      const ta = findProposalTextarea();
+      return !!(ta && (ta.value || "").trim());
+    };
+    if (!force && formHasText()) {
+      badge("Form already filled — press ✨ Generate / Alt+G to write a new proposal.", "info");
+      return;
+    }
+
+    try {
+      let data;
+      const cacheKey = "fbb:" + seo;
+      const cached = force ? null : CACHE.getItem(cacheKey);
+      if (cached) {
+        data = JSON.parse(cached);
+      } else {
+        const country = currentClientCountry();
+        // Surface what we scraped so a country-filter miss is diagnosable at a glance:
+        // a short preview of the client text means the filter got something; "?" means
+        // the "About the Client" block wasn't found, so the country filter can't apply.
+        badge("Generating proposal… (client: " + (country ? country.slice(0, 32) : "?") + ")", "info");
+        data = await fetchProposal(seo, currentProjectId(), country);
+        if (superseded()) return; // a newer run owns the form now
+      }
+      // Project matched a currency/country skip filter — don't fill, don't cache.
+      if (data && data.skipped) {
+        badge(data.message || "Skipped by filter.", "info");
+        return;
+      }
+      if (!data || !data.ok) {
+        badge((data && data.message) || "Bot could not generate a proposal.", "err");
+        return;
+      }
+      if (!cached) CACHE.setItem(cacheKey, JSON.stringify(data));
+      // Re-checked here: you may have started typing while OpenAI was writing.
+      if (!force && formHasText()) {
+        badge("You started editing — kept your text. Press ✨ Generate / Alt+G to replace it.", "info");
+        return;
+      }
+      const filled = fillForm(data);
+      // Only auto-place when the proposal itself landed — without it the bid would be
+      // submitted empty (or with whatever was in the box before).
+      if (filled.includes("proposal")) scheduleAutoBid("Filled: " + filled.join(", "));
+      else badge("Got proposal but couldn't find the bid box.", "err");
+    } catch (msg) {
+      badge(String(msg), "err");
+    }
+  }
+
+  // ── Keyboard shortcuts (Alt+letter so they don't fire while typing a bid) ──
+  document.addEventListener("keydown", (e) => {
+    // Esc aborts a pending auto-bid — works without Alt (and without stealing the key
+    // when no countdown is running, so Freelancer's own dialogs still close).
+    if ((e.key === "Escape" || e.key === "Esc") && !e.altKey) {
+      if (cancelAutoBid("Auto-bid cancelled — press 🚀 / Alt+B when you're ready.")) e.preventDefault();
+      return;
+    }
+    if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    const k = (e.key || "").toLowerCase();
+    if (k === "g") { e.preventDefault(); run(true); }
+    else if (k === "b") { e.preventDefault(); placeBid(0); }
+    else if (k === "s") { e.preventDefault(); setSeal(!sealOn()); }
+    else if (k === "c") { e.preventDefault(); copyJobText(); }
+    else if (k === "n") { e.preventDefault(); setAutoGen(!autoGenOn()); }
+    else if (k === "a") {
+      e.preventDefault();
+      const on = !autoBidOn();
+      setAutoBid(on);
+      if (on) badge("Auto-bid ON — a filled form submits after " + Math.ceil(AUTO_BID_DELAY_MS / 1000) + "s.", "info");
+    }
+  });
+
+  // Build the panel immediately so the buttons exist even if the bid box never
+  // loads, then run once. A light watcher re-runs on SPA navigation to a new project.
+  buildPanel();
+  // Show the switch states the BOT has (Settings page), not stale local ones, then
+  // decide whether to generate. Reading first means a fresh browser obeys the saved
+  // setting instead of the built-in default. On failure we fall back to the cached
+  // values, which the buttons already show.
+  optionsRequest({}).then(cacheOptions, () => {}).then(() => run(false));
+  // Keyed on the PROJECT, not the raw path: Freelancer rewrites the URL of the same
+  // project after load (…/slug -> …/slug/details), and treating that as a new page
+  // started a second generate that re-filled the form with a different proposal.
+  let lastWatchedSeo = currentSeo();
+  setInterval(() => {
+    const seo = currentSeo();
+    if (seo !== lastWatchedSeo) {
+      lastWatchedSeo = seo;
+      lastSeo = null;
+      cancelAutoBid(null); // never let a countdown from the previous project fire here
+      run(false);
+    }
+  }, 1000);
+})();

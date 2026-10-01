@@ -2,3 +2,6 @@ freelancersdk==0.1.20
 python-dotenv==1.0.1
 pydantic>=2.9,<3
 openai==1.66.3
+# Uses the OS trust store for HTTPS so the bot works behind antivirus/proxy SSL
+# interception (avoids CERTIFICATE_VERIFY_FAILED on Telegram calls).
+truststore>=0.9

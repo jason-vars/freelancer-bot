@@ -1,0 +1,49 @@
+[Unit]
+# Templated unit: ONE instance per Freelancer account.
+#   systemctl enable --now freelancer-bot@jaison
+#   systemctl enable --now freelancer-bot@user2
+# %i is the account name, which is also its directory under accounts/.
+Description=Freelancer bid bot - account %i (web UI + polling loop)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botuser
+Group=botuser
+
+# Layout this unit expects (one shared code checkout, one dir per account):
+#   /opt/freelancer-bot/app/                  <- the repo + .venv (shared)
+#   /opt/freelancer-bot/accounts/<name>/.env  <- that account's settings + tokens
+#   /opt/freelancer-bot/accounts/<name>/bot.sqlite3
+WorkingDirectory=/opt/freelancer-bot/accounts/%i
+
+# The DB path (bot.sqlite3) and bot.pid are relative to WorkingDirectory, so each
+# account already gets its own database. BOT_ENV_FILE is what keeps the SETTINGS
+# separate: without it the bot would find the shared checkout's .env instead of
+# this account's, and the Settings page would write to the wrong file.
+Environment=BOT_ENV_FILE=/opt/freelancer-bot/accounts/%i/.env
+Environment=PYTHONUTF8=1
+# PORT=8765 (one per account, e.g. 8765, 8766, ...). Keep it in the account dir so
+# adding an account never means editing this unit.
+EnvironmentFile=/opt/freelancer-bot/accounts/%i/service.env
+
+# `serve` runs the settings web UI AND the polling loop in one process, and
+# refuses to start if that port is already serving — which doubles as the guard
+# against accidentally running the same account twice.
+# 127.0.0.1 ONLY: the web UI has no login and shows the account's tokens, so it
+# must never be exposed. Reach it with an SSH tunnel (see deploy/README.md).
+ExecStart=/opt/freelancer-bot/app/.venv/bin/python -m bot serve --host 127.0.0.1 --port ${PORT}
+
+Restart=on-failure
+RestartSec=10
+
+# Least privilege: the bot only ever writes inside its own account directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/freelancer-bot/accounts/%i
+
+[Install]
+WantedBy=multi-user.target

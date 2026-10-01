@@ -165,6 +165,66 @@ def get_client_status(session, owner_id: int | None) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Individual filters — each returns (passed, reason_if_failed)
 # ---------------------------------------------------------------------------
+# Project "upgrade" flags a bidder may want to avoid, mapped to the API's
+# ``upgrades`` object keys. Single source of truth for the config env vars
+# (``BOT_SKIP_<suffix>``), the settings-UI toggles, and the filter below — add a
+# row here and it surfaces in all three. ``(env_suffix, upgrades_key, label)``.
+SKIPPABLE_UPGRADES: list[tuple[str, str, str]] = [
+    ("NDA", "NDA", "NDA required"),
+    ("PREFERRED", "pf_only", "Preferred Freelancer only"),
+    ("SEALED", "sealed", "Sealed bids"),
+    ("QUALIFIED", "qualified", "Qualified / verified-freelancer required"),
+    ("IP_CONTRACT", "ip_contract", "IP / ownership agreement"),
+    ("NON_COMPETE", "non_compete", "Non-compete agreement"),
+    ("NONPUBLIC", "nonpublic", "Private / non-public project"),
+    ("FULLTIME", "fulltime", "Full-time project"),
+    ("RECRUITER", "recruiter", "Recruiter project"),
+]
+
+
+# Notable upgrade flags to DISPLAY on a job (a superset of the skippable set — also
+# includes purely informational badges like Urgent/Featured). ``(upgrades_key, label)``.
+DISPLAY_UPGRADES: list[tuple[str, str]] = [
+    ("NDA", "NDA"),
+    ("pf_only", "Preferred"),
+    ("sealed", "Sealed"),
+    ("qualified", "Verified"),
+    ("ip_contract", "IP"),
+    ("non_compete", "Non-compete"),
+    ("nonpublic", "Private"),
+    ("urgent", "Urgent"),
+    ("featured", "Featured"),
+    ("fulltime", "Full-time"),
+    ("recruiter", "Recruiter"),
+]
+
+
+def active_upgrade_labels(upgrades: Any) -> list[str]:
+    """Short labels for the upgrade flags that are truthy on a project — used to show
+    badges on the Jobs page and in the Telegram alert. Empty list if none/!dict."""
+    if not isinstance(upgrades, dict):
+        return []
+    return [label for key, label in DISPLAY_UPGRADES if bool(upgrades.get(key))]
+
+
+def passes_upgrades(
+    upgrades: Any,
+    skip_upgrades: frozenset[str] | set[str],
+) -> tuple[bool, str | None]:
+    """Reject a project carrying any of the ``skip_upgrades`` upgrade flags.
+
+    ``upgrades`` is the project's ``upgrades`` object (a dict of flag -> bool/None).
+    Empty ``skip_upgrades`` or a missing/!dict ``upgrades`` disables the check. The
+    reject reason names the first matched flag, e.g. ``upgrade_blocked:NDA``.
+    """
+    if not skip_upgrades or not isinstance(upgrades, dict):
+        return True, None
+    for key in skip_upgrades:
+        if bool(upgrades.get(key)):
+            return False, f"upgrade_blocked:{key}"
+    return True, None
+
+
 def passes_currency(
     currency: str | None,
     skip_currencies: list[str],
@@ -238,6 +298,55 @@ def passes_bid_remaining(
     return True, None
 
 
+def passes_keyword_blocklist(
+    title: str | None,
+    description: str | None,
+    exclude_title_keywords: list[str],
+    exclude_desc_keywords: list[str],
+) -> tuple[bool, str | None]:
+    """Reject a project if a blocked keyword appears in its title or description.
+
+    Matching is case-insensitive substring (so ``wordpress`` also matches
+    ``WordPress`` and ``wordpress-plugin``). Empty lists disable the respective
+    check. Title and description have independent blocklists.
+    """
+    title_l = (title or "").lower()
+    for kw in exclude_title_keywords:
+        k = (kw or "").strip().lower()
+        if k and k in title_l:
+            return False, f"title_keyword_blocked:{k}"
+    desc_l = (description or "").lower()
+    for kw in exclude_desc_keywords:
+        k = (kw or "").strip().lower()
+        if k and k in desc_l:
+            return False, f"desc_keyword_blocked:{k}"
+    return True, None
+
+
+def passes_skill_blocklist(
+    skills_csv: str | None,
+    exclude_skills: list[str],
+) -> tuple[bool, str | None]:
+    """Reject a project tagged with any blocked skill.
+
+    ``skills_csv`` is the project's comma-separated skill badges. Matching is
+    case-insensitive on the whole badge name OR as a substring (so "wordpress"
+    blocks the "WordPress" badge and "WordPress Plugin"). Empty list disables it.
+    """
+    if not exclude_skills:
+        return True, None
+    badges = [b.strip().lower() for b in (skills_csv or "").split(",") if b.strip()]
+    if not badges:
+        return True, None
+    for ex in exclude_skills:
+        e = (ex or "").strip().lower()
+        if not e:
+            continue
+        if any(e == b or e in b for b in badges):
+            return False, f"skill_blocked:{e}"
+    return True, None
+
+
 def passes_budget(
     budget_min: float | None,
     budget_max: float | None,
@@ -258,29 +367,38 @@ def country_allowed(
     allow_countries: list[str],
     skip_countries: list[str],
 ) -> tuple[bool, str | None]:
-    raw_country = client_status.get("country")
     code = (client_status.get("country_code") or "").strip().upper()
-    name = (client_status.get("country_name") or "").strip().lower()
-
-    def _norm(vals: list[str]) -> set[str]:
-        out: set[str] = set()
-        for v in vals:
-            s = (v or "").strip()
-            if s:
-                out.add(s.upper())
-                out.add(s.lower())
-        return out
-
-    allow = _norm(allow_countries)
-    skip = _norm(skip_countries)
-    hay = {code, name}
+    names = {(client_status.get("country_name") or "").strip().lower()}
+    codes = {code}
+    raw_country = client_status.get("country")
     if isinstance(raw_country, str):
-        hay.add(raw_country.strip().upper())
-        hay.add(raw_country.strip().lower())
+        rc = raw_country.strip()
+        # A bare 2-letter value is an ISO code; anything longer is a country name.
+        (codes if len(rc) == 2 else names).add(rc.upper() if len(rc) == 2 else rc.lower())
+    names = {n for n in names if n}
+    codes = {c for c in codes if c}
 
-    if allow and not any(x in allow for x in hay if x):
+    def _matches(configured: list[str]) -> bool:
+        """A configured entry matches the client's country if it equals the ISO code,
+        equals the country name, or (for entries of 4+ chars) is contained in the name
+        or vice-versa — so 'korea' matches 'South Korea' and 'united states' matches
+        'United States of America'. Short entries only match exactly (avoids 'in'
+        blocking every country)."""
+        for v in configured:
+            s = (v or "").strip()
+            if not s:
+                continue
+            if s.upper() in codes:
+                return True
+            sl = s.lower()
+            for n in names:
+                if sl == n or (len(sl) >= 4 and (sl in n or n in sl)):
+                    return True
+        return False
+
+    if allow_countries and not _matches(allow_countries):
         return False, "country_not_allowed"
-    if skip and any(x in skip for x in hay if x):
+    if skip_countries and _matches(skip_countries):
         return False, "country_blocked"
     return True, None
 
@@ -315,11 +433,14 @@ def passes_payment_verified(
     return False, "client_payment_unverified" if pv is False else "client_payment_unknown"
 
 
-def evaluate_project(session, project: dict[str, Any], settings) -> tuple[bool, str | None, dict[str, Any]]:
+def evaluate_project(session, project: dict[str, Any], settings,
+                     client_status: dict[str, Any] | None = None) -> tuple[bool, str | None, dict[str, Any]]:
     """Apply the pre-save filters in order: currency -> budget -> country -> client history.
 
     Returns ``(passed, reason, client_status)``. ``client_status`` is ``{}`` when
-    the project is rejected before any API lookup is needed.
+    the project is rejected before any API lookup is needed. Pass ``client_status``
+    when it is already known (the shared job feed ships it with each project) and
+    no Freelancer API call is made for it.
     """
     ok, reason = passes_recency(project.get("created_at"), settings.max_project_age_seconds)
     if not ok:
@@ -333,6 +454,23 @@ def evaluate_project(session, project: dict[str, Any], settings) -> tuple[bool, 
     if not ok:
         return False, reason, {}
 
+    ok, reason = passes_upgrades(project.get("upgrades"), settings.skip_upgrades)
+    if not ok:
+        return False, reason, {}
+
+    ok, reason = passes_keyword_blocklist(
+        project.get("title"),
+        project.get("description"),
+        settings.exclude_title_keywords,
+        settings.exclude_desc_keywords,
+    )
+    if not ok:
+        return False, reason, {}
+
+    ok, reason = passes_skill_blocklist(project.get("skills"), settings.exclude_skills)
+    if not ok:
+        return False, reason, {}
+
     ok, reason = passes_budget(
         project.get("budget_min"),
         project.get("budget_max"),
@@ -342,7 +480,8 @@ def evaluate_project(session, project: dict[str, Any], settings) -> tuple[bool, 
     if not ok:
         return False, reason, {}
 
-    client_status = get_client_status(session, project.get("owner_id"))
+    if client_status is None:
+        client_status = get_client_status(session, project.get("owner_id"))
 
     ok, reason = country_allowed(client_status, settings.allow_countries, settings.skip_countries)
     if not ok:

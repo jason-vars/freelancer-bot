@@ -1,16 +1,52 @@
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from dotenv import load_dotenv
 
-load_dotenv()
+from .filters import SKIPPABLE_UPGRADES
+
+
+def _env_file() -> str | None:
+    """The .env to read. Mirrors env_store.ENV_PATH so BOT_ENV_FILE points the
+    reader and the writer (settings page, userscript) at the SAME file; unset =
+    python-dotenv's own search, i.e. the project's .env."""
+    return (os.getenv("BOT_ENV_FILE") or "").strip() or None
+
+
+load_dotenv(_env_file())
+
+def _strip_inline_comment(v: str | None) -> str:
+    """Drop a leaked inline ``# comment`` and surrounding whitespace.
+
+    python-dotenv mis-parses a line whose value is empty but still has a trailing
+    comment (e.g. ``KEY=  # note``) and returns the COMMENT as the value. Guard
+    every scalar getter with this so such a line behaves as "unset" instead of
+    crashing int()/float()."""
+    if v is None:
+        return ""
+    return v.split("#", 1)[0].strip()
 
 def _get_int(name: str, default: int) -> int:
-    v = os.getenv(name)
-    if v is None or v.strip() == "":
+    v = _strip_inline_comment(os.getenv(name))
+    if v == "":
         return default
-    return int(v)
+    try:
+        return int(v)
+    except ValueError:
+        return default
+
+def _get_json_list(name: str) -> list[dict]:
+    """Parse an env var holding a JSON array of objects; [] on empty/invalid."""
+    v = os.getenv(name)
+    if not v or not v.strip():
+        return []
+    try:
+        data = json.loads(v)
+    except (ValueError, TypeError):
+        return []
+    return data if isinstance(data, list) else []
 
 def _get_bool(name: str, default: bool) -> bool:
     v = os.getenv(name)
@@ -22,6 +58,44 @@ def _csv(name: str) -> list[str]:
     v = os.getenv(name, "")
     return [x.strip() for x in v.split(",") if x.strip()]
 
+def _get_float_or_none(name: str) -> float | None:
+    v = _strip_inline_comment(os.getenv(name))
+    if v == "":
+        return None
+    try:
+        return float(v.lstrip("+"))
+    except ValueError:
+        return None
+
+def _get_text(name: str) -> str:
+    """Read a (possibly multi-line) text value.
+
+    The settings UI stores textarea values with newlines escaped as the literal
+    two characters ``\\n`` so the single-line .env format stays intact. We decode
+    them back to real newlines here.
+    """
+    return (os.getenv(name) or "").replace("\\n", "\n").strip()
+
+def _get_lines(name: str) -> list[str]:
+    """A textarea value parsed into a list of non-empty trimmed lines."""
+    return [ln.strip() for ln in _get_text(name).splitlines() if ln.strip()]
+
+def _get_portfolio(name: str) -> list[str]:
+    """Portfolio entries, one per line, each optionally tagged with the tech/role it
+    demonstrates so the AI can pick the links relevant to a given job::
+
+        https://site.com | React, Next, payments
+        https://other.com | Django, REST API
+
+    The part after ``|`` is a free-text tag (never shown verbatim in the proposal).
+    Back-compat: a legacy single-line, comma-separated list of bare URLs (no tags,
+    no ``|``) is still accepted and parsed by comma."""
+    text = _get_text(name)
+    if not text:
+        return []
+    parts = text.splitlines() if ("\n" in text or "|" in text) else text.split(",")
+    return [p.strip() for p in parts if p.strip()]
+
 @dataclass(frozen=True)
 class Settings:
     # Freelancer
@@ -30,6 +104,15 @@ class Settings:
 
     # Bot
     dry_run: bool
+    # Master switch for AUTOMATIC bidding. When False, the bot never auto-submits a
+    # bid (the webhook path is forced to save-only); manual web-UI Apply/Auto-bid
+    # are unaffected. Lets you stop/run auto-applying without touching other knobs.
+    auto_apply: bool
+    # Master switch for Telegram notifications. When False, no alerts are sent but
+    # the bot keeps collecting jobs (still visible in the web UI). Lets you mute
+    # notifications without clearing your Telegram token/chat id.
+    fetch_enabled: bool
+    notify_enabled: bool
     max_bids_per_day: int
     poll_interval_seconds: int
     min_score: int
@@ -37,17 +120,99 @@ class Settings:
     min_skill_matches: int
     keywords: list[str]
     skills: list[str]
+    exclude_title_keywords: list[str]
+    exclude_desc_keywords: list[str]
+    exclude_skills: list[str]
     allow_countries: list[str]
     skip_countries: list[str]
     skip_currencies: list[str]
+    # Project upgrade flags to skip (e.g. {"NDA", "pf_only", "sealed"}), resolved
+    # from the BOT_SKIP_<suffix> toggles. Empty = keep every project type.
+    skip_upgrades: frozenset[str]
     min_client_completed_jobs: int
     require_payment_verified: bool
     max_project_age_seconds: int
     min_bid_remaining_seconds: int
 
+    # Active-hours window (local time, "HH:MM"); empty = always active.
+    active_start: str | None
+    active_end: str | None
+    # Hours offset from UTC the active window is evaluated in (e.g. 9, -5, 5.5).
+    # None = use the bot machine's own local time. Shared by all the windows below.
+    active_tz_offset: float | None
+
+    # Per-feature sub-windows (local time, "HH:MM"), evaluated in active_tz_offset.
+    # Empty bounds = that feature runs whenever the bot is active (no extra gate).
+    # Notifications are only SENT inside [notify_start, notify_end); auto-apply only
+    # BIDS inside [autoapply_start, autoapply_end). Overnight windows are supported.
+    # Out-of-window jobs are collected but NOT alerted (dropped, not deferred), so
+    # alerts start fresh at the window edge rather than replaying a backlog.
+    notify_start: str | None
+    notify_end: str | None
+    autoapply_start: str | None
+    autoapply_end: str | None
+
+    def notify_window_open(self, now_minutes: int | None = None) -> bool:
+        """Whether Telegram alerts may be sent right now (empty bounds = always)."""
+        from .util import current_minutes, within_active_hours
+        nm = current_minutes(self.active_tz_offset) if now_minutes is None else now_minutes
+        return within_active_hours(self.notify_start, self.notify_end, now_minutes=nm)
+
+    def autoapply_window_open(self, now_minutes: int | None = None) -> bool:
+        """Whether auto-apply may place bids right now (empty bounds = always)."""
+        from .util import current_minutes, within_active_hours
+        nm = current_minutes(self.active_tz_offset) if now_minutes is None else now_minutes
+        return within_active_hours(self.autoapply_start, self.autoapply_end, now_minutes=nm)
+
     # Bid defaults
     default_period_days: int
     default_milestone_percent: int
+    # Per-currency/budget bid rules: list of
+    #   {"currencies": [...], "min": n, "max": n, "bid": n, "delivery": n}
+    bid_rules: list[dict]
+
+    # Extra free-text instructions appended to the OpenAI proposal prompt.
+    proposal_instructions: str
+
+    # --- Proposal personalization ---
+    # Identity used in proposals. Empty values fall back to the built-in defaults
+    # baked into proposal_ai.py, so behaviour is unchanged until these are set.
+    signature_name: str
+    portfolio_urls: list[str]
+    profile_bullets: list[str]
+    # Base style/template the model imitates. Empty = built-in STYLE_EXAMPLE.
+    proposal_template: str
+    # Toggles mirroring the FABB "AI Configs" checkboxes.
+    include_name: bool
+    include_profile: bool
+    ask_question: bool
+    # Literal text wrapped around the generated body ("Hello," / "Thanks!").
+    proposal_prefix: str
+    # True = the prefix opens the first sentence ("Hi, I am ...") instead of sitting
+    # on a line of its own.
+    proposal_prefix_inline: bool
+    proposal_suffix: str
+
+    # --- AI project filtering (natural-language accept/reject) ---
+    ai_filter_enabled: bool
+    ai_filter_criteria: str
+
+    # --- AI auto-pricing & duration (natural-language pricing rules) ---
+    ai_pricing_enabled: bool
+    ai_pricing_rules: str
+
+    # When true, the polling run generates a proposal for each matching project and
+    # saves it to the bids table (status 'proposal_saved') for review — no real bid.
+    save_proposals: bool
+
+    # Generate a proposal automatically when the userscript opens a project page.
+    # Off = the page is only prepared and you press ✨ Generate / Alt+G yourself, so
+    # browsing a job costs no OpenAI call.
+    auto_generate: bool
+
+    # Tick Freelancer's FREE "Sealed" upgrade (hides your bid from other freelancers)
+    # when the browser userscript fills a bid form. Paid upgrades are never touched.
+    seal_bids: bool
 
     # OpenAI
     openai_api_key: str | None
@@ -59,8 +224,58 @@ class Settings:
     webhook_save_only: bool
     telegram_bot_token: str | None
     telegram_chat_id: str | None
+    # One or more chat ids (TELEGRAM_CHAT_ID may be comma-separated to notify
+    # several chats). telegram_chat_id keeps the raw value for diagnostics.
+    telegram_chat_ids: list[str]
+    # Every (bot_token, chat_id) an alert is delivered to: the primary bot paired
+    # with each of its chat ids, plus any extra bots (each with its own token).
+    telegram_targets: list[tuple[str, str]]
+    # Slack Incoming Webhook URL; blank = no Slack alerts.
+    slack_webhook_url: str | None
+
+    # Shared job feed (bot/feed.py): "off" | "publish" | "subscribe".
+    feed_mode: str
+    feed_keywords: list[str]
+    supabase_url: str
+    supabase_key: str
+
+def _telegram_targets() -> list[tuple[str, str]]:
+    """Resolve every (token, chat_id) pair an alert should be delivered to.
+
+    Primary bot (TELEGRAM_BOT_TOKEN) is paired with each id in TELEGRAM_CHAT_ID;
+    each extra bot in TELEGRAM_BOTS carries its own token + chat_id. Duplicates are
+    removed while preserving order."""
+    targets: list[tuple[str, str]] = []
+    base = (os.getenv("TELEGRAM_BOT_TOKEN") or "").strip()
+    if base:
+        for cid in _csv("TELEGRAM_CHAT_ID"):
+            targets.append((base, cid))
+    for item in _get_json_list("TELEGRAM_BOTS"):
+        if not isinstance(item, dict):
+            continue
+        tok = str(item.get("token", "")).strip()
+        cid = str(item.get("chat_id", "")).strip()
+        if tok and cid:
+            targets.append((tok, cid))
+    seen: set[tuple[str, str]] = set()
+    unique: list[tuple[str, str]] = []
+    for t in targets:
+        if t not in seen:
+            seen.add(t)
+            unique.append(t)
+    return unique
+
 
 def load_settings() -> Settings:
+    # Re-read .env from disk on every call so edits made in the settings web UI
+    # take effect on the next polling cycle without restarting the bot. override=True
+    # is required because the values are already in os.environ from the import-time
+    # load_dotenv() above, and python-dotenv won't replace existing keys otherwise.
+    load_dotenv(_env_file(), override=True)
+    # Cloud mode: the web app's admin settings win over the .env (bot/cloud.py).
+    from .cloud import overlay_settings
+    overlay_settings()
+
     token = os.getenv("FLN_OAUTH_TOKEN", "").strip()
     if not token:
         raise RuntimeError("Missing FLN_OAUTH_TOKEN. Put it in your .env")
@@ -69,6 +284,11 @@ def load_settings() -> Settings:
         fln_oauth_token=token,
         fln_url=os.getenv("FLN_URL"),
         dry_run=_get_bool("BOT_DRY_RUN", True),
+        # Default OFF: the bot does not auto-apply until you turn this on.
+        auto_apply=_get_bool("BOT_AUTO_APPLY", False),
+        # Default ON: notifications are sent (mute by setting this to 0).
+        fetch_enabled=_get_bool("BOT_FETCH_ENABLED", True),
+        notify_enabled=_get_bool("BOT_NOTIFY_ENABLED", True),
         max_bids_per_day=_get_int("BOT_MAX_BIDS_PER_DAY", 20),
         poll_interval_seconds=_get_int("BOT_POLL_INTERVAL_SECONDS", 300),
         min_score=_get_int("BOT_MIN_SCORE", 70),
@@ -76,9 +296,16 @@ def load_settings() -> Settings:
         min_skill_matches=_get_int("BOT_MIN_SKILL_MATCHES", 2),
         keywords=_csv("BOT_KEYWORDS"),
         skills=_csv("BOT_SKILLS"),
+        exclude_title_keywords=_csv("BOT_EXCLUDE_TITLE_KEYWORDS"),
+        exclude_desc_keywords=_csv("BOT_EXCLUDE_DESC_KEYWORDS"),
+        exclude_skills=_csv("BOT_EXCLUDE_SKILLS"),
         allow_countries=_csv("BOT_ALLOW_COUNTRIES"),
         skip_countries=_csv("BOT_SKIP_COUNTRIES"),
         skip_currencies=_csv("BOT_SKIP_CURRENCIES") or ["INR"],
+        skip_upgrades=frozenset(
+            key for suffix, key, _label in SKIPPABLE_UPGRADES
+            if _get_bool(f"BOT_SKIP_{suffix}", False)
+        ),
         min_client_completed_jobs=_get_int("BOT_MIN_CLIENT_COMPLETED_JOBS", 1),
         # Only save/bid projects whose client has a verified payment method.
         require_payment_verified=_get_bool("BOT_REQUIRE_PAYMENT_VERIFIED", True),
@@ -89,8 +316,40 @@ def load_settings() -> Settings:
         # (time_submitted + bidperiod - now). Default 0 = disabled.
         # 6 days 22 hours = 597600.
         min_bid_remaining_seconds=_get_int("BOT_MIN_BID_REMAINING_SECONDS", 0),
+        active_start=(os.getenv("BOT_ACTIVE_START") or "").strip() or None,
+        active_end=(os.getenv("BOT_ACTIVE_END") or "").strip() or None,
+        active_tz_offset=_get_float_or_none("BOT_ACTIVE_TZ_OFFSET"),
+        notify_start=(os.getenv("BOT_NOTIFY_START") or "").strip() or None,
+        notify_end=(os.getenv("BOT_NOTIFY_END") or "").strip() or None,
+        autoapply_start=(os.getenv("BOT_AUTOAPPLY_START") or "").strip() or None,
+        autoapply_end=(os.getenv("BOT_AUTOAPPLY_END") or "").strip() or None,
         default_period_days=_get_int("BOT_DEFAULT_PERIOD_DAYS", 7),
         default_milestone_percent=_get_int("BOT_DEFAULT_MILESTONE_PERCENT", 50),
+        bid_rules=_get_json_list("BOT_BID_RULES"),
+        proposal_instructions=_get_text("BOT_PROPOSAL_INSTRUCTIONS"),
+        # Proposal personalization (empty = built-in defaults in proposal_ai.py).
+        signature_name=(os.getenv("BOT_SIGNATURE_NAME") or "").strip(),
+        portfolio_urls=_get_portfolio("BOT_PORTFOLIO_URLS"),
+        profile_bullets=_get_lines("BOT_PROFILE_BULLETS"),
+        proposal_template=_get_text("BOT_PROPOSAL_TEMPLATE"),
+        include_name=_get_bool("BOT_INCLUDE_NAME", True),
+        include_profile=_get_bool("BOT_INCLUDE_PROFILE", True),
+        ask_question=_get_bool("BOT_ASK_QUESTION", True),
+        proposal_prefix=_get_text("BOT_PROPOSAL_PREFIX"),
+        proposal_prefix_inline=_get_bool("BOT_PROPOSAL_PREFIX_INLINE", False),
+        proposal_suffix=_get_text("BOT_PROPOSAL_SUFFIX"),
+        # AI project filtering.
+        ai_filter_enabled=_get_bool("BOT_AI_FILTER_ENABLED", False),
+        ai_filter_criteria=_get_text("BOT_AI_FILTER_CRITERIA"),
+        # AI auto-pricing & duration.
+        ai_pricing_enabled=_get_bool("BOT_AI_PRICING_ENABLED", False),
+        ai_pricing_rules=_get_text("BOT_AI_PRICING_RULES"),
+        # Save a generated proposal draft to the DB during polling (for testing).
+        save_proposals=_get_bool("BOT_SAVE_PROPOSALS", False),
+        # Auto-generate the proposal when a project page opens (default on).
+        auto_generate=_get_bool("BOT_AUTO_GENERATE", True),
+        # Seal bids placed through the userscript (free upgrade; default on).
+        seal_bids=_get_bool("BOT_SEAL_BIDS", True),
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-5.2-mini"),
         webhook_secret=os.getenv("WEBHOOK_SECRET"),
@@ -101,4 +360,11 @@ def load_settings() -> Settings:
         webhook_save_only=_get_bool("BOT_WEBHOOK_SAVE_ONLY", True),
         telegram_bot_token=os.getenv("TELEGRAM_BOT_TOKEN"),
         telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID"),
+        telegram_chat_ids=_csv("TELEGRAM_CHAT_ID"),
+        telegram_targets=_telegram_targets(),
+        slack_webhook_url=(os.getenv("SLACK_WEBHOOK_URL") or "").strip() or None,
+        feed_mode=(_strip_inline_comment(os.getenv("BOT_FEED_MODE")) or "off").lower(),
+        feed_keywords=_csv("BOT_FEED_KEYWORDS"),
+        supabase_url=(os.getenv("SUPABASE_URL") or "").strip(),
+        supabase_key=(os.getenv("SUPABASE_KEY") or "").strip(),
     )
