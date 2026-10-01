@@ -16,6 +16,7 @@ const VIEWS = {
   opened: "Opened",
   applied: "Applied",
   hidden: "Hidden by me",
+  bad: "Marked bad",
 } as const;
 const ADMIN_VIEWS = { filtered: "Filtered out", all: "Everything" } as const;
 type View = keyof typeof VIEWS | keyof typeof ADMIN_VIEWS;
@@ -48,12 +49,14 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
   const supabase = await createClient();
   let q = supabase
     .from("my_jobs")
-    .select("id,title,url,description,currency,budget_min,budget_max,bid_count,bid_avg,skills,posted_at,upgrades,score,status,filter_reason,opened_at,applied_at,proposal,amount,period_days,my_filter_reason", { count: "exact" });
+    .select("id,title,url,description,currency,budget_min,budget_max,bid_count,bid_avg,skills,posted_at,upgrades,score,status,filter_reason,opened_at,applied_at,proposal,amount,period_days,my_filter_reason,bad_count,bad_by_me,bad_reasons", { count: "exact" });
   // "New for me" and "All matching" also apply the user's own filters (My settings);
   // "Hidden by me" lists what those filters took out.
-  if (view === "new") q = q.in("status", PASSED).is("my_filter_reason", null).is("opened_at", null);
-  else if (view === "passed") q = q.in("status", PASSED).is("my_filter_reason", null);
+  // Jobs anyone marked bad leave everyone's lists and move to "Marked bad".
+  if (view === "new") q = q.in("status", PASSED).is("my_filter_reason", null).eq("bad_count", 0).is("opened_at", null);
+  else if (view === "passed") q = q.in("status", PASSED).is("my_filter_reason", null).eq("bad_count", 0);
   else if (view === "hidden") q = q.in("status", PASSED).not("my_filter_reason", "is", null);
+  else if (view === "bad") q = q.gt("bad_count", 0);
   else if (view === "opened") q = q.not("opened_at", "is", null);
   else if (view === "applied") q = q.not("applied_at", "is", null);
   else if (view === "filtered") q = q.in("status", ["filtered", "skipped"]);
@@ -89,6 +92,9 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
     amount: r.amount,
     periodDays: r.period_days,
     activity: activity[r.id] ?? null,
+    badCount: Number(r.bad_count ?? 0),
+    badByMe: Boolean(r.bad_by_me),
+    badReasons: r.bad_reasons ?? null,
   }));
 
   const total = count ?? 0;

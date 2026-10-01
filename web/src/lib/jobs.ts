@@ -187,6 +187,14 @@ function userFilterReason(s: Values, j: Job): string | null {
   return null;
 }
 
+/** "marked bad by 2 users (spam; fake budget)" when anyone flagged the job, else null. */
+async function badMark(jobId: number): Promise<string | null> {
+  const { data } = await createAdminClient().from("job_flags").select("reason").eq("job_id", jobId);
+  if (!data?.length) return null;
+  const reasons = [...new Set(data.map((f) => String(f.reason ?? "").trim()).filter(Boolean))];
+  return `marked bad by ${data.length} user${data.length === 1 ? "" : "s"}` + (reasons.length ? ` (${reasons.join("; ")})` : "");
+}
+
 // ── Pricing: AI pricing (admin) → user's bid rules → half-way through the budget ─
 function bidFromRules(s: Values, j: Job): [number, number] | null {
   let rules: Record<string, unknown>[] = [];
@@ -201,11 +209,21 @@ function bidFromRules(s: Values, j: Job): [number, number] | null {
   for (const r of rules) {
     const codes = ((r.currencies as string[]) ?? []).map((c) => String(c).trim().toUpperCase()).filter(Boolean);
     if (codes.length && code && !codes.includes(code)) continue;
-    const [lo, hi, bid, delivery] = [Number(r.min), Number(r.max), Number(r.bid), Math.trunc(Number(r.delivery))];
+    // Days round UP: "7.5" means 8, never 7.
+    const [lo, hi, bid, delivery] = [Number(r.min), Number(r.max), Number(r.bid), Math.ceil(Number(r.delivery))];
     if ([lo, hi, bid, delivery].some(Number.isNaN)) continue;
     if (lo <= budget && budget <= hi) return [bid, Math.max(1, delivery)];
   }
   return null;
+}
+
+/** Round a bid UP to a clean number a person would type: 5s under 100, 50s under
+ *  1000, 100s above (1125 -> 1200, 140 -> 150, 17.5 -> 20). Never above `cap` (the
+ *  budget's max), so rounding can't push a bid over the client's range. */
+function niceAmount(amount: number, cap?: number): number {
+  const step = amount < 100 ? 5 : amount < 1000 ? 50 : 100;
+  const nice = Math.ceil(amount / step) * step;
+  return cap != null && nice > cap ? cap : nice;
 }
 
 async function resolvePricing(s: Values, j: Job): Promise<[number, number]> {
@@ -219,7 +237,7 @@ async function resolvePricing(s: Values, j: Job): Promise<[number, number]> {
   const ruled = bidFromRules(s, j);
   if (ruled) return ruled;
   const { budget_min: lo, budget_max: hi } = j;
-  const amount = lo == null && hi == null ? 200 : hi == null ? lo! : lo == null ? hi : (lo + hi) / 2;
+  const amount = lo == null && hi == null ? 200 : hi == null ? niceAmount(lo!) : lo == null ? hi : niceAmount((lo + hi) / 2, hi);
   const top = hi ?? lo;
   const days = top != null && top < 300 ? 1 : int(s.BOT_DEFAULT_PERIOD_DAYS, 7);
   return [amount, days];
@@ -243,11 +261,14 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
     }
     const skip = skipReason(s, job, clientCountry, collected);
     const personal = skip || opts.manual ? null : userFilterReason(s, job);
-    if (skip || personal) {
+    const bad = skip || personal || opts.manual ? null : await badMark(job.id);
+    if (skip || personal || bad) {
       await touchUserJob(userId, job.id, {});
       const message = skip
         ? `Skipped — matches the filters (${skip}); no proposal generated.`
-        : `Skipped — hidden by your own filters (${personal}); no proposal generated. Press ✨ Generate to write one anyway.`;
+        : personal
+          ? `Skipped — hidden by your own filters (${personal}); no proposal generated. Press ✨ Generate to write one anyway.`
+          : `Skipped — ${bad}; no proposal generated. Press ✨ Generate to write one anyway.`;
       return { status: 200, body: { ok: false, skipped: true, message } };
     }
   }

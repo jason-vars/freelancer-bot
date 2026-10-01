@@ -34,7 +34,6 @@ export function JobFeed({ jobs, isAdmin, live }: { jobs: JobRow[]; isAdmin: bool
   const [prevJobs, setPrevJobs] = useState(jobs);
   const [known, setKnown] = useState(() => new Set(jobs.map((j) => j.id)));
   const [fresh, setFresh] = useState<Set<number>>(() => new Set());
-  const [unread, setUnread] = useState(0);
   const [latest, setLatest] = useState<JobRow[]>([]);
   const [alerts, setAlerts] = useState(false);
 
@@ -45,10 +44,13 @@ export function JobFeed({ jobs, isAdmin, live }: { jobs: JobRow[]; isAdmin: bool
     if (added.length) {
       setKnown(new Set([...known, ...added.map((j) => j.id)]));
       setFresh(new Set([...fresh, ...added.map((j) => j.id)]));
-      setUnread(unread + added.length);
       setLatest(added);
     }
   }
+
+  // Only new jobs still on screen count: one that left the list since (opened via
+  // the userscript, hidden by a filter) must not keep inflating the number.
+  const unread = jobs.filter((j) => fresh.has(j.id)).length;
 
   // Poll for worker writes; refresh only when something changed.
   useEffect(() => {
@@ -117,7 +119,6 @@ export function JobFeed({ jobs, isAdmin, live }: { jobs: JobRow[]; isAdmin: bool
   };
 
   const dismiss = () => {
-    setUnread(0);
     setFresh(new Set());
   };
 
@@ -131,7 +132,10 @@ export function JobFeed({ jobs, isAdmin, live }: { jobs: JobRow[]; isAdmin: bool
       </div>
       {unread > 0 && (
         <div className="sticky top-2 z-10 mb-3 flex items-center gap-3 rounded-lg bg-accent px-4 py-2 text-sm text-accent-fg shadow-lg">
-          <span className="font-medium">{unread} new job{unread === 1 ? "" : "s"}</span>
+          <span className="flex items-center gap-2 font-semibold">
+            <span className="rounded-full bg-accent-fg px-2 py-0.5 text-xs font-bold text-accent">{unread}</span>
+            new job{unread === 1 ? "" : "s"}
+          </span>
           <button className="ml-auto underline" onClick={() => { window.scrollTo({ top: 0, behavior: "smooth" }); dismiss(); }}>
             Mark seen
           </button>

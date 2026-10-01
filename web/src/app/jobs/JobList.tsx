@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export type JobRow = {
@@ -22,10 +23,16 @@ export type JobRow = {
   amount: number | null;
   periodDays: number | null;
   activity: { opened: number; applied: number } | null;
+  badCount: number;
+  badByMe: boolean;
+  badReasons: string | null;
 };
 
-async function post(id: number, action: string) {
-  const r = await fetch(`/api/jobs/${id}/${action}`, { method: "POST" });
+async function post(id: number, action: string, body?: Record<string, unknown>) {
+  const r = await fetch(`/api/jobs/${id}/${action}`, {
+    method: "POST",
+    ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+  });
   const data = await r.json().catch(() => ({ ok: false, message: `HTTP ${r.status}` }));
   return data as { ok: boolean; message?: string; proposal?: string; amount?: number; period?: number; currency?: string };
 }
@@ -40,6 +47,7 @@ export function JobList({ jobs, isAdmin, fresh }: { jobs: JobRow[]; isAdmin: boo
 }
 
 function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: boolean }) {
+  const router = useRouter();
   const [opened, setOpened] = useState(Boolean(job.openedAt));
   const [applied, setApplied] = useState(Boolean(job.appliedAt));
   const [expanded, setExpanded] = useState(false);
@@ -79,6 +87,23 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
     } else setError(d.message ?? "Couldn't update.");
   };
 
+  // Shared with everyone: a job marked bad leaves all users' New/All matching lists.
+  const setBad = async (action: "bad" | "unbad" | "clearbad") => {
+    let body: Record<string, unknown> | undefined;
+    if (action === "bad") {
+      const reason = window.prompt("Why is this job bad? (optional — everyone will see it)", "");
+      if (reason === null) return; // cancelled
+      body = { reason };
+    } else if (action === "clearbad" && !confirm("Remove every user's bad mark from this job?")) {
+      return;
+    }
+    setBusy("bad");
+    const d = await post(job.id, action, body);
+    setBusy(null);
+    if (d.ok) router.refresh();
+    else setError(d.message ?? "Couldn't update.");
+  };
+
   const copy = async () => {
     await navigator.clipboard.writeText(proposal);
     setCopied(true);
@@ -101,11 +126,17 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
         <span>{job.posted}</span>
         {job.bids && <span>· {job.bids}</span>}
         {job.score > 0 && <span>· score {job.score}</span>}
-        {fresh && <span className="chip chip-ok">Just in</span>}
+        {fresh && <span className="chip chip-new">Just in</span>}
         {applied ? <span className="chip chip-ok">Applied</span>
           : opened ? <span className="chip chip-warn">Opened</span>
           : <span className="chip">New</span>}
         {job.badges.map((b) => <span key={b} className="chip">{b}</span>)}
+        {job.badCount > 0 && (
+          <span className="chip chip-bad">
+            👎 Marked bad{job.badCount > 1 ? ` by ${job.badCount}` : ""}{job.badByMe ? " (incl. you)" : ""}
+            {job.badReasons ? `: ${job.badReasons}` : ""}
+          </span>
+        )}
         {job.myFilterReason && <span className="chip chip-warn">Hidden by my filter: {job.myFilterReason}</span>}
         {filtered && <span className="chip chip-bad">{job.status}{job.filterReason ? `: ${job.filterReason}` : ""}</span>}
         {isAdmin && job.activity && (
@@ -127,7 +158,16 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
         <button className="btn" onClick={toggleApplied} disabled={busy !== null}>
           {applied ? "Unmark applied" : "Mark applied"}
         </button>
+        {job.badByMe ? (
+          <button className="btn" onClick={() => setBad("unbad")} disabled={busy !== null}>Undo bad mark</button>
+        ) : (
+          <button className="btn btn-danger" onClick={() => setBad("bad")} disabled={busy !== null}>👎 Mark bad</button>
+        )}
+        {isAdmin && job.badCount > 0 && (
+          <button className="btn btn-danger" onClick={() => setBad("clearbad")} disabled={busy !== null}>Clear bad marks</button>
+        )}
       </div>
+      {error && !expanded && <p className="mt-2 rounded-lg bg-bad-bg px-3 py-2 text-sm text-bad">{error}</p>}
 
       {expanded && (
         <div className="mt-4 space-y-4 border-t border-border pt-4">
