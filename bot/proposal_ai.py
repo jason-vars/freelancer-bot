@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -206,6 +207,21 @@ def _split_portfolio_entry(entry: str) -> tuple[str, str]:
     return e, ""
 
 
+# Reasoning models (GPT-5.x, GPT-6, o-series) "think" before answering. Only the
+# anti-AI lead lookup lowers that: the proposal itself runs at OpenAI's default
+# effort, because its quality matters more than its speed.
+_REASONING_MODEL = re.compile(r"^(gpt-5|gpt-6|o\d)")
+
+
+def _reasoning_kwargs(model: str, effort: str) -> dict:
+    """``reasoning={"effort": ...}`` for reasoning models; nothing for the rest
+    (GPT-4.x rejects the parameter)."""
+    effort = (effort or "").strip().lower()
+    if effort and effort != "default" and _REASONING_MODEL.match((model or "").lower()):
+        return {"reasoning": {"effort": effort}}
+    return {}
+
+
 def detect_required_lead(api_key: str, model: str, description: str) -> str:
     """Pull a client's hidden anti-AI instruction out of the job post.
 
@@ -238,6 +254,8 @@ def detect_required_lead(api_key: str, model: str, description: str) -> str:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
+            # A lookup, not writing: the lowest effort is plenty.
+            **_reasoning_kwargs(model, "low"),
         )
         obj = _extract_json(resp.output_text.strip())
         return str(obj.get("lead") or "").strip()
@@ -300,6 +318,12 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     blocks += ["", "Write the proposal now."]
     user_prompt = "\n".join(blocks)
 
+    # The anti-AI lead check is independent of the letter, so it runs alongside it
+    # instead of adding a second full OpenAI round-trip afterwards.
+    pool = ThreadPoolExecutor(max_workers=1)
+    lead_future = pool.submit(detect_required_lead, api_key, model, data.description)
+    pool.shutdown(wait=False)
+
     # Responses API (recommended for new builds).
     resp = client.responses.create(
         model=model,
@@ -323,8 +347,10 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     # Models drop the template's fixed lines now and then (the greeting, the
     # "I have two questions:" lead-in) — restore whatever THIS template has.
     body = _enforce_template_framing(body, template)
+    # "Hi, You need ..." -> "Hi, you need ..." however the greeting got there.
+    body = _fix_greeting_case(body)
     # Client-required verification word (anti-AI check) goes ABOVE everything else.
-    lead = detect_required_lead(api_key, model, data.description)
+    lead = lead_future.result()
     return _assemble(
         _strip_lead_from_body(body, lead),
         lead=lead,
@@ -387,7 +413,7 @@ def _merge_greeting_line(text: str) -> str:
         rest.pop(0)
     if not rest:
         return text
-    return "\n".join([lines[0].strip() + " " + rest[0].lstrip()] + rest[1:])
+    return _glue_greeting(lines[0].strip(), "\n".join(rest))
 
 
 _LEAD_GREETING = re.compile(
@@ -425,6 +451,42 @@ def _with_question_count(lead_in: str, n: int) -> str:
     return _QUESTION_COUNT.sub(repl, lead_in, count=1)
 
 
+def _glue_greeting(greeting: str, text: str) -> str:
+    """'Hi,' + 'Your colonies need ...' -> 'Hi, your colonies need ...'.
+
+    The old first word is lower-cased unless it is "I..." / an acronym or a proper
+    noun (the same capitalised word appears again later, e.g. "Shopify")."""
+    text = text.lstrip()
+    first, sep, rest = text.partition(" ")
+    word = re.sub(r"[^\w'’]", "", first)
+    keep = (not word or not greeting.strip().endswith(",")  # "...developer." -> new sentence
+            or word.lower() in _I_WORDS or word.isupper()
+            or _capitalised_mid_sentence(word, rest))
+    if not keep:
+        first = first[0].lower() + first[1:]
+    return f"{greeting.strip()} {first}{sep}{rest}"
+
+
+def _capitalised_mid_sentence(word: str, text: str) -> bool:
+    """True when ``word`` appears capitalised somewhere it isn't a sentence start —
+    the sign of a name ("... built on Shopify"). "You" opening a later sentence
+    doesn't count, so it isn't mistaken for one."""
+    for m in re.finditer(r"\b" + re.escape(word) + r"\b", text):
+        before = text[:m.start()].rstrip(" \t")
+        if before and before[-1] not in ".!?:\n\"'“(":
+            return True
+    return False
+
+
+def _fix_greeting_case(body: str) -> str:
+    """Lower-case the word after an inline 'Hi,' the model wrote itself
+    ("Hi, You need ..." -> "Hi, you need ..."). Names and "I" keep their capital."""
+    m = re.match(r"((?:hi|hello|hey|good (?:morning|afternoon|evening)),)[ \t]+(?=\S)", body, re.IGNORECASE)
+    if not m:
+        return body
+    return _glue_greeting(m.group(1), body[m.end():])
+
+
 def _enforce_template_framing(body: str, template: str) -> str:
     """Restore the fixed framing lines of the user's OWN template when the model
     dropped them: its opening greeting and the lead-in line before its Q1/Q2 block.
@@ -437,17 +499,21 @@ def _enforce_template_framing(body: str, template: str) -> str:
 
     # 1) Opening greeting ("Hi," in "Hi, I'd trace the flow ...").
     g = _LEAD_GREETING.match(template.strip())
-    if g and not _LEAD_GREETING.match(body):
+    if g:
         greeting = g.group(0).strip()
-        first, _, rest = body.partition(" ")
-        word = re.sub(r"[^\w'’]", "", first)
-        # Lower-case the old first word unless it is "I..." or a proper noun
-        # (the same capitalised word appears again later, e.g. "Shopify").
-        keep = (word.lower() in _I_WORDS or word.isupper()
-                or re.search(r"\b" + re.escape(word) + r"\b", rest) is not None)
-        if not keep and first:
-            first = first[0].lower() + first[1:]
-        body = f"{greeting} {first}" + (f" {rest}" if rest else "")
+        # The template opens "Hi, <sentence>" on ONE line (not "Hi," alone).
+        inline = bool(template.strip().split("\n", 1)[0][g.end():].strip())
+        lines = body.split("\n")
+        if inline and _GREETING_LINE.match(lines[0].strip()):
+            # The model put the greeting on its own line ("Hi,\n\nYour colonies ..."):
+            # join it to the first sentence the way the template does.
+            rest = lines[1:]
+            while rest and not rest[0].strip():
+                rest.pop(0)
+            if rest:
+                body = _glue_greeting(lines[0].strip(), "\n".join(rest))
+        elif not _LEAD_GREETING.match(body):
+            body = _glue_greeting(greeting, body)
 
     # 2) Lead-in line before the questions ("I have two questions:").
     lead_in = _template_question_lead_in(template)
@@ -528,10 +594,7 @@ def _assemble(body: str, *, lead: str = "", prefix: str, suffix: str, signature:
             # always lands on its own line — joining here is the only deterministic
             # way to get the inline form. Whatever punctuation the prefix ends with
             # ("Hi," / "Hello -") is kept; the two are joined by a single space.
-            head, sep, rest = body.partition("\n")
-            body = prefix.strip() + " " + head.lstrip()
-            if sep:
-                body += sep + rest
+            body = _glue_greeting(prefix, body)
         else:
             out.append(prefix.strip())
     out.append(body)

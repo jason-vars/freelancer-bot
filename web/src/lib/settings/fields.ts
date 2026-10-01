@@ -19,7 +19,14 @@ export type Field = {
   choices?: [string, string][];
 };
 
-export type Group = { title: string; scope: "user" | "admin"; fields: Field[] };
+export type Group = {
+  title: string;
+  scope: "user" | "admin";
+  fields: Field[];
+  /** Personal only: the admin can't set a default for it (the user's job filters). */
+  personal?: boolean;
+  note?: string;
+};
 
 // Freelancer project "upgrade" flags the worker can skip: [env suffix, upgrades key, label].
 // Mirrors SKIPPABLE_UPGRADES in bot/filters.py.
@@ -61,6 +68,24 @@ export const OPENAI_MODEL_CHOICES: [string, string][] = [
 
 export const GROUPS: Group[] = [
   // ── User settings ──────────────────────────────────────────────────────────────
+  {
+    title: "My job filters",
+    scope: "user",
+    personal: true,
+    note: "Hide jobs from your own lists, on top of the admin's filters. They also stop the userscript from writing proposals for those jobs. Leave a field empty to turn it off.",
+    fields: [
+      { key: "MY_KEYWORDS", label: "Only show jobs mentioning", kind: "csv",
+        help: "Comma-separated. A job must contain at least one of these in its title, description or skills. Empty = show all." },
+      { key: "MY_EXCLUDE_TITLE", label: "Hide if title contains", kind: "csv",
+        help: "Comma-separated, case-insensitive. Matches inside words too (\"ads\" also hides \"leads\")." },
+      { key: "MY_EXCLUDE_DESC", label: "Hide if description contains", kind: "csv", help: "Comma-separated, case-insensitive." },
+      { key: "MY_EXCLUDE_SKILLS", label: "Hide if tagged with", kind: "csv",
+        help: "Skill tags, comma-separated, e.g. WordPress, Video Editing." },
+      { key: "MY_SKIP_CURRENCIES", label: "Hide currencies", kind: "csv", help: "Currency codes, e.g. INR, PKR." },
+      { key: "MY_MIN_BUDGET", label: "Min budget", kind: "int", help: "Hide jobs whose top budget is below this (0 = off)." },
+      { key: "MY_MAX_BIDS", label: "Max bids so far", kind: "int", help: "Hide jobs that already have more bids than this (0 = off)." },
+    ],
+  },
   {
     title: "AI proposal",
     scope: "user",

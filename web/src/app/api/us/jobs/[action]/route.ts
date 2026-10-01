@@ -48,7 +48,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
   if (!ref.id && !ref.seo) return json(400, { ok: false, message: "Missing project id or seo." });
 
   let r;
-  if (action === "generate") r = await generateForUser(userId, ref, (q.get("country") ?? "").trim() || null);
+  if (action === "generate") {
+    r = await generateForUser(userId, ref, (q.get("country") ?? "").trim() || null, { manual: q.get("manual") === "1" });
+  }
   else if (action === "applied") r = await markApplied(userId, ref);
   else if (action === "text") r = await jobText(userId, ref);
   else return json(404, { ok: false, message: `Unknown action '${action}'.` });

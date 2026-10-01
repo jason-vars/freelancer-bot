@@ -18,7 +18,7 @@ export default async function SettingsPage() {
   const values = userFormValues(app, mine);
   const h = await headers();
   const origin = `${h.get("x-forwarded-proto") ?? "https"}://${h.get("host")}`;
-  const groups = GROUPS.filter((g) => g.scope === "user").map((g) => ({ title: g.title, fields: g.fields }));
+  const groups = GROUPS.filter((g) => g.scope === "user").map((g) => ({ title: g.title, note: g.note, fields: g.fields }));
 
   return (
     <div className="space-y-6">

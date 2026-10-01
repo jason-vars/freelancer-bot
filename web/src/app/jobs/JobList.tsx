@@ -14,6 +14,7 @@ export type JobRow = {
   badges: string[];
   status: string;
   filterReason: string | null;
+  myFilterReason: string | null;
   score: number;
   openedAt: string | null;
   appliedAt: string | null;
@@ -29,16 +30,16 @@ async function post(id: number, action: string) {
   return data as { ok: boolean; message?: string; proposal?: string; amount?: number; period?: number; currency?: string };
 }
 
-export function JobList({ jobs, isAdmin }: { jobs: JobRow[]; isAdmin: boolean }) {
+export function JobList({ jobs, isAdmin, fresh }: { jobs: JobRow[]; isAdmin: boolean; fresh?: Set<number> }) {
   if (!jobs.length) return <div className="card p-8 text-center text-sm text-muted">No jobs here yet.</div>;
   return (
     <ul className="space-y-3">
-      {jobs.map((j) => <Job key={j.id} job={j} isAdmin={isAdmin} />)}
+      {jobs.map((j) => <Job key={j.id} job={j} isAdmin={isAdmin} fresh={fresh?.has(j.id) ?? false} />)}
     </ul>
   );
 }
 
-function Job({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
+function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: boolean }) {
   const [opened, setOpened] = useState(Boolean(job.openedAt));
   const [applied, setApplied] = useState(Boolean(job.appliedAt));
   const [expanded, setExpanded] = useState(false);
@@ -87,7 +88,7 @@ function Job({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
   const filtered = job.status === "filtered" || job.status === "skipped";
 
   return (
-    <li className={`card p-4 ${opened && !expanded ? "opacity-75" : ""}`}>
+    <li className={`card p-4 transition-shadow ${fresh ? "ring-2 ring-accent" : ""} ${opened && !expanded && !fresh ? "opacity-75" : ""}`}>
       <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
         <a href={job.url} target="_blank" rel="noreferrer" onClick={markOpened}
           className="min-w-0 flex-1 font-medium hover:text-accent">
@@ -100,10 +101,12 @@ function Job({ job, isAdmin }: { job: JobRow; isAdmin: boolean }) {
         <span>{job.posted}</span>
         {job.bids && <span>· {job.bids}</span>}
         {job.score > 0 && <span>· score {job.score}</span>}
+        {fresh && <span className="chip chip-ok">Just in</span>}
         {applied ? <span className="chip chip-ok">Applied</span>
           : opened ? <span className="chip chip-warn">Opened</span>
           : <span className="chip">New</span>}
         {job.badges.map((b) => <span key={b} className="chip">{b}</span>)}
+        {job.myFilterReason && <span className="chip chip-warn">Hidden by my filter: {job.myFilterReason}</span>}
         {filtered && <span className="chip chip-bad">{job.status}{job.filterReason ? `: ${job.filterReason}` : ""}</span>}
         {isAdmin && job.activity && (
           <span className="chip">{job.activity.opened} opened · {job.activity.applied} applied</span>

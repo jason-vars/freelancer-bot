@@ -14,7 +14,8 @@ export default async function AdminSettingsPage() {
   } catch (e) {
     return <ServerError title="Bot settings couldn't load" error={e} />;
   }
-  const all = GROUPS.flatMap((g) => g.fields);
+  const shared = GROUPS.filter((g) => !g.personal);
+  const all = shared.flatMap((g) => g.fields);
   const secretKeys = all.filter((f) => f.kind === "secret").map((f) => f.key);
   // Secrets never go to the browser; the form only shows whether one is saved.
   const values = Object.fromEntries(
@@ -22,7 +23,7 @@ export default async function AdminSettingsPage() {
   );
   const groups = [
     ...GROUPS.filter((g) => g.scope === "admin").map((g) => ({ title: g.title, fields: g.fields })),
-    ...GROUPS.filter((g) => g.scope === "user").map((g) => ({
+    ...shared.filter((g) => g.scope === "user").map((g) => ({
       title: `Default for users: ${g.title}`,
       note: "Users who haven't saved their own settings use these. Each user can change them on their own settings page.",
       fields: g.fields,
