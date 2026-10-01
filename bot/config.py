@@ -272,6 +272,9 @@ def load_settings() -> Settings:
     # is required because the values are already in os.environ from the import-time
     # load_dotenv() above, and python-dotenv won't replace existing keys otherwise.
     load_dotenv(_env_file(), override=True)
+    # Cloud mode: the web app's admin settings win over the .env (bot/cloud.py).
+    from .cloud import overlay_settings
+    overlay_settings()
 
     token = os.getenv("FLN_OAUTH_TOKEN", "").strip()
     if not token:

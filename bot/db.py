@@ -100,6 +100,28 @@ def init_db(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE projects ADD COLUMN filter_reason TEXT")
         if "raw_json" not in cols:
             conn.execute("ALTER TABLE projects ADD COLUMN raw_json TEXT")
+        if "updated_seq" not in cols:
+            conn.execute("ALTER TABLE projects ADD COLUMN updated_seq INTEGER")
+    except sqlite3.Error:
+        pass
+    # Change counter for the cloud sync (bot/cloud.py): every insert/update of a
+    # project stamps the next number, so the sync pushes exactly the rows changed
+    # since its cursor without each writer having to remember to flag them.
+    try:
+        conn.executescript('''
+CREATE INDEX IF NOT EXISTS idx_projects_updated_seq ON projects(updated_seq);
+CREATE TRIGGER IF NOT EXISTS projects_seq_insert AFTER INSERT ON projects
+BEGIN
+  UPDATE projects SET updated_seq = (SELECT COALESCE(MAX(updated_seq), 0) + 1 FROM projects)
+  WHERE id = NEW.id;
+END;
+CREATE TRIGGER IF NOT EXISTS projects_seq_update AFTER UPDATE ON projects
+WHEN NEW.updated_seq IS OLD.updated_seq
+BEGIN
+  UPDATE projects SET updated_seq = (SELECT COALESCE(MAX(updated_seq), 0) + 1 FROM projects)
+  WHERE id = NEW.id;
+END;
+''')
     except sqlite3.Error:
         pass
     # Enforce one bid per project at the DB level so two concurrent webhook

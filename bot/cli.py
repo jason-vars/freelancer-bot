@@ -26,6 +26,7 @@ from .db import (
     set_project_score_and_status,
     clear_seen_projects,
 )
+from . import cloud
 from .freelancer_client import make_session
 from .collector import fetch_and_store_projects
 from .filters import passes_recency, _to_epoch_seconds
@@ -589,6 +590,23 @@ def run(dry_run_override: bool | None = None, notify_floor_epoch: float | None =
             failed += 1
 
     print(f"Notified {notified} project(s)." + (f" {failed} failed (will retry)." if failed else ""))
+    cloud.sync_jobs(conn)
+    cloud.heartbeat(f"Stored {new_count} new job(s), alerted {notified}"
+                    + (f", {failed} alert(s) failed" if failed else "") + ".")
+
+def _sleep(seconds: int) -> None:
+    """Sleep between cycles. In cloud mode, wake early when the admin presses
+    "Fetch now" in the web app (checked every 10s)."""
+    if not cloud.enabled():
+        time.sleep(seconds)
+        return
+    end = time.time() + seconds
+    while (left := end - time.time()) > 0:
+        time.sleep(min(10.0, left))
+        if cloud.take_run_request():
+            print("Fetch requested from the web app.")
+            return
+
 
 def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None = None) -> None:
     s = load_settings()
@@ -618,7 +636,8 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
             if not paused:
                 print(f"\n[{started}] Fetching paused (Fetch jobs = OFF in Settings).")
             paused = True
-            time.sleep(interval)
+            cloud.heartbeat("Fetching paused (Fetch jobs is off).")
+            _sleep(interval)
             continue
         if paused:
             paused = False
@@ -633,7 +652,9 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
         if not within_active_hours(cur.active_start, cur.active_end, now_minutes=now_min):
             print(f"\n[{started}] Outside active hours (window {cur.active_start}-{cur.active_end}, "
                   f"now {fmt_minutes(now_min)} {tz_label}); skipping cycle.")
-            time.sleep(interval)
+            cloud.heartbeat(f"Outside active hours ({cur.active_start}-{cur.active_end}, "
+                            f"now {fmt_minutes(now_min)} {tz_label}).")
+            _sleep(interval)
             continue
 
         print(f"\n[{started}] Running fetch/score cycle...")
@@ -643,11 +664,12 @@ def run_loop(interval_seconds: int | None = None, dry_run_override: bool | None 
             raise
         except Exception as exc:
             print(f"Run failed: {exc}")
+            cloud.heartbeat(f"Cycle failed: {exc}")
 
         elapsed = max(0, int(time.time()) - started)
         sleep_for = max(1, interval - elapsed)
         print(f"Cycle complete in {elapsed}s. Sleeping {sleep_for}s...")
-        time.sleep(sleep_for)
+        _sleep(sleep_for)
 
 def _read_pid(path: str = "bot.pid") -> int | None:
     try:

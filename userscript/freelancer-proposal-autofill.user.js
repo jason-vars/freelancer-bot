@@ -1,13 +1,16 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.15.2
+// @version      1.16.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; toggle with Alt+A). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setClipboard
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
 // @connect      127.0.0.1
 // @connect      localhost
 // @updateURL    http://127.0.0.1:8765/userscript.user.js
@@ -23,11 +26,29 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.15.2 loaded on", location.href);
+  console.log("[fbb] userscript 1.16.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
   const BOT_BASE = "http://127.0.0.1:8765";
+  // Your personal API key for the hosted (multi-user) bot, sent as X-Bot-Key. Kept in
+  // Tampermonkey's own storage, which freelancer.com's page scripts can't read. The
+  // local bot ignores it, so it's only needed for the hosted one.
+  const API_KEY_STORE = "fbb_api_key";
+  function botHeaders() {
+    let key = "";
+    try { key = GM_getValue(API_KEY_STORE, "") || ""; } catch (e) {}
+    return key ? { "X-Bot-Key": key } : {};
+  }
+  function promptApiKey() {
+    const cur = (function () { try { return GM_getValue(API_KEY_STORE, "") || ""; } catch (e) { return ""; } })();
+    const key = window.prompt("Bot API key (from your Settings page on the bot's website):", cur);
+    if (key !== null) {
+      try { GM_setValue(API_KEY_STORE, key.trim()); } catch (e) {}
+      location.reload();
+    }
+  }
+  try { GM_registerMenuCommand("Set bot API key", promptApiKey); } catch (e) {}
   // Re-use an already-fetched proposal for the same project within this tab so a
   // page refresh doesn't spend a second OpenAI call. Cleared when the tab closes.
   const CACHE = window.sessionStorage;
@@ -247,6 +268,7 @@
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: "GET",
+        headers: botHeaders(),
         url: BOT_BASE + "/jobs/options" + (q ? "?" + q : ""),
         timeout: 15000,
         onload: (r) => {
@@ -550,6 +572,7 @@
     try {
       GM_xmlhttpRequest({
         method: "GET",
+        headers: botHeaders(),
         url: BOT_BASE + "/jobs/applied?" + params,
         timeout: 15000,
         onload: () => {}, onerror: () => {}, ontimeout: () => {},
@@ -570,6 +593,7 @@
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: "GET",
+        headers: botHeaders(),
         url: BOT_BASE + "/jobs/text?" + params,
         timeout: 30000,
         onload: (r) => {
@@ -673,6 +697,7 @@
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: "GET",
+        headers: botHeaders(),
         url: BOT_BASE + "/jobs/generate?" + params,
         timeout: 60000,
         onload: (r) => {

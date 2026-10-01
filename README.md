@@ -8,6 +8,10 @@ This is a minimal, **official-API** workflow:
 4. Place a bid via Freelancer API
 5. Store everything in SQLite for tracking
 
+> **Multi-user web app:** [`web/`](web/README.md) is a Next.js site (Vercel + Supabase)
+> where registered, admin-approved users share one job feed, each with their own proposal
+> and bid settings. This Python bot is its job worker.
+
 > ⚠️ You must follow Freelancer API Terms and rate limits, and set your own guardrails (max bids/day, min score, etc).
 
 ## Setup
