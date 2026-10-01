@@ -165,6 +165,28 @@ function skipReason(s: Values, j: Job, clientCountry: string | null, collected: 
   return null;
 }
 
+/** Why the user's own filters (My settings › My job filters) hide this job, or null.
+ *  Must match public.user_filter_reason() in supabase/schema.sql, which applies the
+ *  same rules to the Jobs page. */
+function userFilterReason(s: Values, j: Job): string | null {
+  const lc = (v: string | undefined) => csv(v).map((x) => x.toLowerCase());
+  const title = (j.title ?? "").toLowerCase();
+  const descr = (j.description ?? "").toLowerCase();
+  const skills = (j.skills ?? "").toLowerCase();
+  const wanted = lc(s.MY_KEYWORDS);
+  if (wanted.length && !wanted.some((k) => `${title} ${descr} ${skills}`.includes(k))) return "none of my keywords";
+  for (const k of lc(s.MY_EXCLUDE_TITLE)) if (title.includes(k)) return `title has "${k}"`;
+  for (const k of lc(s.MY_EXCLUDE_DESC)) if (descr.includes(k)) return `description has "${k}"`;
+  for (const k of lc(s.MY_EXCLUDE_SKILLS)) if (skills.includes(k)) return `skill "${k}"`;
+  if (lc(s.MY_SKIP_CURRENCIES).includes((j.currency ?? "").toLowerCase())) return `currency ${j.currency}`;
+  const minBudget = int(s.MY_MIN_BUDGET, 0);
+  const budget = j.budget_max ?? j.budget_min;
+  if (minBudget > 0 && budget != null && budget < minBudget) return `budget below ${minBudget}`;
+  const maxBids = int(s.MY_MAX_BIDS, 0);
+  if (maxBids > 0 && (j.bid_count ?? 0) > maxBids) return `more than ${maxBids} bids`;
+  return null;
+}
+
 // ── Pricing: AI pricing (admin) → user's bid rules → half-way through the budget ─
 function bidFromRules(s: Values, j: Job): [number, number] | null {
   let rules: Record<string, unknown>[] = [];
@@ -206,7 +228,9 @@ async function resolvePricing(s: Values, j: Job): Promise<[number, number]> {
 // ── Actions ──────────────────────────────────────────────────────────────────────
 /** Generate a proposal for one user. Same contract as the Python /jobs/generate,
  *  so the userscript needs no changes beyond its base URL and API key. */
-export async function generateForUser(userId: string, ref: JobRef, clientCountry: string | null, opts: { force?: boolean } = {}): Promise<Result> {
+// force: skip every filter and the "already applied" guard (the web Jobs page).
+// manual: the userscript's ✨ Generate button — skips only the user's OWN filters.
+export async function generateForUser(userId: string, ref: JobRef, clientCountry: string | null, opts: { force?: boolean; manual?: boolean } = {}): Promise<Result> {
   const s = await getEffectiveSettings(userId);
   const { job, collected, error } = await ensureJob(s, ref);
   if (error || !job) return error!;
@@ -218,9 +242,13 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
       return { status: 200, body: { ok: false, skipped: true, already_applied: true, message: "You've already applied to this project — not regenerating." } };
     }
     const skip = skipReason(s, job, clientCountry, collected);
-    if (skip) {
+    const personal = skip || opts.manual ? null : userFilterReason(s, job);
+    if (skip || personal) {
       await touchUserJob(userId, job.id, {});
-      return { status: 200, body: { ok: false, skipped: true, message: `Skipped — matches the filters (${skip}); no proposal generated.` } };
+      const message = skip
+        ? `Skipped — matches the filters (${skip}); no proposal generated.`
+        : `Skipped — hidden by your own filters (${personal}); no proposal generated. Press ✨ Generate to write one anyway.`;
+      return { status: 200, body: { ok: false, skipped: true, message } };
     }
   }
   if (!s.OPENAI_API_KEY) {

@@ -95,6 +95,7 @@ create table if not exists public.jobs (
 );
 
 create index if not exists jobs_posted_at on public.jobs (posted_at desc);
+create index if not exists jobs_synced_at on public.jobs (synced_at desc);
 create index if not exists jobs_status on public.jobs (status);
 create index if not exists jobs_url on public.jobs (url);
 
@@ -113,12 +114,66 @@ create table if not exists public.user_jobs (
 
 create index if not exists user_jobs_job on public.user_jobs (job_id);
 
--- Jobs joined with the CURRENT user's state. security_invoker makes the view
--- obey the callers' RLS on both tables.
+-- ── Personal job filters (My settings › My job filters) ─────────────────────────
+-- Applied on top of the admin's filters, which the worker already ran. Stored in
+-- user_settings.values under the MY_* keys; must match userFilterReason() in
+-- web/src/lib/jobs.ts, which applies the same rules to the userscript.
+
+-- "a, B ,,c" -> {a,b,c}: lower-cased, trimmed, blanks dropped.
+create or replace function public.csv_list(s text)
+returns text[] language sql immutable as $$
+  select coalesce(array_agg(lower(trim(x))) filter (where trim(x) <> ''), '{}')
+  from unnest(string_to_array(coalesce(s, ''), ',')) as x;
+$$;
+
+-- Why the user's own filters hide this job, or null when it passes them.
+create or replace function public.user_filter_reason(j public.jobs, v jsonb)
+returns text language plpgsql stable as $$
+declare
+  kw text;
+  title text := lower(coalesce(j.title, ''));
+  descr text := lower(coalesce(j.description, ''));
+  skills text := lower(coalesce(j.skills, ''));
+  budget numeric := coalesce(j.budget_max, j.budget_min);
+  wanted text[];
+begin
+  if v is null then return null; end if;
+  wanted := public.csv_list(v ->> 'MY_KEYWORDS');
+  if cardinality(wanted) > 0 and not exists (
+       select 1 from unnest(wanted) k where position(k in title || ' ' || descr || ' ' || skills) > 0) then
+    return 'none of my keywords';
+  end if;
+  foreach kw in array public.csv_list(v ->> 'MY_EXCLUDE_TITLE') loop
+    if position(kw in title) > 0 then return 'title has "' || kw || '"'; end if;
+  end loop;
+  foreach kw in array public.csv_list(v ->> 'MY_EXCLUDE_DESC') loop
+    if position(kw in descr) > 0 then return 'description has "' || kw || '"'; end if;
+  end loop;
+  foreach kw in array public.csv_list(v ->> 'MY_EXCLUDE_SKILLS') loop
+    if position(kw in skills) > 0 then return 'skill "' || kw || '"'; end if;
+  end loop;
+  if lower(coalesce(j.currency, '')) = any (public.csv_list(v ->> 'MY_SKIP_CURRENCIES')) then
+    return 'currency ' || j.currency;
+  end if;
+  if (v ->> 'MY_MIN_BUDGET') ~ '^\d+$' and (v ->> 'MY_MIN_BUDGET')::numeric > 0
+     and budget is not null and budget < (v ->> 'MY_MIN_BUDGET')::numeric then
+    return 'budget below ' || (v ->> 'MY_MIN_BUDGET');
+  end if;
+  if (v ->> 'MY_MAX_BIDS') ~ '^\d+$' and (v ->> 'MY_MAX_BIDS')::int > 0
+     and coalesce(j.bid_count, 0) > (v ->> 'MY_MAX_BIDS')::int then
+    return 'more than ' || (v ->> 'MY_MAX_BIDS') || ' bids';
+  end if;
+  return null;
+end $$;
+
+-- Jobs joined with the CURRENT user's state and personal filter verdict.
+-- security_invoker makes the view obey the caller's RLS on every table.
 create or replace view public.my_jobs with (security_invoker = true) as
-  select j.*, uj.opened_at, uj.applied_at, uj.proposal, uj.amount, uj.period_days, uj.generated_at
+  select j.*, uj.opened_at, uj.applied_at, uj.proposal, uj.amount, uj.period_days, uj.generated_at,
+         public.user_filter_reason(j, us."values") as my_filter_reason
   from public.jobs j
-  left join public.user_jobs uj on uj.job_id = j.id and uj.user_id = auth.uid();
+  left join public.user_jobs uj on uj.job_id = j.id and uj.user_id = auth.uid()
+  left join public.user_settings us on us.user_id = auth.uid();
 
 -- Admin view: how many users opened / applied to each job.
 create or replace view public.job_activity with (security_invoker = true) as

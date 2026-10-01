@@ -155,13 +155,22 @@ export function extractJson(text: string): Record<string, unknown> {
   return {};
 }
 
-async function ask(client: OpenAI, model: string, system: string, user: string): Promise<string> {
+// Reasoning models (GPT-5.x, GPT-6, o-series) "think" before answering. Only the
+// anti-AI lead lookup lowers that: the proposal itself runs at OpenAI's default
+// effort, because its quality matters more than its speed. GPT-4.x rejects the
+// parameter, so it is only sent to reasoning models.
+const REASONING_MODEL = /^(gpt-5|gpt-6|o\d)/;
+
+async function ask(
+  client: OpenAI, model: string, system: string, user: string, effort?: "low" | "medium" | "high",
+): Promise<string> {
   const resp = await client.responses.create({
     model,
     input: [
       { role: "system", content: system },
       { role: "user", content: user },
     ],
+    ...(effort && REASONING_MODEL.test(model.toLowerCase()) ? { reasoning: { effort } } : {}),
   });
   return (resp.output_text || "").trim();
 }
@@ -181,7 +190,8 @@ async function detectRequiredLead(client: OpenAI, model: string, description: st
     "Do NOT invent one and do NOT include any surrounding words.";
   const user = `Job post:\n${description.slice(0, 4000)}\n\nReturn the JSON object only.`;
   try {
-    return String(extractJson(await ask(client, model, system, user)).lead ?? "").trim();
+    // A lookup, not writing: the lowest effort is plenty.
+    return String(extractJson(await ask(client, model, system, user, "low")).lead ?? "").trim();
   } catch {
     return "";
   }
@@ -230,8 +240,8 @@ export async function generateProposal(apiKey: string, model: string, d: Proposa
     askQuestion: d.askQuestion, includeProfile: d.includeProfile, hasTemplate: Boolean(template),
     hasPortfolio: portfolio.length > 0, userInstructions: d.extraInstructions,
   });
-  // The Python bot runs these one after the other; in a serverless function the two
-  // calls run side by side so the userscript waits for one round-trip, not two.
+  // The anti-AI lead check is independent of the letter, so it runs alongside it
+  // instead of adding a second full OpenAI round-trip afterwards.
   const [rawBody, lead] = await Promise.all([
     ask(client, model, system, blocks.join("\n")),
     detectRequiredLead(client, model, d.description),
@@ -240,6 +250,8 @@ export async function generateProposal(apiKey: string, model: string, d: Proposa
   let body = sanitize(rawBody);
   if (d.prefixInline) body = mergeGreetingLine(body);
   body = enforceTemplateFraming(body, template);
+  // "Hi, You need ..." -> "Hi, you need ..." however the greeting got there.
+  body = fixGreetingCase(body);
   return assemble(stripLeadFromBody(body, lead), {
     lead, prefix: d.prefix, suffix: d.suffix,
     signature: d.includeName ? signature : "", prefixInline: d.prefixInline,
@@ -269,7 +281,7 @@ function mergeGreetingLine(text: string): string {
   const rest = lines.slice(1);
   while (rest.length && !rest[0].trim()) rest.shift();
   if (!rest.length) return text;
-  return [lines[0].trim() + " " + rest[0].trimStart(), ...rest.slice(1)].join("\n");
+  return glueGreeting(lines[0].trim(), rest.join("\n"));
 }
 
 const LEAD_GREETING = /^\s*(hi|hello|hey|good (?:morning|afternoon|evening))\b[,!.:]*/i;
@@ -302,20 +314,63 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// Python's str.isupper(): has a cased letter and no lower-case one.
+const isUpper = (w: string) => w === w.toUpperCase() && w !== w.toLowerCase();
+
+/** 'Hi,' + 'Your colonies need ...' -> 'Hi, your colonies need ...'. The old first
+ *  word is lower-cased unless it is "I..." / an acronym or a proper noun (the same
+ *  capitalised word appears again mid-sentence, e.g. "Shopify"). */
+function glueGreeting(greeting: string, text: string): string {
+  text = text.trimStart();
+  const sp = text.indexOf(" ");
+  let first = sp >= 0 ? text.slice(0, sp) : text;
+  const sep = sp >= 0 ? " " : "";
+  const rest = sp >= 0 ? text.slice(sp + 1) : "";
+  const word = first.replace(/[^\p{L}\p{N}_'’]/gu, "");
+  const keep = !word || !greeting.trim().endsWith(",") // "...developer." -> new sentence
+    || I_WORDS.has(word.toLowerCase()) || isUpper(word) || capitalisedMidSentence(word, rest);
+  if (!keep) first = first[0].toLowerCase() + first.slice(1);
+  return `${greeting.trim()} ${first}${sep}${rest}`;
+}
+
+/** True when `word` appears capitalised somewhere it isn't a sentence start — the
+ *  sign of a name ("... built on Shopify"). "You" opening a later sentence doesn't
+ *  count, so it isn't mistaken for one. */
+function capitalisedMidSentence(word: string, text: string): boolean {
+  for (const m of text.matchAll(new RegExp("\\b" + escapeRe(word) + "\\b", "g"))) {
+    const before = text.slice(0, m.index).replace(/[ \t]+$/, "");
+    if (before && !".!?:\n\"'“(".includes(before[before.length - 1])) return true;
+  }
+  return false;
+}
+
+/** Lower-case the word after an inline 'Hi,' the model wrote itself
+ *  ("Hi, You need ..." -> "Hi, you need ..."). Names and "I" keep their capital. */
+function fixGreetingCase(body: string): string {
+  const m = /^((?:hi|hello|hey|good (?:morning|afternoon|evening)),)[ \t]+(?=\S)/i.exec(body);
+  if (!m) return body;
+  return glueGreeting(m[1], body.slice(m[0].length));
+}
+
 function enforceTemplateFraming(body: string, template: string): string {
   if (!template.trim() || !body.trim()) return body;
 
-  const g = LEAD_GREETING.exec(template.trim());
-  if (g && !LEAD_GREETING.test(body)) {
+  const tpl = template.trim();
+  const g = LEAD_GREETING.exec(tpl);
+  if (g) {
     const greeting = g[0].trim();
-    const sp = body.indexOf(" ");
-    let first = sp >= 0 ? body.slice(0, sp) : body;
-    const rest = sp >= 0 ? body.slice(sp + 1) : "";
-    const word = first.replace(/[^\w'’]/g, "");
-    const keep = I_WORDS.has(word.toLowerCase()) || (word === word.toUpperCase() && /[A-Z]/.test(word)) ||
-      (word !== "" && new RegExp("\\b" + escapeRe(word) + "\\b").test(rest));
-    if (!keep && first) first = first[0].toLowerCase() + first.slice(1);
-    body = `${greeting} ${first}` + (rest ? ` ${rest}` : "");
+    // The template opens "Hi, <sentence>" on ONE line (not "Hi," alone).
+    const inline = Boolean(tpl.split("\n", 1)[0].slice(g[0].length).trim());
+    const lines = body.split("\n");
+    if (inline && GREETING_LINE.test(lines[0].trim())) {
+      // The model put the greeting on its own line ("Hi,\n\nYour colonies ..."):
+      // join it to the first sentence the way the template does.
+      const rest = lines.slice(1);
+      while (rest.length && !rest[0].trim()) rest.shift();
+      if (rest.length) body = glueGreeting(lines[0].trim(), rest.join("\n"));
+    } else if (!LEAD_GREETING.test(body)) {
+      body = glueGreeting(greeting, body);
+    }
   }
 
   const leadIn = templateQuestionLeadIn(template);
@@ -356,9 +411,7 @@ function assemble(body: string, o: { lead: string; prefix: string; suffix: strin
   if (o.prefix.trim()) {
     body = stripLeadingGreeting(body, o.prefix);
     if (o.prefixInline) {
-      const nl = body.indexOf("\n");
-      const head = nl >= 0 ? body.slice(0, nl) : body;
-      body = o.prefix.trim() + " " + head.trimStart() + (nl >= 0 ? body.slice(nl) : "");
+      body = glueGreeting(o.prefix, body);
     } else {
       out.push(o.prefix.trim());
     }

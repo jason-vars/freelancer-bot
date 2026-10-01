@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.16.0
+// @version      1.17.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; toggle with Alt+A). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -26,7 +26,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.16.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.17.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -689,11 +689,14 @@
   // ── Talk to the bot (GM_xmlhttpRequest bypasses CORS + mixed-content) ──────
   // Resolves with the parsed JSON for any well-formed response (including a
   // {ok:false, skipped:true} filter-skip); rejects only on transport/parse errors.
-  function fetchProposal(seo, pid, country) {
+  // manual = you pressed ✨ Generate / Alt+G: the hosted bot then skips your OWN job
+  // filters (My settings) for this job, but never the admin's.
+  function fetchProposal(seo, pid, country, manual) {
     const params =
       "seo=" + encodeURIComponent(seo) +
       (pid ? "&id=" + encodeURIComponent(pid) : "") +
-      (country ? "&country=" + encodeURIComponent(country) : "");
+      (country ? "&country=" + encodeURIComponent(country) : "") +
+      (manual ? "&manual=1" : "");
     return new Promise((resolve, reject) => {
       GM_xmlhttpRequest({
         method: "GET",
@@ -808,7 +811,7 @@
         // a short preview of the client text means the filter got something; "?" means
         // the "About the Client" block wasn't found, so the country filter can't apply.
         badge("Generating proposal… (client: " + (country ? country.slice(0, 32) : "?") + ")", "info");
-        data = await fetchProposal(seo, currentProjectId(), country);
+        data = await fetchProposal(seo, currentProjectId(), country, force);
         if (superseded()) return; // a newer run owns the form now
       }
       // Project matched a currency/country skip filter — don't fill, don't cache.

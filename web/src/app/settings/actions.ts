@@ -23,6 +23,7 @@ export async function saveUserSettings(_prev: SaveState, form: FormData): Promis
   });
   if (error) return { ok: false, message: error.message };
   revalidatePath("/settings");
+  revalidatePath("/jobs");
   return { ok: true, message: "Saved." };
 }
 

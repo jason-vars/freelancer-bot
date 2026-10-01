@@ -3,7 +3,8 @@ import { requireApproved } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { DISPLAY_UPGRADES } from "@/lib/settings/fields";
 import { jobUrl } from "@/lib/jobs";
-import { JobList, type JobRow } from "./JobList";
+import { JobFeed } from "./JobFeed";
+import type { JobRow } from "./JobList";
 
 const PAGE_SIZE = 50;
 // Worker statuses of jobs that passed every filter and the min score.
@@ -14,6 +15,7 @@ const VIEWS = {
   passed: "All matching",
   opened: "Opened",
   applied: "Applied",
+  hidden: "Hidden by me",
 } as const;
 const ADMIN_VIEWS = { filtered: "Filtered out", all: "Everything" } as const;
 type View = keyof typeof VIEWS | keyof typeof ADMIN_VIEWS;
@@ -46,9 +48,12 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
   const supabase = await createClient();
   let q = supabase
     .from("my_jobs")
-    .select("id,title,url,description,currency,budget_min,budget_max,bid_count,bid_avg,skills,posted_at,upgrades,score,status,filter_reason,opened_at,applied_at,proposal,amount,period_days", { count: "exact" });
-  if (view === "new") q = q.in("status", PASSED).is("opened_at", null);
-  else if (view === "passed") q = q.in("status", PASSED);
+    .select("id,title,url,description,currency,budget_min,budget_max,bid_count,bid_avg,skills,posted_at,upgrades,score,status,filter_reason,opened_at,applied_at,proposal,amount,period_days,my_filter_reason", { count: "exact" });
+  // "New for me" and "All matching" also apply the user's own filters (My settings);
+  // "Hidden by me" lists what those filters took out.
+  if (view === "new") q = q.in("status", PASSED).is("my_filter_reason", null).is("opened_at", null);
+  else if (view === "passed") q = q.in("status", PASSED).is("my_filter_reason", null);
+  else if (view === "hidden") q = q.in("status", PASSED).not("my_filter_reason", "is", null);
   else if (view === "opened") q = q.not("opened_at", "is", null);
   else if (view === "applied") q = q.not("applied_at", "is", null);
   else if (view === "filtered") q = q.in("status", ["filtered", "skipped"]);
@@ -76,6 +81,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
     badges: DISPLAY_UPGRADES.filter(([k]) => r.upgrades?.[k]).map(([, label]) => label),
     status: r.status,
     filterReason: r.filter_reason,
+    myFilterReason: r.my_filter_reason,
     score: r.score,
     openedAt: r.opened_at,
     appliedAt: r.applied_at,
@@ -114,7 +120,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
       {error && <p className="mb-4 rounded-lg bg-bad-bg px-3 py-2 text-sm text-bad">Couldn&apos;t load jobs: {error.message}</p>}
       <p className="mb-3 text-sm text-muted">{total} job{total === 1 ? "" : "s"}</p>
 
-      <JobList jobs={jobs} isAdmin={isAdmin} />
+      <JobFeed key={`${view}|${search}|${page}`} jobs={jobs} isAdmin={isAdmin} live={page === 1} />
 
       {pages > 1 && (
         <div className="mt-6 flex items-center justify-center gap-3 text-sm">

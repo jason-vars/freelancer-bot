@@ -54,7 +54,7 @@ export async function saveAppSettings(_prev: SaveState, form: FormData): Promise
     return { ok: false, message: "Admins only." };
   }
   // Admin settings plus the user-scope fields, whose admin value is every user's default.
-  const { updates, errors } = validate(form, GROUPS.flatMap((g) => g.fields));
+  const { updates, errors } = validate(form, GROUPS.filter((g) => !g.personal).flatMap((g) => g.fields));
   if (Object.keys(errors).length) return { ok: false, message: "Fix the highlighted fields.", errors };
   const now = new Date().toISOString();
   const supabase = await createClient();
