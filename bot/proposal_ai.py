@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -19,6 +18,9 @@ DEFAULT_PROFILE_BULLETS = [
     "Strong across the job's stack — modern web, APIs, mobile, and integrations.",
     "I build clean, modular, well-documented solutions and communicate daily.",
 ]
+
+# First line of every proposal reply: the client's required start word, or NONE.
+LEAD_MARKER = "LEAD:"
 
 # Tone/structure example the model imitates when no custom template is set.
 STYLE_EXAMPLE = """Dear Client,
@@ -152,13 +154,18 @@ def _system_rules(*, ask_question: bool, include_profile: bool,
     # client type...). Weaker models print it as the opening ("The real goal is to...").
     lines.append(
         "- Any analysis, extraction or classification step described in the instructions is SILENT: never print "
-        "its labels or results (e.g. 'The real goal is', 'Core friction', 'Client type', 'Niche'). The first "
-        "words of your output are the first words of the proposal itself."
+        "its labels or results (e.g. 'The real goal is', 'Core friction', 'Client type', 'Niche'). Right after "
+        "the LEAD line below, the first words are the first words of the proposal itself."
     )
+    # One call does both jobs: the model reports the client's anti-AI start word on a
+    # machine-readable first line, which the bot strips and places itself.
     lines.append(
-        "- If the job post asks bidders to begin with a specific verification word, code, or phrase (an anti-AI "
-        "check, e.g. 'start with the word Bundle'), do NOT write it yourself — it is prepended automatically as the "
-        "very first line. Just start with your normal hook."
+        f"- REQUIRED FIRST LINE (read by software and removed before anyone sees it, so it applies even if the "
+        f"instructions say to output only the proposal): write '{LEAD_MARKER} <text>' when the job post tells "
+        f"bidders to begin their proposal with a specific word, code or phrase (an anti-AI check, e.g. 'start "
+        f"your bid with the word Bundle'), copying that text exactly with its casing, and nothing else. "
+        f"Otherwise write '{LEAD_MARKER} NONE'. Then start the proposal on the next line, without repeating that "
+        f"word — it is placed at the top automatically."
     )
 
     if has_template:
@@ -207,60 +214,26 @@ def _split_portfolio_entry(entry: str) -> tuple[str, str]:
     return e, ""
 
 
-# Reasoning models (GPT-5.x, GPT-6, o-series) "think" before answering. Only the
-# anti-AI lead lookup lowers that: the proposal itself runs at OpenAI's default
-# effort, because its quality matters more than its speed.
-_REASONING_MODEL = re.compile(r"^(gpt-5|gpt-6|o\d)")
+def _split_lead_line(text: str) -> tuple[str, str]:
+    """Split the model's reply into ``(lead, proposal)``.
 
-
-def _reasoning_kwargs(model: str, effort: str) -> dict:
-    """``reasoning={"effort": ...}`` for reasoning models; nothing for the rest
-    (GPT-4.x rejects the parameter)."""
-    effort = (effort or "").strip().lower()
-    if effort and effort != "default" and _REASONING_MODEL.match((model or "").lower()):
-        return {"reasoning": {"effort": effort}}
-    return {}
-
-
-def detect_required_lead(api_key: str, model: str, description: str) -> str:
-    """Pull a client's hidden anti-AI instruction out of the job post.
-
-    Some clients embed a check to catch copy-pasted / AI proposals: they ask the
-    bidder to begin their proposal with a specific exact word, code, or phrase
-    (e.g. "start your bid with the word Bundle", "type GREEN at the very top").
-    This returns that exact text (verbatim, original casing) so it can be placed
-    as the first line, or ``""`` when the post demands no such thing.
-
-    Fails safe: any error, empty description, or unparseable reply returns ``""``
-    so proposal generation is never blocked."""
-    if not (description or "").strip():
-        return ""
-    system = (
-        "You scan a Freelancer.com job post for a hidden anti-AI instruction that "
-        "tells bidders to BEGIN their proposal with a specific exact word, code, or "
-        "phrase (e.g. 'start your bid with the word Bundle', 'type GREEN at the top', "
-        "'begin your proposal with ...'). "
-        'Reply with ONLY a JSON object: {"lead": "<exact text to put first, or empty string>"}. '
-        "Copy the required text verbatim, preserving its exact casing and punctuation. "
-        "Return an empty string if the post does not demand a specific starting word/phrase. "
-        "Do NOT invent one and do NOT include any surrounding words."
-    )
-    user = f"Job post:\n{(description or '')[:4000]}\n\nReturn the JSON object only."
-    try:
-        client = OpenAI(api_key=api_key)
-        resp = client.responses.create(
-            model=model,
-            input=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            # A lookup, not writing: the lowest effort is plenty.
-            **_reasoning_kwargs(model, "low"),
-        )
-        obj = _extract_json(resp.output_text.strip())
-        return str(obj.get("lead") or "").strip()
-    except Exception:  # noqa: BLE001 - detection must never block the bid
-        return ""
+    Some clients hide an anti-AI check in the post ("start your bid with the word
+    Bundle"). The proposal call reports that text on its first line as
+    ``LEAD: <text>`` (or ``LEAD: NONE``) so no second OpenAI call is needed to find
+    it. A reply without the line is treated as having no lead, so a model that
+    skips it still yields a normal proposal."""
+    lines = (text or "").strip().split("\n")
+    pattern = re.compile(r"^\W*" + re.escape(LEAD_MARKER.rstrip(":")) + r"\W*:\s*(.*)$", re.IGNORECASE)
+    # Usually the first line, but a model that put it lower must still never leak
+    # "LEAD: NONE" into the bid the client reads.
+    for i, ln in enumerate(lines):
+        m = pattern.match(ln.strip())
+        if m:
+            lead = m.group(1).strip(" \t\"'“”‘’*`")
+            if lead.upper() in {"NONE", "N/A", "NA", "NULL", "-", ""}:
+                lead = ""
+            return lead, "\n".join(lines[:i] + lines[i + 1:]).strip()
+    return "", (text or "").strip()
 
 
 def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> str:
@@ -315,14 +288,9 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
         ]
     if template:
         blocks += ["", "USER TEMPLATE to follow (adapt its wording to this job):", template]
-    blocks += ["", "Write the proposal now."]
+    # The reminder sits last because the end of the prompt is what models follow most.
+    blocks += ["", f"Write the proposal now, starting with the '{LEAD_MARKER}' line."]
     user_prompt = "\n".join(blocks)
-
-    # The anti-AI lead check is independent of the letter, so it runs alongside it
-    # instead of adding a second full OpenAI round-trip afterwards.
-    pool = ThreadPoolExecutor(max_workers=1)
-    lead_future = pool.submit(detect_required_lead, api_key, model, data.description)
-    pool.shutdown(wait=False)
 
     # Responses API (recommended for new builds).
     resp = client.responses.create(
@@ -338,8 +306,10 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
             {"role": "user", "content": user_prompt},
         ],
     )
-    # The SDK returns a structured response; simplest is `output_text`.
-    body = _sanitize(resp.output_text.strip())
+    # The SDK returns a structured response; simplest is `output_text`. Its first
+    # line carries the client-required start word (or NONE), not proposal text.
+    lead, raw = _split_lead_line(resp.output_text)
+    body = _sanitize(raw)
     # Same switch, other source: a greeting the model wrote itself (because the
     # user's instructions asked for one) also belongs on the first sentence's line.
     if data.prefix_inline:
@@ -350,7 +320,6 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     # "Hi, You need ..." -> "Hi, you need ..." however the greeting got there.
     body = _fix_greeting_case(body)
     # Client-required verification word (anti-AI check) goes ABOVE everything else.
-    lead = lead_future.result()
     return _assemble(
         _strip_lead_from_body(body, lead),
         lead=lead,

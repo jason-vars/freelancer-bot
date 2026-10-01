@@ -5,6 +5,9 @@ import OpenAI from "openai";
 // deterministic post-processing (_sanitize, _assemble, ...) are what make proposals
 // read the same whether they come from the web app or the Python bot.
 
+// First line of every proposal reply: the client's required start word, or NONE.
+const LEAD_MARKER = "LEAD:";
+
 const DEFAULT_PROFILE_BULLETS = [
   "Senior engineer who has shipped many similar production projects end to end.",
   "Strong across the job's stack — modern web, APIs, mobile, and integrations.",
@@ -95,13 +98,18 @@ function systemRules(o: {
   );
   lines.push(
     "- Any analysis, extraction or classification step described in the instructions is SILENT: never print " +
-    "its labels or results (e.g. 'The real goal is', 'Core friction', 'Client type', 'Niche'). The first " +
-    "words of your output are the first words of the proposal itself.",
+    "its labels or results (e.g. 'The real goal is', 'Core friction', 'Client type', 'Niche'). Right after " +
+    "the LEAD line below, the first words are the first words of the proposal itself.",
   );
+  // One call does both jobs: the model reports the client's anti-AI start word on a
+  // machine-readable first line, which the bot strips and places itself.
   lines.push(
-    "- If the job post asks bidders to begin with a specific verification word, code, or phrase (an anti-AI " +
-    "check, e.g. 'start with the word Bundle'), do NOT write it yourself — it is prepended automatically as the " +
-    "very first line. Just start with your normal hook.",
+    "- REQUIRED FIRST LINE (read by software and removed before anyone sees it, so it applies even if the " +
+    `instructions say to output only the proposal): write '${LEAD_MARKER} <text>' when the job post tells ` +
+    "bidders to begin their proposal with a specific word, code or phrase (an anti-AI check, e.g. 'start " +
+    "your bid with the word Bundle'), copying that text exactly with its casing, and nothing else. " +
+    `Otherwise write '${LEAD_MARKER} NONE'. Then start the proposal on the next line, without repeating that ` +
+    "word — it is placed at the top automatically.",
   );
 
   if (o.hasTemplate) {
@@ -155,46 +163,35 @@ export function extractJson(text: string): Record<string, unknown> {
   return {};
 }
 
-// Reasoning models (GPT-5.x, GPT-6, o-series) "think" before answering. Only the
-// anti-AI lead lookup lowers that: the proposal itself runs at OpenAI's default
-// effort, because its quality matters more than its speed. GPT-4.x rejects the
-// parameter, so it is only sent to reasoning models.
-const REASONING_MODEL = /^(gpt-5|gpt-6|o\d)/;
-
-async function ask(
-  client: OpenAI, model: string, system: string, user: string, effort?: "low" | "medium" | "high",
-): Promise<string> {
+async function ask(client: OpenAI, model: string, system: string, user: string): Promise<string> {
   const resp = await client.responses.create({
     model,
     input: [
       { role: "system", content: system },
       { role: "user", content: user },
     ],
-    ...(effort && REASONING_MODEL.test(model.toLowerCase()) ? { reasoning: { effort } } : {}),
   });
   return (resp.output_text || "").trim();
 }
 
-/** The client's hidden anti-AI instruction ("start your bid with the word Bundle"),
- *  verbatim, or "" when the post demands none. Never throws. */
-async function detectRequiredLead(client: OpenAI, model: string, description: string): Promise<string> {
-  if (!description.trim()) return "";
-  const system =
-    "You scan a Freelancer.com job post for a hidden anti-AI instruction that " +
-    "tells bidders to BEGIN their proposal with a specific exact word, code, or " +
-    "phrase (e.g. 'start your bid with the word Bundle', 'type GREEN at the top', " +
-    "'begin your proposal with ...'). " +
-    'Reply with ONLY a JSON object: {"lead": "<exact text to put first, or empty string>"}. ' +
-    "Copy the required text verbatim, preserving its exact casing and punctuation. " +
-    "Return an empty string if the post does not demand a specific starting word/phrase. " +
-    "Do NOT invent one and do NOT include any surrounding words.";
-  const user = `Job post:\n${description.slice(0, 4000)}\n\nReturn the JSON object only.`;
-  try {
-    // A lookup, not writing: the lowest effort is plenty.
-    return String(extractJson(await ask(client, model, system, user, "low")).lead ?? "").trim();
-  } catch {
-    return "";
+/** Split the model's reply into [lead, proposal].
+ *
+ *  Some clients hide an anti-AI check in the post ("start your bid with the word
+ *  Bundle"). The proposal call reports that text on its first line as
+ *  `LEAD: <text>` (or `LEAD: NONE`) so no second OpenAI call is needed to find it.
+ *  A reply without the line is treated as having no lead. */
+export function splitLeadLine(text: string): [string, string] {
+  const lines = (text || "").trim().split("\n");
+  // Usually the first line, but a model that put it lower must still never leak
+  // "LEAD: NONE" into the bid the client reads.
+  for (let i = 0; i < lines.length; i++) {
+    const m = /^\W*LEAD\W*:\s*(.*)$/i.exec(lines[i].trim());
+    if (!m) continue;
+    let lead = m[1].replace(/^[\s"'“”‘’*`]+|[\s"'“”‘’*`]+$/g, "");
+    if (["NONE", "N/A", "NA", "NULL", "-", ""].includes(lead.toUpperCase())) lead = "";
+    return [lead, [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n").trim()];
   }
+  return ["", (text || "").trim()];
 }
 
 export async function generateProposal(apiKey: string, model: string, d: ProposalInput): Promise<string> {
@@ -234,18 +231,15 @@ export async function generateProposal(apiKey: string, model: string, d: Proposa
     }
   }
   if (template) blocks.push("", "USER TEMPLATE to follow (adapt its wording to this job):", template);
-  blocks.push("", "Write the proposal now.");
+  // The reminder sits last because the end of the prompt is what models follow most.
+  blocks.push("", `Write the proposal now, starting with the '${LEAD_MARKER}' line.`);
 
   const system = systemRules({
     askQuestion: d.askQuestion, includeProfile: d.includeProfile, hasTemplate: Boolean(template),
     hasPortfolio: portfolio.length > 0, userInstructions: d.extraInstructions,
   });
-  // The anti-AI lead check is independent of the letter, so it runs alongside it
-  // instead of adding a second full OpenAI round-trip afterwards.
-  const [rawBody, lead] = await Promise.all([
-    ask(client, model, system, blocks.join("\n")),
-    detectRequiredLead(client, model, d.description),
-  ]);
+  // Its first line carries the client-required start word (or NONE), not proposal text.
+  const [lead, rawBody] = splitLeadLine(await ask(client, model, system, blocks.join("\n")));
 
   let body = sanitize(rawBody);
   if (d.prefixInline) body = mergeGreetingLine(body);

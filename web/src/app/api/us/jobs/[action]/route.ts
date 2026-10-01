@@ -8,7 +8,7 @@ import { getEffectiveSettings, isTrue } from "@/lib/settings/store";
 // web UI (/jobs/options, /jobs/generate, /jobs/applied, /jobs/text), authenticated
 // by the user's API key instead of being bound to 127.0.0.1.
 
-export const maxDuration = 60; // two OpenAI calls (proposal + verification word), plus pricing
+export const maxDuration = 60; // one OpenAI call for the proposal, plus pricing
 
 const json = (status: number, body: Record<string, unknown>) => NextResponse.json(body, { status });
 
