@@ -187,6 +187,14 @@ function userFilterReason(s: Values, j: Job): string | null {
   return null;
 }
 
+/** "marked bad by 2 users (spam; fake budget)" when anyone flagged the job, else null. */
+async function badMark(jobId: number): Promise<string | null> {
+  const { data } = await createAdminClient().from("job_flags").select("reason").eq("job_id", jobId);
+  if (!data?.length) return null;
+  const reasons = [...new Set(data.map((f) => String(f.reason ?? "").trim()).filter(Boolean))];
+  return `marked bad by ${data.length} user${data.length === 1 ? "" : "s"}` + (reasons.length ? ` (${reasons.join("; ")})` : "");
+}
+
 // ── Pricing: AI pricing (admin) → user's bid rules → half-way through the budget ─
 function bidFromRules(s: Values, j: Job): [number, number] | null {
   let rules: Record<string, unknown>[] = [];
@@ -253,11 +261,14 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
     }
     const skip = skipReason(s, job, clientCountry, collected);
     const personal = skip || opts.manual ? null : userFilterReason(s, job);
-    if (skip || personal) {
+    const bad = skip || personal || opts.manual ? null : await badMark(job.id);
+    if (skip || personal || bad) {
       await touchUserJob(userId, job.id, {});
       const message = skip
         ? `Skipped — matches the filters (${skip}); no proposal generated.`
-        : `Skipped — hidden by your own filters (${personal}); no proposal generated. Press ✨ Generate to write one anyway.`;
+        : personal
+          ? `Skipped — hidden by your own filters (${personal}); no proposal generated. Press ✨ Generate to write one anyway.`
+          : `Skipped — ${bad}; no proposal generated. Press ✨ Generate to write one anyway.`;
       return { status: 200, body: { ok: false, skipped: true, message } };
     }
   }

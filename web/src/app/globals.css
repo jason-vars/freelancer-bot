@@ -14,7 +14,8 @@
   --warn-bg: #fef9c3;
   --bad: #b91c1c;
   --bad-bg: #fee2e2;
-  --chip: #f4f4f5;
+  --chip: #ececf0;
+  --chip-fg: #3f3f46;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -22,17 +23,18 @@
     --bg: #0b0b0d;
     --surface: #151518;
     --fg: #ececee;
-    --muted: #9ca3af;
+    --muted: #b4b4be;
     --border: #2a2a2f;
     --accent: #3b82f6;
     --accent-fg: #ffffff;
-    --ok: #4ade80;
-    --ok-bg: #14532d55;
-    --warn: #facc15;
-    --warn-bg: #713f1255;
-    --bad: #f87171;
-    --bad-bg: #7f1d1d55;
-    --chip: #232328;
+    --ok: #86efac;
+    --ok-bg: #14532d;
+    --warn: #fde047;
+    --warn-bg: #713f12;
+    --bad: #fca5a5;
+    --bad-bg: #7f1d1d;
+    --chip: #2e2e36;
+    --chip-fg: #e4e4e7;
   }
 }
 
@@ -51,6 +53,7 @@
   --color-bad: var(--bad);
   --color-bad-bg: var(--bad-bg);
   --color-chip: var(--chip);
+  --color-chip-fg: var(--chip-fg);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -74,8 +77,10 @@ body {
   }
   .label { @apply mb-1 block text-sm font-medium; }
   .help { @apply mt-1 text-xs text-muted; }
-  .chip { @apply inline-flex items-center rounded-full bg-chip px-2 py-0.5 text-xs text-muted; }
+  .chip { @apply inline-flex items-center rounded-full bg-chip px-2 py-0.5 text-xs text-chip-fg; }
   .chip-ok { @apply bg-ok-bg text-ok; }
   .chip-warn { @apply bg-warn-bg text-warn; }
   .chip-bad { @apply bg-bad-bg text-bad; }
+  /* Solid and bright: the one label that must catch the eye. */
+  .chip-new { @apply bg-ok font-semibold text-bg; }
 }

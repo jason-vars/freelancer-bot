@@ -114,6 +114,16 @@ create table if not exists public.user_jobs (
 
 create index if not exists user_jobs_job on public.user_jobs (job_id);
 
+-- ── Shared "bad job" marks: one user flags a job, everyone skips it ─────────────
+create table if not exists public.job_flags (
+  job_id      bigint not null references public.jobs (id) on delete cascade,
+  user_id     uuid not null references public.profiles (id) on delete cascade,
+  reason      text not null default '',
+  created_at  timestamptz not null default now(),
+  primary key (job_id, user_id)
+);
+create index if not exists job_flags_created on public.job_flags (created_at desc);
+
 -- ── Personal job filters (My settings › My job filters) ─────────────────────────
 -- Applied on top of the admin's filters, which the worker already ran. Stored in
 -- user_settings.values under the MY_* keys; must match userFilterReason() in
@@ -170,10 +180,19 @@ end $$;
 -- security_invoker makes the view obey the caller's RLS on every table.
 create or replace view public.my_jobs with (security_invoker = true) as
   select j.*, uj.opened_at, uj.applied_at, uj.proposal, uj.amount, uj.period_days, uj.generated_at,
-         public.user_filter_reason(j, us."values") as my_filter_reason
+         public.user_filter_reason(j, us."values") as my_filter_reason,
+         coalesce(fl.bad_count, 0) as bad_count,
+         coalesce(fl.bad_by_me, false) as bad_by_me,
+         fl.bad_reasons
   from public.jobs j
   left join public.user_jobs uj on uj.job_id = j.id and uj.user_id = auth.uid()
-  left join public.user_settings us on us.user_id = auth.uid();
+  left join public.user_settings us on us.user_id = auth.uid()
+  left join lateral (
+    select count(*) as bad_count,
+           bool_or(f.user_id = auth.uid()) as bad_by_me,
+           string_agg(distinct nullif(trim(f.reason), ''), '; ') as bad_reasons
+    from public.job_flags f where f.job_id = j.id
+  ) fl on true;
 
 -- Admin view: how many users opened / applied to each job.
 create or replace view public.job_activity with (security_invoker = true) as
@@ -200,6 +219,7 @@ alter table public.user_settings enable row level security;
 alter table public.jobs          enable row level security;
 alter table public.user_jobs     enable row level security;
 alter table public.worker_status enable row level security;
+alter table public.job_flags     enable row level security;
 
 drop policy if exists "profiles: read own or admin" on public.profiles;
 create policy "profiles: read own or admin" on public.profiles
@@ -242,6 +262,24 @@ create policy "user_jobs: own" on public.user_jobs
 drop policy if exists "user_jobs: admin read" on public.user_jobs;
 create policy "user_jobs: admin read" on public.user_jobs
   for select to authenticated using (public.is_admin());
+
+-- Bad marks are shared: every approved user sees all of them, adds or changes only
+-- their own, and admins can clear anyone's.
+drop policy if exists "job_flags: approved read" on public.job_flags;
+create policy "job_flags: approved read" on public.job_flags
+  for select to authenticated using (public.is_approved());
+
+drop policy if exists "job_flags: own insert" on public.job_flags;
+create policy "job_flags: own insert" on public.job_flags
+  for insert to authenticated with check (user_id = auth.uid() and public.is_approved());
+
+drop policy if exists "job_flags: own update" on public.job_flags;
+create policy "job_flags: own update" on public.job_flags
+  for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+drop policy if exists "job_flags: own or admin delete" on public.job_flags;
+create policy "job_flags: own or admin delete" on public.job_flags
+  for delete to authenticated using (user_id = auth.uid() or public.is_admin());
 
 drop policy if exists "worker_status: admin" on public.worker_status;
 create policy "worker_status: admin" on public.worker_status
