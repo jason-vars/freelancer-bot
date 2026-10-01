@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 import { JobList, type JobRow } from "./JobList";
 
 // Live job list: polls /api/jobs/version and re-renders the page in place when the
@@ -78,6 +79,27 @@ export function JobFeed({ jobs, isAdmin, live }: { jobs: JobRow[]; isAdmin: bool
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [live, alerts, router]);
+
+  // Bad marks are shared, so another user's mark should reach this page at once, not
+  // at the next poll. Realtime pushes every job_flags change (RLS still applies);
+  // a burst of changes is folded into one refresh. The poll above stays as the
+  // fallback if the socket drops.
+  useEffect(() => {
+    if (!live) return;
+    const supabase = createClient();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const channel = supabase
+      .channel("job_flags")
+      .on("postgres_changes", { event: "*", schema: "public", table: "job_flags" }, () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => router.refresh(), 300);
+      })
+      .subscribe();
+    return () => {
+      clearTimeout(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [live, router]);
 
   // Desktop alerts preference (per browser).
   useEffect(() => {

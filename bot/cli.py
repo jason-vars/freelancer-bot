@@ -44,7 +44,7 @@ from .telegram_notify import (
 )
 from .slack_notify import notify_slack
 from .telegram_listener import run_telegram_listener
-from .webhook import process_webhook_file, serve_webhook, _build_proposal, choose_bid_from_rules
+from .webhook import process_webhook_file, serve_webhook, _build_proposal, choose_price
 
 
 def _print_json_block(label: str, raw: str | None) -> None:
@@ -471,12 +471,7 @@ def _maybe_save_proposal(conn, settings, p) -> None:
     try:
         project = dict(p)
         proposal = _build_proposal(settings, project)
-        ruled = choose_bid_from_rules(project.get("currency"), project.get("budget_min"), project.get("budget_max"), settings.bid_rules)
-        if ruled is not None:
-            amount, period = ruled
-        else:
-            amount = choose_bid_amount(project.get("budget_min"), project.get("budget_max"))
-            period = choose_period_days(project.get("budget_min"), project.get("budget_max"))
+        amount, period = choose_price(settings, project)
         insert_bid(conn, pid, None, float(amount), int(period), settings.default_milestone_percent, proposal, status="proposal_saved")
         print(f"[{pid}] proposal saved to DB (status='proposal_saved', amount={amount}, period_days={period})")
     except Exception as exc:
@@ -504,6 +499,10 @@ def run(dry_run_override: bool | None = None, notify_floor_epoch: float | None =
     # happen inside fetch_and_store_projects, so only survivors reach the DB.
     new_count = fetch_and_store_projects(session, conn, s, limit=50)
     print(f"Fetched/stored {new_count} new projects")
+    # Publish to the website BEFORE alerting, so a Slack/Telegram ping never points
+    # at a job the Jobs page doesn't have yet. The sync after the loop pushes the
+    # alert statuses.
+    sync_error = cloud.sync_jobs(conn)
 
     # Score each new project and notify INSTANTLY for great matches. Notify-only:
     # no bids placed, no deferred bid loop. Also re-attempt any 'alert_failed'
@@ -590,9 +589,12 @@ def run(dry_run_override: bool | None = None, notify_floor_epoch: float | None =
             failed += 1
 
     print(f"Notified {notified} project(s)." + (f" {failed} failed (will retry)." if failed else ""))
-    cloud.sync_jobs(conn)
+    sync_error = cloud.sync_jobs(conn) or sync_error
+    # A failed sync used to show only in the worker's console while the admin page
+    # said all was well; put it in the heartbeat so it's visible on the website.
     cloud.heartbeat(f"Stored {new_count} new job(s), alerted {notified}"
-                    + (f", {failed} alert(s) failed" if failed else "") + ".")
+                    + (f", {failed} alert(s) failed" if failed else "") + "."
+                    + (f" Jobs NOT reaching the website: {sync_error}" if sync_error else ""))
 
 def _sleep(seconds: int) -> None:
     """Sleep between cycles. In cloud mode, wake early when the admin presses

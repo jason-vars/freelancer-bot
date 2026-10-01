@@ -170,6 +170,8 @@ class Settings:
     # Per-currency/budget bid rules: list of
     #   {"currencies": [...], "min": n, "max": n, "bid": n, "delivery": n}
     bid_rules: list[dict]
+    # Your hourly rate, bid on hourly projects (None = middle of the client's range).
+    hourly_rate: float | None
 
     # Extra free-text instructions appended to the OpenAI proposal prompt.
     proposal_instructions: str
@@ -326,6 +328,7 @@ def load_settings() -> Settings:
         default_period_days=_get_int("BOT_DEFAULT_PERIOD_DAYS", 7),
         default_milestone_percent=_get_int("BOT_DEFAULT_MILESTONE_PERCENT", 50),
         bid_rules=_get_json_list("BOT_BID_RULES"),
+        hourly_rate=_get_float_or_none("BOT_HOURLY_RATE"),
         proposal_instructions=_get_text("BOT_PROPOSAL_INSTRUCTIONS"),
         # Proposal personalization (empty = built-in defaults in proposal_ai.py).
         signature_name=(os.getenv("BOT_SIGNATURE_NAME") or "").strip(),

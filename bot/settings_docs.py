@@ -224,6 +224,13 @@ FIELD_DOCS: dict[str, str] = {
     "BOT_DEFAULT_MILESTONE_PERCENT": (
         "Milestone percentage proposed on bids (the upfront/secured share). Default 50."
     ),
+    "BOT_HOURLY_RATE": (
+        "Your hourly rate, e.g. 45. Hourly projects bid this per hour, with the default period as "
+        "the delivery days; the bid table is skipped for them because its amounts are fixed-price "
+        "totals (a $40-50/hr job would otherwise match a 30-250 row and bid $200 an hour). If the "
+        "client's minimum is above your rate, the minimum is bid instead. Blank = the middle of the "
+        "client's hourly range, rounded up."
+    ),
     "BOT_BID_RULES": (
         "A table mapping currency + budget range → bid amount and delivery days. The "
         "FIRST row whose currency and budget match a job wins; if none match, the "

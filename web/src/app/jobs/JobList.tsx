@@ -58,6 +58,16 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  // Bad mark shown from local state so a click shows at once (the server refresh
+  // follows in the background). A refresh bringing new marks — yours confirmed, or
+  // another user's via the live feed — replaces it.
+  const fromProps = { count: job.badCount, byMe: job.badByMe, reasons: job.badReasons };
+  const [bad, setBadState] = useState(fromProps);
+  const [badProps, setBadProps] = useState(fromProps);
+  if (badProps.count !== fromProps.count || badProps.byMe !== fromProps.byMe || badProps.reasons !== fromProps.reasons) {
+    setBadProps(fromProps);
+    setBadState(fromProps);
+  }
 
   const markOpened = () => {
     if (!opened) {
@@ -97,11 +107,26 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
     } else if (action === "clearbad" && !confirm("Remove every user's bad mark from this job?")) {
       return;
     }
+    // Show the result immediately; undo it if the server says no.
+    const before = bad;
+    const myReason = String(body?.reason ?? "").trim();
+    if (action === "bad") {
+      const reasons = [before.reasons, myReason].filter(Boolean).join("; ") || null;
+      setBadState({ count: before.count + (before.byMe ? 0 : 1), byMe: true, reasons });
+    } else if (action === "unbad") {
+      setBadState({ count: Math.max(0, before.count - 1), byMe: false, reasons: before.count > 1 ? before.reasons : null });
+    } else {
+      setBadState({ count: 0, byMe: false, reasons: null });
+    }
+    setError("");
     setBusy("bad");
     const d = await post(job.id, action, body);
     setBusy(null);
-    if (d.ok) router.refresh();
-    else setError(d.message ?? "Couldn't update.");
+    if (d.ok) router.refresh(); // moves it in/out of the New list and syncs exact reasons
+    else {
+      setBadState(before);
+      setError(d.message ?? "Couldn't update.");
+    }
   };
 
   const copy = async () => {
@@ -131,10 +156,10 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
           : opened ? <span className="chip chip-warn">Opened</span>
           : <span className="chip">New</span>}
         {job.badges.map((b) => <span key={b} className="chip">{b}</span>)}
-        {job.badCount > 0 && (
+        {bad.count > 0 && (
           <span className="chip chip-bad">
-            👎 Marked bad{job.badCount > 1 ? ` by ${job.badCount}` : ""}{job.badByMe ? " (incl. you)" : ""}
-            {job.badReasons ? `: ${job.badReasons}` : ""}
+            👎 Marked bad{bad.count > 1 ? ` by ${bad.count}` : ""}{bad.byMe ? " (incl. you)" : ""}
+            {bad.reasons ? `: ${bad.reasons}` : ""}
           </span>
         )}
         {job.myFilterReason && <span className="chip chip-warn">Hidden by my filter: {job.myFilterReason}</span>}
@@ -158,12 +183,12 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
         <button className="btn" onClick={toggleApplied} disabled={busy !== null}>
           {applied ? "Unmark applied" : "Mark applied"}
         </button>
-        {job.badByMe ? (
+        {bad.byMe ? (
           <button className="btn" onClick={() => setBad("unbad")} disabled={busy !== null}>Undo bad mark</button>
         ) : (
           <button className="btn btn-danger" onClick={() => setBad("bad")} disabled={busy !== null}>👎 Mark bad</button>
         )}
-        {isAdmin && job.badCount > 0 && (
+        {isAdmin && bad.count > 0 && (
           <button className="btn btn-danger" onClick={() => setBad("clearbad")} disabled={busy !== null}>Clear bad marks</button>
         )}
       </div>

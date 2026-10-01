@@ -21,6 +21,8 @@ export type Job = {
   posted_at: string | null;
   bidperiod: number | null;
   upgrades: Record<string, unknown> | null;
+  // "fixed" | "hourly" (null = unknown, treated as fixed).
+  project_type: string | null;
   score: number;
   status: string;
   filter_reason: string | null;
@@ -73,6 +75,7 @@ function projectToJob(p: Record<string, unknown>): Job {
     posted_at: typeof submitted === "number" ? new Date(submitted * 1000).toISOString() : null,
     bidperiod: typeof p.bidperiod === "number" ? p.bidperiod : null,
     upgrades: (p.upgrades as Record<string, unknown>) ?? null,
+    project_type: p.type === "hourly" || p.type === "fixed" ? p.type : null,
     score: 0,
     status: "external",
     filter_reason: null,
@@ -234,9 +237,19 @@ async function resolvePricing(s: Values, j: Job): Promise<[number, number]> {
     });
     if (priced) return priced;
   }
+  const { budget_min: lo, budget_max: hi } = j;
+  // Hourly: bid your hourly rate. The bid table holds fixed-price totals, so a
+  // $40-50/hr job would otherwise match a 30-250 row and bid $200 an hour. The rate
+  // is raised to the client's minimum (a bid below their range looks like a mistake)
+  // but never lowered to their maximum. No rate set: middle of their range.
+  if (j.project_type === "hourly") {
+    const rate = Number(s.BOT_HOURLY_RATE);
+    const amount = rate > 0 ? Math.max(rate, lo ?? 0)
+      : lo == null && hi == null ? 200 : hi == null ? niceAmount(lo!) : lo == null ? hi : niceAmount((lo + hi) / 2, hi);
+    return [amount, Math.max(1, int(s.BOT_DEFAULT_PERIOD_DAYS, 7))];
+  }
   const ruled = bidFromRules(s, j);
   if (ruled) return ruled;
-  const { budget_min: lo, budget_max: hi } = j;
   const amount = lo == null && hi == null ? 200 : hi == null ? niceAmount(lo!) : lo == null ? hi : niceAmount((lo + hi) / 2, hi);
   const top = hi ?? lo;
   const days = top != null && top < 300 ? 1 : int(s.BOT_DEFAULT_PERIOD_DAYS, 7);

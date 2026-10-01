@@ -126,8 +126,10 @@ export const GROUPS: Group[] = [
         help: "Delivery period offered when no rule matches.", default: "7" },
       { key: "BOT_DEFAULT_MILESTONE_PERCENT", label: "Default milestone %", kind: "int",
         help: "Milestone percentage offered.", default: "50" },
+      { key: "BOT_HOURLY_RATE", label: "Hourly rate", kind: "int",
+        help: "Bid on HOURLY projects, per hour (raised to the client's minimum if below it). The bid table below is only for fixed-price jobs. Blank = middle of the client's hourly range." },
       { key: "BOT_BID_RULES", label: "Bid by currency & budget", kind: "bidrules",
-        help: "First matching row wins; otherwise half-way between the budget's min and max." },
+        help: "Fixed-price jobs only. First matching row wins; otherwise half-way between the budget's min and max, rounded up." },
     ],
   },
 

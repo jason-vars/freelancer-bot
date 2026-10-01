@@ -94,6 +94,11 @@ create table if not exists public.jobs (
   synced_at      timestamptz not null default now()
 );
 
+-- "fixed" | "hourly" (null = unknown, treated as fixed). Hourly jobs bid the user's
+-- hourly rate instead of the fixed-price bid table. Added after launch, so it is an
+-- ALTER to stay safe to re-run on an existing database.
+alter table public.jobs add column if not exists project_type text;
+
 create index if not exists jobs_posted_at on public.jobs (posted_at desc);
 create index if not exists jobs_synced_at on public.jobs (synced_at desc);
 create index if not exists jobs_status on public.jobs (status);
@@ -178,7 +183,10 @@ end $$;
 
 -- Jobs joined with the CURRENT user's state and personal filter verdict.
 -- security_invoker makes the view obey the caller's RLS on every table.
-create or replace view public.my_jobs with (security_invoker = true) as
+-- Dropped first: `j.*` grows when jobs gains a column, and "create or replace"
+-- refuses to change a view's existing columns.
+drop view if exists public.my_jobs;
+create view public.my_jobs with (security_invoker = true) as
   select j.*, uj.opened_at, uj.applied_at, uj.proposal, uj.amount, uj.period_days, uj.generated_at,
          public.user_filter_reason(j, us."values") as my_filter_reason,
          coalesce(fl.bad_count, 0) as bad_count,
@@ -280,6 +288,18 @@ create policy "job_flags: own update" on public.job_flags
 drop policy if exists "job_flags: own or admin delete" on public.job_flags;
 create policy "job_flags: own or admin delete" on public.job_flags
   for delete to authenticated using (user_id = auth.uid() or public.is_admin());
+
+-- ── Realtime: the Jobs page subscribes to bad marks so they show for everyone at
+-- once. Realtime still applies the select policy above. Guarded so re-running is safe.
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'job_flags'
+  ) then
+    alter publication supabase_realtime add table public.job_flags;
+  end if;
+end $$;
 
 drop policy if exists "worker_status: admin" on public.worker_status;
 create policy "worker_status: admin" on public.worker_status
