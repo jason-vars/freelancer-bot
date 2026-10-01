@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -52,14 +53,26 @@ from .telegram_notify import _project_link
 from .util import safe_get
 
 
+def _nice_amount(amount: float, cap: float | None = None) -> float:
+    """Round a bid UP to a clean number a person would type: 5s under 100, 50s
+    under 1000, 100s above (1125 -> 1200, 140 -> 150, 17.5 -> 20). Never above
+    ``cap`` (the budget's max), so rounding can't push a bid over the client's range."""
+    step = 5 if amount < 100 else 50 if amount < 1000 else 100
+    nice = math.ceil(amount / step) * step
+    if cap is not None and nice > cap:
+        nice = cap
+    return float(nice)
+
+
 def _choose_bid_amount(budget_min: float | None, budget_max: float | None) -> float:
+    """No bid rule matched: half-way through the budget, rounded up to a clean number."""
     if budget_min is None and budget_max is None:
         return 200.0
     if budget_max is None:
-        return float(budget_min)
+        return _nice_amount(float(budget_min))
     if budget_min is None:
         return float(budget_max)
-    return float((budget_min + budget_max) / 2)
+    return _nice_amount((budget_min + budget_max) / 2, cap=float(budget_max))
 
 
 def _choose_period_days(budget_min: float | None, budget_max: float | None) -> int:
@@ -104,7 +117,8 @@ def choose_bid_from_rules(
             lo = float(rule.get("min"))
             hi = float(rule.get("max"))
             bid = float(rule.get("bid"))
-            delivery = int(float(rule.get("delivery")))
+            # Round UP: "7.5" days means 8, never 7.
+            delivery = math.ceil(float(rule.get("delivery")))
         except (TypeError, ValueError):
             continue
         if lo <= budget <= hi:
