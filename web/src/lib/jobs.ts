@@ -209,15 +209,24 @@ function bidFromRules(s: Values, j: Job): [number, number] | null {
   const budget = j.budget_max ?? j.budget_min;
   if (budget == null || !Array.isArray(rules)) return null;
   const code = (j.currency ?? "").trim().toUpperCase();
+  const usable: [number, number, number, number][] = [];
   for (const r of rules) {
     const codes = ((r.currencies as string[]) ?? []).map((c) => String(c).trim().toUpperCase()).filter(Boolean);
     if (codes.length && code && !codes.includes(code)) continue;
     // Days round UP: "7.5" means 8, never 7.
     const [lo, hi, bid, delivery] = [Number(r.min), Number(r.max), Number(r.bid), Math.ceil(Number(r.delivery))];
     if ([lo, hi, bid, delivery].some(Number.isNaN)) continue;
-    if (lo <= budget && budget <= hi) return [bid, Math.max(1, delivery)];
+    usable.push([lo, hi, bid, Math.max(1, delivery)]);
   }
-  return null;
+  // Neighbouring rows share an edge (250-750, 750-1500), so a $250-750 job's top
+  // (750) sits in both. Prefer the row that holds the job's WHOLE range, so the
+  // answer doesn't depend on the order the rows were typed in; fall back to the
+  // first row holding the top for budgets that straddle rows.
+  const jobLo = j.budget_min ?? budget;
+  const whole = usable.find(([lo, hi]) => lo <= jobLo && budget <= hi);
+  if (whole) return [whole[2], whole[3]];
+  const top = usable.find(([lo, hi]) => lo <= budget && budget <= hi);
+  return top ? [top[2], top[3]] : null;
 }
 
 /** Round a bid UP to a clean number a person would type: 5s under 100, 50s under

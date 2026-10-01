@@ -98,21 +98,13 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
   };
 
   // Shared with everyone: a job marked bad leaves all users' New/All matching lists.
+  // One click marks it: no reason prompt (Undo bad mark reverses a slip).
   const setBad = async (action: "bad" | "unbad" | "clearbad") => {
-    let body: Record<string, unknown> | undefined;
-    if (action === "bad") {
-      const reason = window.prompt("Why is this job bad? (optional — everyone will see it)", "");
-      if (reason === null) return; // cancelled
-      body = { reason };
-    } else if (action === "clearbad" && !confirm("Remove every user's bad mark from this job?")) {
-      return;
-    }
+    if (action === "clearbad" && !confirm("Remove every user's bad mark from this job?")) return;
     // Show the result immediately; undo it if the server says no.
     const before = bad;
-    const myReason = String(body?.reason ?? "").trim();
     if (action === "bad") {
-      const reasons = [before.reasons, myReason].filter(Boolean).join("; ") || null;
-      setBadState({ count: before.count + (before.byMe ? 0 : 1), byMe: true, reasons });
+      setBadState({ count: before.count + (before.byMe ? 0 : 1), byMe: true, reasons: before.reasons });
     } else if (action === "unbad") {
       setBadState({ count: Math.max(0, before.count - 1), byMe: false, reasons: before.count > 1 ? before.reasons : null });
     } else {
@@ -120,7 +112,7 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
     }
     setError("");
     setBusy("bad");
-    const d = await post(job.id, action, body);
+    const d = await post(job.id, action);
     setBusy(null);
     if (d.ok) router.refresh(); // moves it in/out of the New list and syncs exact reasons
     else {
