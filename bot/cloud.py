@@ -31,6 +31,9 @@ SYNC_BATCH = 200
 # The last settings overlay that loaded, reapplied when Supabase is unreachable so a
 # blip never drops the poller back to the .env's (possibly stale) values.
 _last_overlay: dict[str, str] = {}
+# Whether the ON/OFF line was printed for the current state (None = not yet), so the
+# log says once, and again on every change, if the worker is feeding the website.
+_announced: bool | None = None
 
 
 def enabled() -> bool:
@@ -64,8 +67,12 @@ def overlay_settings() -> None:
 
     Called from config.load_settings right after the .env is re-read. The CLOUD_*
     connection keys themselves are never overridden."""
-    global _last_overlay
+    global _last_overlay, _announced
     if not enabled():
+        if _announced is not False:
+            print("[cloud] OFF: CLOUD_SUPABASE_URL / CLOUD_SUPABASE_KEY not set in .env, "
+                  "so jobs stay local and the website gets nothing.")
+            _announced = False
         return
     try:
         resp = requests.get(_rest("app_settings"), headers=_headers(),
@@ -77,6 +84,9 @@ def overlay_settings() -> None:
             for r in rows if isinstance(r, dict) and r.get("key")
             and not str(r["key"]).startswith("CLOUD_")
         }
+        if _announced is not True:
+            print(f"[cloud] ON: {_url()} ({len(_last_overlay)} admin setting(s) loaded)")
+            _announced = True
     except Exception as exc:  # noqa: BLE001 - fall back to the last good overlay
         print(f"[cloud] settings read failed, using the last loaded values: {exc}")
     os.environ.update(_last_overlay)
