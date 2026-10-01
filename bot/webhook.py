@@ -83,6 +83,40 @@ def _choose_period_days(budget_min: float | None, budget_max: float | None) -> i
     return 7
 
 
+def is_hourly(project: dict[str, Any]) -> bool:
+    """True for an hourly project. Freelancer's API marks it ``type: "hourly"``; the
+    bot keeps that in ``project_type`` or inside the stored ``raw_json``."""
+    kind = project.get("project_type") or project.get("type")
+    if not kind:
+        try:
+            kind = (json.loads(project.get("raw_json") or "{}") or {}).get("type")
+        except (TypeError, ValueError, AttributeError):
+            kind = None
+    return str(kind or "").strip().lower() == "hourly"
+
+
+def choose_hourly_bid(rate: float | None, budget_min: float | None, budget_max: float | None) -> float:
+    """Hourly bid: your hourly rate, raised to the client's minimum if it is below it
+    (a bid under their range looks like a mistake). No rate set: the middle of the
+    client's range, rounded up. Never lowered to their maximum, so your rate is a floor."""
+    if rate and rate > 0:
+        return float(max(rate, budget_min or 0))
+    return _choose_bid_amount(budget_min, budget_max)
+
+
+def choose_price(s, project: dict[str, Any]) -> tuple[float, int]:
+    """Bid amount + delivery days WITHOUT the AI: hourly projects bid your hourly rate
+    (the fixed-price table is in totals, not per hour); fixed ones use the first
+    matching bid rule, else half-way through the budget rounded up."""
+    lo, hi = project.get("budget_min"), project.get("budget_max")
+    if is_hourly(project):
+        return choose_hourly_bid(s.hourly_rate, lo, hi), max(1, int(s.default_period_days))
+    ruled = choose_bid_from_rules(project.get("currency"), lo, hi, s.bid_rules)
+    if ruled is not None:
+        return ruled
+    return _choose_bid_amount(lo, hi), _choose_period_days(lo, hi)
+
+
 def choose_bid_from_rules(
     currency: str | None,
     budget_min: float | None,
@@ -540,12 +574,7 @@ def process_webhook_payload(payload: dict[str, Any], delay_seconds: int | None =
         if priced is not None:
             amount, period_days = priced
         else:
-            ruled = choose_bid_from_rules(project["currency"], project["budget_min"], project["budget_max"], s.bid_rules)
-            if ruled is not None:
-                amount, period_days = ruled
-            else:
-                amount = _choose_bid_amount(project["budget_min"], project["budget_max"])
-                period_days = _choose_period_days(project["budget_min"], project["budget_max"])
+            amount, period_days = choose_price(s, project)
 
         # Auto-apply OFF (master switch) OR outside the auto-apply window: the bot
         # only COLLECTS the great project and notifies you — no proposal is generated

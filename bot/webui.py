@@ -195,6 +195,8 @@ GROUPS: list[tuple[str, list[Field]]] = [
               "ON = the browser userscript ticks Freelancer's FREE 'Sealed' upgrade when it fills a bid, hiding your bid from other freelancers. Paid upgrades (Sponsored, Highlight) are never touched. The userscript's 🔒 Seal button writes back to this setting.", "1"),
         Field("BOT_DEFAULT_PERIOD_DAYS", "Default period (days)", "int", "Delivery period offered on bids (when no rule matches).", "7"),
         Field("BOT_DEFAULT_MILESTONE_PERCENT", "Default milestone %", "int", "Milestone percentage offered.", "50"),
+        Field("BOT_HOURLY_RATE", "Hourly rate", "text",
+              "Bid on HOURLY projects, per hour (raised to the client's minimum if below it). The bid table below is only for fixed-price jobs. Blank = middle of the client's hourly range.", ""),
         Field("BOT_BID_RULES", "Bid by currency & budget", "bidrules",
               "Per-currency/budget bid amounts. First matching row wins; otherwise the default heuristic is used.", ""),
     ]),
@@ -1165,7 +1167,7 @@ def _resolve_pricing(s, proj: dict) -> tuple[float, int]:
     """Bid amount + delivery days for a project, mirroring the webhook precedence:
     AI auto-pricing (if on) -> structured bid rules -> budget heuristic."""
     from .proposal_ai import ai_price_and_duration
-    from .webhook import _choose_bid_amount, _choose_period_days, choose_bid_from_rules
+    from .webhook import choose_price
 
     if s.ai_pricing_enabled and s.openai_api_key and s.ai_pricing_rules.strip():
         priced = ai_price_and_duration(
@@ -1176,13 +1178,7 @@ def _resolve_pricing(s, proj: dict) -> tuple[float, int]:
         )
         if priced is not None:
             return priced
-    ruled = choose_bid_from_rules(proj["currency"], proj["budget_min"], proj["budget_max"], s.bid_rules)
-    if ruled is not None:
-        return ruled
-    return (
-        _choose_bid_amount(proj["budget_min"], proj["budget_max"]),
-        _choose_period_days(proj["budget_min"], proj["budget_max"]),
-    )
+    return choose_price(s, dict(proj))
 
 
 def _generate_proposal(s, proj: dict) -> tuple[str | None, str | None]:

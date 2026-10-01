@@ -128,6 +128,8 @@ def _job_row(r) -> dict[str, Any]:
         "posted_at": _posted_at(r["created_at"]),
         "bidperiod": int(bidperiod) if isinstance(bidperiod, (int, float)) else None,
         "upgrades": upgrades if isinstance(upgrades, dict) else None,
+        # "fixed" | "hourly": hourly jobs are priced from the hourly rate, not the bid table.
+        "project_type": raw.get("type") if raw.get("type") in ("fixed", "hourly") else None,
         "score": int(r["score"] or 0),
         "status": r["status"] or "new",
         "filter_reason": r["filter_reason"],
@@ -135,13 +137,44 @@ def _job_row(r) -> dict[str, Any]:
     }
 
 
-def sync_jobs(conn) -> int:
+# Columns added to `jobs` after launch. If the database hasn't been migrated yet
+# (supabase/schema.sql not re-run), they are dropped from the sync instead of the
+# whole sync failing — jobs must keep reaching the website either way.
+_OPTIONAL_COLUMNS = ("project_type",)
+_missing_columns: set[str] = set()
+
+
+def _post_jobs(rows: list[dict[str, Any]]) -> None:
+    for _ in range(len(_OPTIONAL_COLUMNS) + 1):
+        payload = [{k: v for k, v in r.items() if k not in _missing_columns} for r in rows]
+        resp = requests.post(
+            _rest("jobs"),
+            headers=_headers(Prefer="resolution=merge-duplicates,return=minimal"),
+            params={"on_conflict": "id"},
+            data=json.dumps(payload, default=str),
+            timeout=30,
+        )
+        if resp.status_code < 300:
+            return
+        missing = next((c for c in _OPTIONAL_COLUMNS
+                        if c not in _missing_columns and c in resp.text), None)
+        if missing is None:
+            _check(resp, "jobs sync")
+        _missing_columns.add(missing)
+        print(f"[cloud] jobs.{missing} doesn't exist yet - syncing without it. "
+              f"Run supabase/schema.sql in Supabase to add it.")
+
+
+def sync_jobs(conn) -> str | None:
     """Push every project changed since the last sync to the jobs table. The cursor
-    only moves after Supabase accepted a batch, so an outage just delays the sync."""
+    only moves after Supabase accepted a batch, so an outage just delays the sync.
+    Returns the error when the sync failed (the worker puts it in its heartbeat),
+    else None."""
     if not enabled():
-        return 0
+        return None
     cursor = int(get_state(conn, SYNC_CURSOR_KEY) or 0)
     sent = 0
+    error = None
     try:
         while True:
             rows = conn.execute(
@@ -150,22 +183,16 @@ def sync_jobs(conn) -> int:
             ).fetchall()
             if not rows:
                 break
-            resp = requests.post(
-                _rest("jobs"),
-                headers=_headers(Prefer="resolution=merge-duplicates,return=minimal"),
-                params={"on_conflict": "id"},
-                data=json.dumps([_job_row(r) for r in rows], default=str),
-                timeout=30,
-            )
-            _check(resp, "jobs sync")
+            _post_jobs([_job_row(r) for r in rows])
             cursor = int(rows[-1]["updated_seq"])
             set_state(conn, SYNC_CURSOR_KEY, str(cursor))
             sent += len(rows)
     except Exception as exc:  # noqa: BLE001 - the poll itself must go on
+        error = str(exc)[:300]
         print(f"[cloud] jobs sync failed, will retry next cycle: {exc}")
     if sent:
         print(f"[cloud] synced {sent} job(s) to Supabase")
-    return sent
+    return error
 
 
 def heartbeat(message: str) -> None:

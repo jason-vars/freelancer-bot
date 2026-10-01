@@ -267,7 +267,14 @@ function stripLeadFromBody(body: string, lead: string): string {
   return body;
 }
 
-const GREETING_LINE = /^(hi|hello|hey|good (?:morning|afternoon|evening)|dear [a-z .'-]{0,24})[,!:.]*$/i;
+// Greetings the bot recognises, in the languages proposals get written in (a
+// Spanish post gets "Hola,"). Without them a non-English greeting looked missing
+// and "Hi," was added in front of it.
+const GREETINGS = "hi|hello|hey|good (?:morning|afternoon|evening)|hola|buen(?:os|as) (?:d[ií]as|tardes|noches)|buenas|bonjour|salut|hallo|guten (?:tag|morgen|abend)|ol[aá]|oi|bom dia|boa (?:tarde|noite)|ciao|salve|buongiorno|hej|hei|hoi|merhaba|namaste";
+// End of a greeting word; \b misses accented endings like "olá".
+const GREETING_END = String.raw`(?=[\s,!.:]|$)`;
+
+const GREETING_LINE = new RegExp(`^(${GREETINGS}|dear [a-z .'-]{0,24})[,!:.]*$`, "i");
 
 function mergeGreetingLine(text: string): string {
   const lines = text.split("\n");
@@ -278,7 +285,8 @@ function mergeGreetingLine(text: string): string {
   return glueGreeting(lines[0].trim(), rest.join("\n"));
 }
 
-const LEAD_GREETING = /^\s*(hi|hello|hey|good (?:morning|afternoon|evening))\b[,!.:]*/i;
+const LEAD_GREETING = new RegExp(String.raw`^\s*(${GREETINGS})${GREETING_END}[,!.:]*`, "i");
+const ENGLISH_GREETING = /^\s*(hi|hello|hey|good (?:morning|afternoon|evening))\b/i;
 const QUESTION_LINE = /^\s*Q\d+\s*[:.)]/i;
 const QUESTION_COUNT = /\b(one|two|three|four|five|\d+)(\s+)questions?\b/i;
 const COUNT_WORDS: Record<number, string> = { 1: "one", 2: "two", 3: "three", 4: "four", 5: "five" };
@@ -322,6 +330,8 @@ function glueGreeting(greeting: string, text: string): string {
   const rest = sp >= 0 ? text.slice(sp + 1) : "";
   const word = first.replace(/[^\p{L}\p{N}_'’]/gu, "");
   const keep = !word || !greeting.trim().endsWith(",") // "...developer." -> new sentence
+    // German capitalises nouns and the formal "Sie"/"Ihr": never lower-case there.
+    || /^(hallo|guten)\b/i.test(greeting.trim())
     || I_WORDS.has(word.toLowerCase()) || isUpper(word) || capitalisedMidSentence(word, rest);
   if (!keep) first = first[0].toLowerCase() + first.slice(1);
   return `${greeting.trim()} ${first}${sep}${rest}`;
@@ -341,7 +351,7 @@ function capitalisedMidSentence(word: string, text: string): boolean {
 /** Lower-case the word after an inline 'Hi,' the model wrote itself
  *  ("Hi, You need ..." -> "Hi, you need ..."). Names and "I" keep their capital. */
 function fixGreetingCase(body: string): string {
-  const m = /^((?:hi|hello|hey|good (?:morning|afternoon|evening)),)[ \t]+(?=\S)/i.exec(body);
+  const m = new RegExp(String.raw`^((?:${GREETINGS}),)[ \t]+(?=\S)`, "i").exec(body);
   if (!m) return body;
   return glueGreeting(m[1], body.slice(m[0].length));
 }
@@ -377,6 +387,10 @@ function enforceTemplateFraming(body: string, template: string): string {
     for (let i = firstQ - 1; i >= 0; i--) if (lines[i].trim()) { prevI = i; break; }
     const n = (s: string) => s.trim().toLowerCase().replace(/[:.]+$/, "").replace(QUESTION_COUNT, "N questions");
     if (prevI !== null && n(lines[prevI]) === n(leadIn)) lines[prevI] = wanted;
+    // The model's own lead-in, e.g. "Tengo dos preguntas:" in a Spanish proposal.
+    else if (prevI !== null && lines[prevI].trimEnd().endsWith(":")) { /* keep it */ }
+    // Written in another language ("Hola, ..."): an English lead-in would stick out.
+    else if (LEAD_GREETING.test(body) && !ENGLISH_GREETING.test(body)) { /* skip it */ }
     else lines.splice(firstQ, 0, wanted);
     body = lines.join("\n");
   }

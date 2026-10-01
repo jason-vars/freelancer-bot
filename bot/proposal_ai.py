@@ -356,8 +356,15 @@ def _strip_lead_from_body(body: str, lead: str) -> str:
     return body
 
 
+# Greetings the bot recognises, in the languages proposals get written in (a
+# Spanish post gets "Hola,"). Without them a non-English greeting looked missing
+# and "Hi," was added in front of it.
+_GREETINGS = r"hi|hello|hey|good (?:morning|afternoon|evening)|hola|buen(?:os|as) (?:d[ií]as|tardes|noches)|buenas|bonjour|salut|hallo|guten (?:tag|morgen|abend)|ol[aá]|oi|bom dia|boa (?:tarde|noite)|ciao|salve|buongiorno|hej|hei|hoi|merhaba|namaste"
+# End of a greeting word; \b misses accented endings like "olá".
+_GREETING_END = r"(?=[\s,!.:]|$)"
+
 _GREETING_LINE = re.compile(
-    r"^(hi|hello|hey|good (?:morning|afternoon|evening)|dear [a-z .'-]{0,24})[,!:.]*$",
+    r"^(" + _GREETINGS + r"|dear [a-z .'-]{0,24})[,!:.]*$",
     re.IGNORECASE,
 )
 
@@ -386,9 +393,10 @@ def _merge_greeting_line(text: str) -> str:
 
 
 _LEAD_GREETING = re.compile(
-    r"^\s*(hi|hello|hey|good (?:morning|afternoon|evening))\b[,!.:]*",
+    r"^\s*(" + _GREETINGS + r")" + _GREETING_END + r"[,!.:]*",
     re.IGNORECASE,
 )
+_ENGLISH_GREETING = re.compile(r"^\s*(hi|hello|hey|good (?:morning|afternoon|evening))\b", re.IGNORECASE)
 _QUESTION_LINE = re.compile(r"^\s*Q\d+\s*[:.)]", re.IGNORECASE)
 _QUESTION_COUNT = re.compile(r"\b(one|two|three|four|five|\d+)(\s+)questions?\b", re.IGNORECASE)
 _COUNT_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
@@ -429,6 +437,8 @@ def _glue_greeting(greeting: str, text: str) -> str:
     first, sep, rest = text.partition(" ")
     word = re.sub(r"[^\w'’]", "", first)
     keep = (not word or not greeting.strip().endswith(",")  # "...developer." -> new sentence
+            # German capitalises nouns and the formal "Sie"/"Ihr": never lower-case there.
+            or re.match(r"(hallo|guten)\b", greeting.strip(), re.IGNORECASE) is not None
             or word.lower() in _I_WORDS or word.isupper()
             or _capitalised_mid_sentence(word, rest))
     if not keep:
@@ -450,7 +460,7 @@ def _capitalised_mid_sentence(word: str, text: str) -> bool:
 def _fix_greeting_case(body: str) -> str:
     """Lower-case the word after an inline 'Hi,' the model wrote itself
     ("Hi, You need ..." -> "Hi, you need ..."). Names and "I" keep their capital."""
-    m = re.match(r"((?:hi|hello|hey|good (?:morning|afternoon|evening)),)[ \t]+(?=\S)", body, re.IGNORECASE)
+    m = re.match(r"((?:" + _GREETINGS + r"),)[ \t]+(?=\S)", body, re.IGNORECASE)
     if not m:
         return body
     return _glue_greeting(m.group(1), body[m.end():])
@@ -495,6 +505,10 @@ def _enforce_template_framing(body: str, template: str) -> str:
         norm = lambda s: _QUESTION_COUNT.sub("N questions", s.strip().lower().rstrip(":."))
         if prev_i is not None and norm(lines[prev_i]) == norm(lead_in):
             lines[prev_i] = wanted  # present — just fix the count
+        elif prev_i is not None and lines[prev_i].rstrip().endswith(":"):
+            pass  # the model's own lead-in, e.g. "Tengo dos preguntas:" in a Spanish proposal
+        elif _LEAD_GREETING.match(body) and not _ENGLISH_GREETING.match(body):
+            pass  # written in another language ("Hola, ..."): an English lead-in would stick out
         else:
             lines.insert(first_q, wanted)
         body = "\n".join(lines)
