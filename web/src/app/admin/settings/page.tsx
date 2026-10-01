@@ -2,12 +2,18 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { BUILTIN_DEFAULTS, GROUPS } from "@/lib/settings/fields";
 import { getAppSettings } from "@/lib/settings/store";
+import { ServerError } from "@/components/ServerError";
 import { SettingsForm } from "@/components/SettingsForm";
 import { saveAppSettings } from "../actions";
 
 export default async function AdminSettingsPage() {
   await requireAdmin();
-  const app = await getAppSettings();
+  let app;
+  try {
+    app = await getAppSettings();
+  } catch (e) {
+    return <ServerError title="Bot settings couldn't load" error={e} />;
+  }
   const all = GROUPS.flatMap((g) => g.fields);
   const secretKeys = all.filter((f) => f.kind === "secret").map((f) => f.key);
   // Secrets never go to the browser; the form only shows whether one is saved.
