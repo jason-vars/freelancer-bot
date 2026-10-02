@@ -120,6 +120,8 @@ export const GROUPS: Group[] = [
     fields: [
       { key: "BOT_AUTO_GENERATE", label: "Auto-generate proposal on open", kind: "bool",
         help: "On = opening a project page makes the userscript write the proposal straight away. Off = it waits for the ✨ Generate button / Alt+G, so browsing costs nothing.", default: "1" },
+      { key: "BOT_AUTO_BID", label: "Auto-place bid", kind: "bool",
+        help: "On = after the userscript fills a bid form, it places the bid by itself after a 5-second countdown (Esc cancels). Off = you press Place bid yourself.", default: "0" },
       { key: "BOT_SEAL_BIDS", label: "Seal bids (free upgrade)", kind: "bool",
         help: "The userscript ticks Freelancer's FREE 'Sealed' upgrade when it fills a bid. Paid upgrades are never touched.", default: "1" },
       { key: "BOT_DEFAULT_PERIOD_DAYS", label: "Default period (days)", kind: "int",

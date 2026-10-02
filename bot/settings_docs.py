@@ -215,8 +215,12 @@ FIELD_DOCS: dict[str, str] = {
     "BOT_SEAL_BIDS": (
         "On (default) = the browser userscript ticks Freelancer's FREE 'Sealed' upgrade "
         "when it fills a bid form, so other freelancers can't see your bid. Only the free "
-        "option is touched; paid upgrades (Sponsored, Highlight) never are. The 🔒 Seal "
-        "button in the userscript panel toggles this same setting."
+        "option is touched; paid upgrades (Sponsored, Highlight) never are."
+    ),
+    "BOT_AUTO_BID": (
+        "On = once the browser userscript has filled a bid form, it places the bid by itself "
+        "after a 5-second countdown (press Esc to cancel). Off (default) = the form is only "
+        "filled and you press Place bid yourself. Placing a bid spends a bid credit."
     ),
     "BOT_DEFAULT_PERIOD_DAYS": (
         "Delivery period (days) offered on a bid when no bid-rule row matches. Default 7."

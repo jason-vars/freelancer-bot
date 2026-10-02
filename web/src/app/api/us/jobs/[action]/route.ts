@@ -12,8 +12,9 @@ export const maxDuration = 60; // one OpenAI call for the proposal, plus pricing
 
 const json = (status: number, body: Record<string, unknown>) => NextResponse.json(body, { status });
 
-// Panel switches the userscript can read and write: query name -> setting key.
-const PANEL_OPTIONS: Record<string, string> = { seal: "BOT_SEAL_BIDS", autogen: "BOT_AUTO_GENERATE" };
+// Panel switches the userscript can write: query name -> setting key. Auto-bid and
+// Seal are only set on the Settings page, so the panel just reads them.
+const PANEL_OPTIONS: Record<string, string> = { autogen: "BOT_AUTO_GENERATE" };
 
 async function panelOptions(userId: string, q: URLSearchParams) {
   const updates: Record<string, string> = {};
@@ -29,7 +30,7 @@ async function panelOptions(userId: string, q: URLSearchParams) {
     });
   }
   const s = await getEffectiveSettings(userId);
-  return json(200, { ok: true, seal: isTrue(s.BOT_SEAL_BIDS), autogen: isTrue(s.BOT_AUTO_GENERATE) });
+  return json(200, { ok: true, seal: isTrue(s.BOT_SEAL_BIDS), autogen: isTrue(s.BOT_AUTO_GENERATE), autobid: isTrue(s.BOT_AUTO_BID) });
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ action: string }> }) {

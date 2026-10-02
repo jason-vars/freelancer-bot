@@ -192,7 +192,9 @@ GROUPS: list[tuple[str, list[Field]]] = [
         Field("BOT_AUTO_GENERATE", "Auto-generate proposal on open", "bool",
               "ON = opening a project page makes the userscript generate the proposal and fill the bid form straight away (one OpenAI call per new project). OFF = it only gets the page ready and waits for the ✨ Generate button / Alt+G, so browsing costs nothing. The panel's ✨ button always works either way.", "1"),
         Field("BOT_SEAL_BIDS", "Seal bids (free upgrade)", "bool",
-              "ON = the browser userscript ticks Freelancer's FREE 'Sealed' upgrade when it fills a bid, hiding your bid from other freelancers. Paid upgrades (Sponsored, Highlight) are never touched. The userscript's 🔒 Seal button writes back to this setting.", "1"),
+              "ON = the browser userscript ticks Freelancer's FREE 'Sealed' upgrade when it fills a bid, hiding your bid from other freelancers. Paid upgrades (Sponsored, Highlight) are never touched.", "1"),
+        Field("BOT_AUTO_BID", "Auto-place bid", "bool",
+              "ON = after the userscript fills a bid form, it places the bid by itself after a 5-second countdown (Esc cancels). OFF = you press Place bid yourself.", "0"),
         Field("BOT_DEFAULT_PERIOD_DAYS", "Default period (days)", "int", "Delivery period offered on bids (when no rule matches).", "7"),
         Field("BOT_DEFAULT_MILESTONE_PERCENT", "Default milestone %", "int", "Milestone percentage offered.", "50"),
         Field("BOT_HOURLY_RATE", "Hourly rate", "text",
@@ -1360,17 +1362,18 @@ def _job_detail(project_id: int) -> tuple[int, dict]:
     return 200, detail
 
 
-# Panel toggles the userscript can read AND write: query name -> env var.
-_PANEL_OPTIONS = {"seal": "BOT_SEAL_BIDS", "autogen": "BOT_AUTO_GENERATE"}
+# Panel toggles the userscript can write: query name -> env var. Auto-bid and Seal
+# are only set on the Settings page, so the panel just reads them.
+_PANEL_OPTIONS = {"autogen": "BOT_AUTO_GENERATE"}
 _TRUEISH = ("1", "true", "on", "yes")
 
 
 def _panel_options(sets: dict[str, str]) -> tuple[int, dict]:
     """Read (``sets`` empty) or write the userscript's panel switches.
 
-    Backs the panel's 🔒 Seal and ✨ Auto buttons so they and the Settings page can't
-    disagree: a button writes .env exactly like the settings form does, and the reply
-    always reports the stored values."""
+    Backs the panel's ✨ Auto-gen button so it and the Settings page can't disagree:
+    the button writes .env exactly like the settings form does, and the reply always
+    reports the stored values (auto-bid and seal too, which only Settings changes)."""
     from .config import load_settings
     from .env_store import update_env
 
@@ -1382,7 +1385,8 @@ def _panel_options(sets: dict[str, str]) -> tuple[int, dict]:
         s = load_settings()
     except Exception as exc:
         return 400, {"ok": False, "message": f"Config error: {exc}"}
-    return 200, {"ok": True, "seal": bool(s.seal_bids), "autogen": bool(s.auto_generate)}
+    return 200, {"ok": True, "seal": bool(s.seal_bids), "autogen": bool(s.auto_generate),
+                 "autobid": bool(s.auto_bid)}
 
 
 def _job_text(project_id: int) -> tuple[int, dict]:
@@ -1680,6 +1684,7 @@ def _generate_for_job(project_id: int, client_country: str | None = None) -> tup
         # and a change on the Settings page applies to the very next fill.
         "seal": bool(s.seal_bids),
         "autogen": bool(s.auto_generate),
+        "autobid": bool(s.auto_bid),
     }
 
 
