@@ -328,7 +328,7 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
     body: {
       ok: true, id: job.id, proposal, amount, period, currency: job.currency ?? "",
       milestone: int(s.BOT_DEFAULT_MILESTONE_PERCENT, 50),
-      seal: isTrue(s.BOT_SEAL_BIDS), autogen: isTrue(s.BOT_AUTO_GENERATE),
+      seal: isTrue(s.BOT_SEAL_BIDS), autogen: isTrue(s.BOT_AUTO_GENERATE), autobid: isTrue(s.BOT_AUTO_BID),
     },
   };
 }

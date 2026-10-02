@@ -215,6 +215,8 @@ class Settings:
     # Tick Freelancer's FREE "Sealed" upgrade (hides your bid from other freelancers)
     # when the browser userscript fills a bid form. Paid upgrades are never touched.
     seal_bids: bool
+    # The userscript places the filled bid by itself (after a cancellable countdown).
+    auto_bid: bool
 
     # OpenAI
     openai_api_key: str | None
@@ -353,6 +355,7 @@ def load_settings() -> Settings:
         auto_generate=_get_bool("BOT_AUTO_GENERATE", True),
         # Seal bids placed through the userscript (free upgrade; default on).
         seal_bids=_get_bool("BOT_SEAL_BIDS", True),
+        auto_bid=_get_bool("BOT_AUTO_BID", False),
         openai_api_key=os.getenv("OPENAI_API_KEY"),
         openai_model=os.getenv("OPENAI_MODEL", "gpt-5.2-mini"),
         webhook_secret=os.getenv("WEBHOOK_SECRET"),

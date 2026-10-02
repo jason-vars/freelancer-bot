@@ -1,16 +1,18 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.17.0
-// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; toggle with Alt+A). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
+// @version      1.20.0
+// @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
+// @match        http://127.0.0.1:8765/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setClipboard
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_openInTab
 // @connect      127.0.0.1
 // @connect      localhost
 // @updateURL    http://127.0.0.1:8765/userscript.user.js
@@ -24,9 +26,27 @@
 (function () {
   "use strict";
 
+  // ── On the bot's own website (the @match on its address): job TITLES open in a
+  // BACKGROUND tab, so you stay on the Jobs list (the "Open on Freelancer" button
+  // still opens and switches to the tab). A web page can't do that by itself
+  // (target=_blank always switches to the new tab); Tampermonkey's GM_openInTab can.
+  // Links opt in with data-fbb-bg-open. The page's own click handler still runs (it
+  // marks the job opened); only the browser's default "open and switch" is replaced.
+  // Ctrl/Shift/middle-click keep the browser's own behaviour.
+  if (!/\/projects\//.test(location.pathname)) {
+    document.addEventListener("click", (e) => {
+      const a = e.target && e.target.closest ? e.target.closest("a[data-fbb-bg-open]") : null;
+      if (!a || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      try { GM_openInTab(a.href, { active: false, insert: true }); }
+      catch (err) { window.open(a.href, "_blank", "noopener"); }
+    }, true);
+    return;
+  }
+
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.17.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.20.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -56,9 +76,10 @@
   // spends a bid credit and is visible to the client, so there's always a window to
   // read the proposal and hit Esc before it submits. Set to 0 to submit immediately.
   const AUTO_BID_DELAY_MS = 5000;
-  // Default for the auto-bid toggle the first time the script runs in a browser
-  // (afterwards the panel button / Alt+A decides, persisted in localStorage).
-  const AUTO_BID_DEFAULT = true;
+  // Fallback for auto-bid until the bot answers (it owns the real value in
+  // BOT_AUTO_BID on the Settings page). OFF: placing a bid spends a credit, so an
+  // unknown setting never submits one.
+  const AUTO_BID_DEFAULT = false;
   // Fallback for the Sealed toggle until the bot answers (it owns the real value in
   // BOT_SEAL_BIDS on the Settings page). ON = tick Freelancer's FREE "Sealed" upgrade,
   // which hides your bid from other freelancers. Paid upgrades are never touched.
@@ -154,8 +175,6 @@
   // ── Floating control panel: status + manual buttons (always available, even
   // when auto-fill couldn't find the bid box on a slow page) ─────────────────
   let statusEl = null;
-  let autoBtn = null;
-  let sealBtn = null;
   let genBtn = null;
   function mkBtn(label, color, onClick) {
     const b = document.createElement("button");
@@ -184,26 +203,24 @@
     row.style.cssText = "display:flex;gap:8px;";
     row.appendChild(mkBtn("✨ Generate", "#3b82f6", () => run(true)));
     row.appendChild(mkBtn("🚀 Place bid", "#e0218a", () => placeBid(0)));
-    autoBtn = mkBtn("", "#334155", () => setAutoBid(!autoBidOn()));
-    sealBtn = mkBtn("", "#334155", () => setSeal(!sealOn()));
+    // Auto-bid and Seal are set on the bot's Settings page (My settings › Bid
+    // defaults), not here: the panel only reads them. Their spot holds a jump to
+    // Freelancer's own Place Bid button, which sits far below the proposal box.
     genBtn = mkBtn("", "#334155", () => setAutoGen(!autoGenOn()));
-    paintAutoBtn();
-    paintSealBtn();
     paintGenBtn();
-    const autoRow = document.createElement("div");
-    autoRow.style.cssText = "display:flex;gap:8px;";
-    autoRow.appendChild(autoBtn);
-    autoRow.appendChild(sealBtn);
+    const navRow = document.createElement("div");
+    navRow.style.cssText = "display:flex;gap:8px;";
+    navRow.appendChild(mkBtn("⬇ Go to Place bid", "#0f766e", () => scrollToPlaceBid()));
     const copyRow = document.createElement("div");
     copyRow.style.cssText = "display:flex;gap:8px;";
     copyRow.appendChild(genBtn);
     copyRow.appendChild(mkBtn("📋 Copy job", "#7c3aed", () => copyJobText()));
     const hint = document.createElement("div");
     hint.style.cssText = "font-weight:400;font-size:11px;color:#7a85a6;";
-    hint.textContent = "Alt+G generate · Alt+B bid · Alt+S seal · Alt+A auto-bid · Alt+N auto-gen · Alt+C copy";
+    hint.textContent = "Alt+G generate · Alt+B bid · Alt+J go to bid · Alt+N auto-gen · Alt+C copy";
     panel.appendChild(statusEl);
     panel.appendChild(row);
-    panel.appendChild(autoRow);
+    panel.appendChild(navRow);
     panel.appendChild(copyRow);
     panel.appendChild(hint);
     document.body.appendChild(panel);
@@ -220,32 +237,26 @@
     statusEl.textContent = "🤖 " + text;
   }
 
-  // ── Auto-bid toggle (persisted per browser, not per tab) ───────────────────
-  const AUTO_KEY = "fbb:autobid";
+  // ── Auto-bid (Settings page: BOT_AUTO_BID) ─────────────────────────────────
+  // ON = a filled form submits itself after the countdown. Set on the bot's Settings
+  // page; every reply carries the current value and localStorage only mirrors it.
+  // A new key on purpose: the old per-browser toggle ("fbb:autobid") must not turn
+  // auto-bid on before the bot has answered.
+  const AUTO_KEY = "fbb:autobid-setting";
   function autoBidOn() {
     try {
       const v = window.localStorage.getItem(AUTO_KEY);
       return v === null ? AUTO_BID_DEFAULT : v === "1";
     } catch (e) { return AUTO_BID_DEFAULT; }
   }
-  function setAutoBid(on) {
+  function cacheAutoBid(on) {
     try { window.localStorage.setItem(AUTO_KEY, on ? "1" : "0"); } catch (e) {}
-    if (!on) cancelAutoBid("Auto-bid off — bids are placed only when you say so.");
-    paintAutoBtn();
-  }
-  function paintAutoBtn() {
-    if (!autoBtn) return;
-    const on = autoBidOn();
-    autoBtn.textContent = on ? "🤖 Auto-bid: ON" : "✋ Auto-bid: OFF";
-    autoBtn.style.background = on ? "#166534" : "#334155";
+    if (!on) cancelAutoBid(null);
   }
 
-  // ── Sealed toggle (owned by the bot's Settings page: BOT_SEAL_BIDS) ────────
-  // ON = every fill ticks the FREE Sealed upgrade. The panel button and the Settings
-  // page are the SAME switch: the button writes .env through /jobs/seal, and every
-  // proposal response carries the current value back. localStorage only mirrors it,
-  // so the buttons still show the right state before the bot answers (or if it's
-  // down). Flipping it also applies to the form already open.
+  // ── Sealed (Settings page: BOT_SEAL_BIDS) ─────────────────────────────────
+  // ON = every fill ticks the FREE Sealed upgrade. Set on the bot's Settings page;
+  // every proposal response carries the current value, localStorage only mirrors it.
   const SEAL_KEY = "fbb:seal";
   function sealOn() {
     try {
@@ -256,7 +267,6 @@
   // Remember what the bot told us, without asking it again.
   function cacheSeal(on) {
     try { window.localStorage.setItem(SEAL_KEY, on ? "1" : "0"); } catch (e) {}
-    paintSealBtn();
   }
   // Read the panel switches from the bot (no args) or change one of them:
   // optionsRequest({seal: true}) / optionsRequest({autogen: false}). Resolves with
@@ -282,24 +292,11 @@
       });
     });
   }
-  // Paint both toggles from one bot reply.
+  // Remember every setting one bot reply carries.
   function cacheOptions(d) {
     if (typeof d.seal === "boolean") cacheSeal(d.seal);
     if (typeof d.autogen === "boolean") cacheAutoGen(d.autogen);
-  }
-  async function setSeal(on) {
-    cacheSeal(on);                 // paint immediately; the bot confirms below
-    const applied = applySealed(on);
-    const here = applied
-      ? (on ? " — bid sealed." : " — unticked on this bid.")
-      : (on ? " — will tick it when the form fills." : " — the free upgrade won't be ticked.");
-    try {
-      const d = await optionsRequest({ seal: on });
-      cacheOptions(d);
-      badge("Seal " + (d.seal ? "ON" : "OFF") + " (saved to Settings)" + here, "info");
-    } catch (msg) {
-      badge("Seal " + (on ? "ON" : "OFF") + " for this browser only — couldn't save to Settings: " + msg, "err");
-    }
+    if (typeof d.autobid === "boolean") cacheAutoBid(d.autobid);
   }
 
   // ── Auto-generate toggle (Settings page: BOT_AUTO_GENERATE) ────────────────
@@ -337,12 +334,6 @@
     const on = autoGenOn();
     genBtn.textContent = on ? "✨ Auto-gen: ON" : "✋ Auto-gen: OFF";
     genBtn.style.background = on ? "#166534" : "#334155";
-  }
-  function paintSealBtn() {
-    if (!sealBtn) return;
-    const on = sealOn();
-    sealBtn.textContent = on ? "🔒 Seal: ON" : "🔓 Seal: OFF";
-    sealBtn.style.background = on ? "#166534" : "#334155";
   }
 
   // ── Value setter that frameworks (Angular/React) actually notice ──────────
@@ -469,6 +460,64 @@
           /(place|update|submit)\s*bid/i.test((b.textContent || "").trim())
       ) || null
     );
+  }
+  // The element that actually scrolls for `el`: the page itself, or an inner panel
+  // with its own scrollbar (some layouts scroll a container, not the window).
+  function scrollerFor(el) {
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const oy = getComputedStyle(p).overflowY;
+      if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight + 4) return p;
+    }
+    return null;
+  }
+
+  // Scroll `el` to the middle of the screen the way a person does: a short pause,
+  // then a glide that speeds up and eases out, its length growing with the distance
+  // (with a little jitter so no two scrolls are identical) — not an instant jump.
+  function humanScroll(el) {
+    const box = scrollerFor(el);
+    const rect = el.getBoundingClientRect();
+    const viewTop = box ? box.getBoundingClientRect().top : 0;
+    const viewH = box ? box.clientHeight : window.innerHeight;
+    const start = box ? box.scrollTop : window.scrollY;
+    const dist = rect.top - viewTop - (viewH - rect.height) / 2;
+    if (Math.abs(dist) < 8) return Promise.resolve();
+    const ms = Math.min(1800, 450 + Math.abs(dist) * 0.55) * (0.85 + Math.random() * 0.3);
+    const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+    const set = (y) => (box ? (box.scrollTop = y) : window.scrollTo(0, y));
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const t0 = performance.now();
+        const step = (now) => {
+          const p = Math.min(1, (now - t0) / ms);
+          set(start + dist * ease(p));
+          if (p < 1) requestAnimationFrame(step);
+          else resolve();
+        };
+        requestAnimationFrame(step);
+      }, 250 + Math.random() * 350);
+    });
+  }
+
+  // Freelancer's submit button sits far below the proposal box. Glides it to the
+  // middle of the screen and flashes it so it's easy to spot; a still-disabled
+  // button (form not valid yet) is shown too. Used by ⬇ Go to Place bid / Alt+J,
+  // and after a fill (quiet: the status line keeps saying what was filled).
+  async function scrollToPlaceBid(quiet) {
+    const btn = Array.from(document.querySelectorAll('button, a, [role="button"]')).find(
+      (b) => b.offsetParent !== null && !b.closest("[data-fbb-panel]") &&
+        /(place|update|submit)\s*bid/i.test((b.textContent || "").trim())
+    );
+    const target = btn || findProposalTextarea();
+    if (!target) { if (!quiet) badge("No bid form on this page.", "info"); return; }
+    await humanScroll(target);
+    if (btn) {
+      const prev = btn.style.boxShadow;
+      btn.style.boxShadow = "0 0 0 4px #22d3ee";
+      setTimeout(() => { btn.style.boxShadow = prev; }, 1800);
+    } else if (!quiet) {
+      badge("Place Bid button not shown yet — jumped to the proposal box.", "info");
+    }
   }
   // Resolve with the button as soon as it exists AND is clickable, or null on timeout.
   // timeoutMs = 0 → a single immediate check (what the manual button/Alt+B does).
@@ -829,10 +878,18 @@
         badge("You started editing — kept your text. Press ✨ Generate / Alt+G to replace it.", "info");
         return;
       }
+      // A fresh reply carries the current Settings (auto-bid, seal); a copy cached
+      // earlier in this tab may predate a change, so it doesn't overwrite them.
+      if (!cached) cacheOptions(data);
       const filled = fillForm(data);
       // Only auto-place when the proposal itself landed — without it the bid would be
       // submitted empty (or with whatever was in the box before).
-      if (filled.includes("proposal")) scheduleAutoBid("Filled: " + filled.join(", "));
+      if (filled.includes("proposal")) {
+        scheduleAutoBid("Filled: " + filled.join(", "));
+        // Bring the Place Bid button into view, like you'd scroll down after
+        // reading the proposal. Only if this run still owns the page.
+        if (!superseded()) void scrollToPlaceBid(true);
+      }
       else badge("Got proposal but couldn't find the bid box.", "err");
     } catch (msg) {
       badge(String(msg), "err");
@@ -851,15 +908,9 @@
     const k = (e.key || "").toLowerCase();
     if (k === "g") { e.preventDefault(); run(true); }
     else if (k === "b") { e.preventDefault(); placeBid(0); }
-    else if (k === "s") { e.preventDefault(); setSeal(!sealOn()); }
+    else if (k === "j") { e.preventDefault(); scrollToPlaceBid(); }
     else if (k === "c") { e.preventDefault(); copyJobText(); }
     else if (k === "n") { e.preventDefault(); setAutoGen(!autoGenOn()); }
-    else if (k === "a") {
-      e.preventDefault();
-      const on = !autoBidOn();
-      setAutoBid(on);
-      if (on) badge("Auto-bid ON — a filled form submits after " + Math.ceil(AUTO_BID_DELAY_MS / 1000) + "s.", "info");
-    }
   });
 
   // Build the panel immediately so the buttons exist even if the bid box never
