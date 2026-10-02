@@ -132,7 +132,7 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
   return (
     <li className={`card p-4 transition-shadow ${fresh ? "ring-2 ring-accent" : ""} ${opened && !expanded && !fresh ? "opacity-75" : ""}`}>
       <div className="flex flex-wrap items-start gap-x-3 gap-y-1">
-        <a href={job.url} target="_blank" rel="noreferrer" onClick={markOpened}
+        <a href={job.url} target="_blank" rel="noreferrer" onClick={markOpened} data-fbb-bg-open
           className="min-w-0 flex-1 font-medium hover:text-accent">
           {job.title}
         </a>

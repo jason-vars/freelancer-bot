@@ -1,16 +1,18 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.18.0
+// @version      1.20.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
+// @match        http://127.0.0.1:8765/*
 // @run-at       document-idle
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setClipboard
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
+// @grant        GM_openInTab
 // @connect      127.0.0.1
 // @connect      localhost
 // @updateURL    http://127.0.0.1:8765/userscript.user.js
@@ -24,9 +26,27 @@
 (function () {
   "use strict";
 
+  // ── On the bot's own website (the @match on its address): job TITLES open in a
+  // BACKGROUND tab, so you stay on the Jobs list (the "Open on Freelancer" button
+  // still opens and switches to the tab). A web page can't do that by itself
+  // (target=_blank always switches to the new tab); Tampermonkey's GM_openInTab can.
+  // Links opt in with data-fbb-bg-open. The page's own click handler still runs (it
+  // marks the job opened); only the browser's default "open and switch" is replaced.
+  // Ctrl/Shift/middle-click keep the browser's own behaviour.
+  if (!/\/projects\//.test(location.pathname)) {
+    document.addEventListener("click", (e) => {
+      const a = e.target && e.target.closest ? e.target.closest("a[data-fbb-bg-open]") : null;
+      if (!a || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+      e.preventDefault();
+      try { GM_openInTab(a.href, { active: false, insert: true }); }
+      catch (err) { window.open(a.href, "_blank", "noopener"); }
+    }, true);
+    return;
+  }
+
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.18.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.20.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -441,22 +461,61 @@
       ) || null
     );
   }
-  // The ⬇ Go to Place bid button: Freelancer's submit button sits far below the
-  // proposal box. Scrolls it to the middle of the screen and flashes it so it's
-  // easy to spot; a still-disabled button (form not valid yet) is shown too.
-  function scrollToPlaceBid() {
+  // The element that actually scrolls for `el`: the page itself, or an inner panel
+  // with its own scrollbar (some layouts scroll a container, not the window).
+  function scrollerFor(el) {
+    for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+      const oy = getComputedStyle(p).overflowY;
+      if ((oy === "auto" || oy === "scroll") && p.scrollHeight > p.clientHeight + 4) return p;
+    }
+    return null;
+  }
+
+  // Scroll `el` to the middle of the screen the way a person does: a short pause,
+  // then a glide that speeds up and eases out, its length growing with the distance
+  // (with a little jitter so no two scrolls are identical) — not an instant jump.
+  function humanScroll(el) {
+    const box = scrollerFor(el);
+    const rect = el.getBoundingClientRect();
+    const viewTop = box ? box.getBoundingClientRect().top : 0;
+    const viewH = box ? box.clientHeight : window.innerHeight;
+    const start = box ? box.scrollTop : window.scrollY;
+    const dist = rect.top - viewTop - (viewH - rect.height) / 2;
+    if (Math.abs(dist) < 8) return Promise.resolve();
+    const ms = Math.min(1800, 450 + Math.abs(dist) * 0.55) * (0.85 + Math.random() * 0.3);
+    const ease = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+    const set = (y) => (box ? (box.scrollTop = y) : window.scrollTo(0, y));
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const t0 = performance.now();
+        const step = (now) => {
+          const p = Math.min(1, (now - t0) / ms);
+          set(start + dist * ease(p));
+          if (p < 1) requestAnimationFrame(step);
+          else resolve();
+        };
+        requestAnimationFrame(step);
+      }, 250 + Math.random() * 350);
+    });
+  }
+
+  // Freelancer's submit button sits far below the proposal box. Glides it to the
+  // middle of the screen and flashes it so it's easy to spot; a still-disabled
+  // button (form not valid yet) is shown too. Used by ⬇ Go to Place bid / Alt+J,
+  // and after a fill (quiet: the status line keeps saying what was filled).
+  async function scrollToPlaceBid(quiet) {
     const btn = Array.from(document.querySelectorAll('button, a, [role="button"]')).find(
       (b) => b.offsetParent !== null && !b.closest("[data-fbb-panel]") &&
         /(place|update|submit)\s*bid/i.test((b.textContent || "").trim())
     );
     const target = btn || findProposalTextarea();
-    if (!target) { badge("No bid form on this page.", "info"); return; }
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (!target) { if (!quiet) badge("No bid form on this page.", "info"); return; }
+    await humanScroll(target);
     if (btn) {
       const prev = btn.style.boxShadow;
       btn.style.boxShadow = "0 0 0 4px #22d3ee";
       setTimeout(() => { btn.style.boxShadow = prev; }, 1800);
-    } else {
+    } else if (!quiet) {
       badge("Place Bid button not shown yet — jumped to the proposal box.", "info");
     }
   }
@@ -825,7 +884,12 @@
       const filled = fillForm(data);
       // Only auto-place when the proposal itself landed — without it the bid would be
       // submitted empty (or with whatever was in the box before).
-      if (filled.includes("proposal")) scheduleAutoBid("Filled: " + filled.join(", "));
+      if (filled.includes("proposal")) {
+        scheduleAutoBid("Filled: " + filled.join(", "));
+        // Bring the Place Bid button into view, like you'd scroll down after
+        // reading the proposal. Only if this run still owns the page.
+        if (!superseded()) void scrollToPlaceBid(true);
+      }
       else badge("Got proposal but couldn't find the bid box.", "err");
     } catch (msg) {
       badge(String(msg), "err");

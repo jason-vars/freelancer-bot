@@ -9,6 +9,8 @@ export function GET(req: Request) {
   const body = USERSCRIPT_SOURCE
     .replace(/^\/\/ @name(\s+)(.*)$/m, (_m, sp, name) => `// @name${sp}${name} (hosted)`)
     .replace(/^\/\/ @connect(\s+)127\.0\.0\.1$/m, (_m, sp) => `// @connect${sp}${host}`)
+    // Runs on this site too, so job links open in a background tab.
+    .replace(/^\/\/ @match(\s+)http:\/\/127\.0\.0\.1:8765\/\*$/m, (_m, sp) => `// @match${sp}${origin}/*`)
     .replace(/^\/\/ @updateURL(\s+).*$/m, (_m, sp) => `// @updateURL${sp}${origin}/userscript.user.js`)
     .replace(/^\/\/ @downloadURL(\s+).*$/m, (_m, sp) => `// @downloadURL${sp}${origin}/userscript.user.js`)
     .replace(/const BOT_BASE = "http:\/\/127\.0\.0\.1:8765";/, `const BOT_BASE = "${origin}/api/us";`)
