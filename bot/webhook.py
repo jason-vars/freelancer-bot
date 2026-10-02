@@ -141,6 +141,12 @@ def choose_bid_from_rules(
     except (TypeError, ValueError):
         return None
     code = (currency or "").strip().upper()
+    # Neighbouring rows share an edge (250-750, 750-1500), so a $250-750 job's top
+    # (750) sits in both. Prefer the row that holds the job's WHOLE range, so the
+    # answer doesn't depend on the order the rows were typed in; fall back to the
+    # first row holding the top for budgets that straddle rows.
+    lo_job = float(budget_min) if budget_min is not None else budget
+    usable = []
     for rule in rules:
         if not isinstance(rule, dict):
             continue
@@ -155,8 +161,13 @@ def choose_bid_from_rules(
             delivery = math.ceil(float(rule.get("delivery")))
         except (TypeError, ValueError):
             continue
+        usable.append((lo, hi, bid, max(1, delivery)))
+    for lo, hi, bid, delivery in usable:
+        if lo <= lo_job and budget <= hi:
+            return bid, delivery
+    for lo, hi, bid, delivery in usable:
         if lo <= budget <= hi:
-            return bid, max(1, delivery)
+            return bid, delivery
     return None
 
 

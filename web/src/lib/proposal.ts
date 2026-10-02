@@ -245,7 +245,7 @@ export async function generateProposal(apiKey: string, model: string, d: Proposa
   if (d.prefixInline) body = mergeGreetingLine(body);
   body = enforceTemplateFraming(body, template);
   // "Hi, You need ..." -> "Hi, you need ..." however the greeting got there.
-  body = fixGreetingCase(body);
+  body = fixGreetingCase(localizeBodyGreeting(body));
   return assemble(stripLeadFromBody(body, lead), {
     lead, prefix: d.prefix, suffix: d.suffix,
     signature: d.includeName ? signature : "", prefixInline: d.prefixInline,
@@ -319,6 +319,52 @@ function escapeRe(s: string): string {
 // Python's str.isupper(): has a cased letter and no lower-case one.
 const isUpper = (w: string) => w === w.toUpperCase() && w !== w.toLowerCase();
 
+// A post in another language gets a proposal in that language, and an English "Hi,"
+// on top of it reads as a slip. These words identify the language (each list holds
+// words common in that language and rare in the others), and the map gives the
+// greeting to use instead.
+const LANG_WORDS: Record<string, Set<string>> = {
+  en: new Set("the and to of is for with you your this that will we it be on are".split(" ")),
+  es: new Set("el los las del que y para con por una sin es lo como pero más está puedo".split(" ")),
+  pt: new Set("não você com uma os das dos em é ao pelo pela isso também são".split(" ")),
+  fr: new Set("le les des et est pour avec vous je pas sur dans qui être".split(" ")),
+  it: new Set("il gli che per sono non della delle questo anche più".split(" ")),
+  de: new Set("der die das und ist nicht mit für ich sie ein eine zu auf wir".split(" ")),
+};
+const LOCAL_GREETING: Record<string, string> = { es: "Hola", pt: "Olá", fr: "Bonjour", it: "Ciao", de: "Hallo" };
+
+/** Rough language of a proposal: en, es, pt, fr, it or de. English unless another
+ *  language clearly wins, so a few borrowed words change nothing. */
+function language(text: string): string {
+  const words = (text || "").toLowerCase().match(/[\p{L}\p{N}_]+/gu) ?? [];
+  let best = "en";
+  let bestScore = -1;
+  const scores: Record<string, number> = {};
+  for (const [lang, vocab] of Object.entries(LANG_WORDS)) {
+    scores[lang] = words.filter((w) => vocab.has(w)).length;
+    if (scores[lang] > bestScore) { best = lang; bestScore = scores[lang]; }
+  }
+  return best !== "en" && bestScore >= 3 && bestScore > scores.en ? best : "en";
+}
+
+/** 'Hi,' -> 'Hola,' when `body` is Spanish (and so on). Only an English hi/hello/hey
+ *  is swapped, keeping its punctuation; anything else is returned as is. */
+function localizeGreeting(greeting: string, body: string): string {
+  const m = /^\s*(hi|hello|hey)\b([\s\S]*)$/i.exec(greeting || "");
+  const local = m ? LOCAL_GREETING[language(body)] : undefined;
+  return m && local ? local + m[2] : greeting;
+}
+
+/** The model wrote an English greeting on a non-English proposal (because the
+ *  prompt says 'start with Hi,'): 'Hi, el punto ...' -> 'Hola, el punto ...'. */
+function localizeBodyGreeting(body: string): string {
+  const m = /^\s*((?:hi|hello|hey)\b[,!.:]*)/i.exec(body);
+  if (!m) return body;
+  const rest = body.slice(m[0].length);
+  const local = localizeGreeting(m[1], rest);
+  return local !== m[1] ? local + rest : body;
+}
+
 /** 'Hi,' + 'Your colonies need ...' -> 'Hi, your colonies need ...'. The old first
  *  word is lower-cased unless it is "I..." / an acronym or a proper noun (the same
  *  capitalised word appears again mid-sentence, e.g. "Shopify"). */
@@ -362,7 +408,9 @@ function enforceTemplateFraming(body: string, template: string): string {
   const tpl = template.trim();
   const g = LEAD_GREETING.exec(tpl);
   if (g) {
-    const greeting = g[0].trim();
+    // In the proposal's own language: an English template still opens a Spanish
+    // proposal with "Hola,".
+    const greeting = localizeGreeting(g[0].trim(), body);
     // The template opens "Hi, <sentence>" on ONE line (not "Hi," alone).
     const inline = Boolean(tpl.split("\n", 1)[0].slice(g[0].length).trim());
     const lines = body.split("\n");
@@ -371,7 +419,8 @@ function enforceTemplateFraming(body: string, template: string): string {
       // join it to the first sentence the way the template does.
       const rest = lines.slice(1);
       while (rest.length && !rest[0].trim()) rest.shift();
-      if (rest.length) body = glueGreeting(lines[0].trim(), rest.join("\n"));
+      const restText = rest.join("\n");
+      if (rest.length) body = glueGreeting(localizeGreeting(lines[0].trim(), restText), restText);
     } else if (!LEAD_GREETING.test(body)) {
       body = glueGreeting(greeting, body);
     }
@@ -401,7 +450,8 @@ function stripLeadingGreeting(body: string, prefix: string): string {
   const n = (s: string) => (s || "").trim().replace(/[\s,!:.-]+$/, "").toLowerCase();
   const greeting = n(prefix);
   if (!greeting || !GREETING_LINE.test(greeting)) return body;
-  const m = new RegExp("^" + escapeRe(greeting) + "\\b[\\s,!:.-]*", "i").exec(body);
+  // GREETING_END, not \b: \b misses accented endings like "olá".
+  const m = new RegExp("^" + escapeRe(greeting) + GREETING_END + "[\\s,!:.-]*", "i").exec(body);
   if (!m) return body;
   const rest = body.slice(m[0].length).trimStart();
   if (!rest) return body;
@@ -417,11 +467,14 @@ function assemble(body: string, o: { lead: string; prefix: string; suffix: strin
   if (o.lead.trim()) out.push(`"${o.lead.trim().replace(/^["']+|["']+$/g, "").trim()}"`);
   body = body.trim();
   if (o.prefix.trim()) {
-    body = stripLeadingGreeting(body, o.prefix);
+    // "Text at start" = "Hi," becomes "Hola," on a Spanish proposal. Localized first,
+    // so the duplicate check below compares like with like.
+    const prefix = localizeGreeting(o.prefix, body);
+    body = stripLeadingGreeting(body, prefix);
     if (o.prefixInline) {
-      body = glueGreeting(o.prefix, body);
+      body = glueGreeting(prefix, body);
     } else {
-      out.push(o.prefix.trim());
+      out.push(prefix.trim());
     }
   }
   out.push(body);
