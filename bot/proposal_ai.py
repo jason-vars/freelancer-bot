@@ -318,7 +318,7 @@ def generate_proposal_openai(api_key: str, model: str, data: ProposalInput) -> s
     # "I have two questions:" lead-in) — restore whatever THIS template has.
     body = _enforce_template_framing(body, template)
     # "Hi, You need ..." -> "Hi, you need ..." however the greeting got there.
-    body = _fix_greeting_case(body)
+    body = _fix_greeting_case(_localize_body_greeting(body))
     # Client-required verification word (anti-AI check) goes ABOVE everything else.
     return _assemble(
         _strip_lead_from_body(body, lead),
@@ -428,6 +428,50 @@ def _with_question_count(lead_in: str, n: int) -> str:
     return _QUESTION_COUNT.sub(repl, lead_in, count=1)
 
 
+# A post in another language gets a proposal in that language, and an English "Hi,"
+# on top of it reads as a slip. These words identify the language (each list holds
+# words common in that language and rare in the others), and the map gives the
+# greeting to use instead.
+_LANG_WORDS = {
+    "en": set("the and to of is for with you your this that will we it be on are".split()),
+    "es": set("el los las del que y para con por una sin es lo como pero más está puedo".split()),
+    "pt": set("não você com uma os das dos em é ao pelo pela isso também são".split()),
+    "fr": set("le les des et est pour avec vous je pas sur dans qui être".split()),
+    "it": set("il gli che per sono non della delle questo anche più".split()),
+    "de": set("der die das und ist nicht mit für ich sie ein eine zu auf wir".split()),
+}
+_LOCAL_GREETING = {"es": "Hola", "pt": "Olá", "fr": "Bonjour", "it": "Ciao", "de": "Hallo"}
+
+
+def _language(text: str) -> str:
+    """Rough language of a proposal: 'en', 'es', 'pt', 'fr', 'it' or 'de'. English
+    unless another language clearly wins, so a few borrowed words change nothing."""
+    words = re.findall(r"\w+", (text or "").lower())
+    scores = {lang: sum(w in vocab for w in words) for lang, vocab in _LANG_WORDS.items()}
+    best = max(scores, key=scores.get)
+    if best != "en" and scores[best] >= 3 and scores[best] > scores["en"]:
+        return best
+    return "en"
+
+
+def _localize_greeting(greeting: str, body: str) -> str:
+    """'Hi,' -> 'Hola,' when ``body`` is Spanish (and so on). Only an English
+    hi/hello/hey is swapped, keeping its punctuation; anything else is returned as is."""
+    m = re.match(r"^\s*(hi|hello|hey)\b(.*)$", greeting or "", re.IGNORECASE | re.DOTALL)
+    local = _LOCAL_GREETING.get(_language(body)) if m else None
+    return f"{local}{m.group(2)}" if local else greeting
+
+
+def _localize_body_greeting(body: str) -> str:
+    """The model wrote an English greeting on a non-English proposal (because the
+    prompt says 'start with Hi,'): 'Hi, el punto ...' -> 'Hola, el punto ...'."""
+    m = re.match(r"^\s*((?:hi|hello|hey)\b[,!.:]*)", body, re.IGNORECASE)
+    if not m:
+        return body
+    local = _localize_greeting(m.group(1), body[m.end():])
+    return local + body[m.end():] if local != m.group(1) else body
+
+
 def _glue_greeting(greeting: str, text: str) -> str:
     """'Hi,' + 'Your colonies need ...' -> 'Hi, your colonies need ...'.
 
@@ -479,7 +523,9 @@ def _enforce_template_framing(body: str, template: str) -> str:
     # 1) Opening greeting ("Hi," in "Hi, I'd trace the flow ...").
     g = _LEAD_GREETING.match(template.strip())
     if g:
-        greeting = g.group(0).strip()
+        # In the proposal's own language: an English template still opens a Spanish
+        # proposal with "Hola,".
+        greeting = _localize_greeting(g.group(0).strip(), body)
         # The template opens "Hi, <sentence>" on ONE line (not "Hi," alone).
         inline = bool(template.strip().split("\n", 1)[0][g.end():].strip())
         lines = body.split("\n")
@@ -490,7 +536,8 @@ def _enforce_template_framing(body: str, template: str) -> str:
             while rest and not rest[0].strip():
                 rest.pop(0)
             if rest:
-                body = _glue_greeting(lines[0].strip(), "\n".join(rest))
+                rest_text = "\n".join(rest)
+                body = _glue_greeting(_localize_greeting(lines[0].strip(), rest_text), rest_text)
         elif not _LEAD_GREETING.match(body):
             body = _glue_greeting(greeting, body)
 
@@ -570,6 +617,9 @@ def _assemble(body: str, *, lead: str = "", prefix: str, suffix: str, signature:
         out.append(f'"{lead.strip().strip(chr(34)).strip(chr(39)).strip()}"')
     body = body.strip()
     if (prefix or "").strip():
+        # "Text at start" = "Hi," becomes "Hola," on a Spanish proposal. Localized
+        # first, so the duplicate check below compares like with like.
+        prefix = _localize_greeting(prefix, body)
         body = _strip_leading_greeting(body, prefix)
         if prefix_inline:
             # Greeting glued to the first sentence: "Hi, I am a senior ...". The model
