@@ -30,8 +30,9 @@ function beep() {
   }
 }
 
-export function JobFeed({ jobs, isAdmin, live }: { jobs: JobRow[]; isAdmin: boolean; live: boolean }) {
+export function JobFeed({ jobs, isAdmin, live, markAll = false }: { jobs: JobRow[]; isAdmin: boolean; live: boolean; markAll?: boolean }) {
   const router = useRouter();
+  const [marking, setMarking] = useState(false);
   const [prevJobs, setPrevJobs] = useState(jobs);
   const [known, setKnown] = useState(() => new Set(jobs.map((j) => j.id)));
   const [fresh, setFresh] = useState<Set<number>>(() => new Set());
@@ -80,20 +81,22 @@ export function JobFeed({ jobs, isAdmin, live }: { jobs: JobRow[]; isAdmin: bool
     };
   }, [live, alerts, router]);
 
-  // Bad marks are shared, so another user's mark should reach this page at once, not
-  // at the next poll. Realtime pushes every job_flags change (RLS still applies);
-  // a burst of changes is folded into one refresh. The poll above stays as the
-  // fallback if the socket drops.
+  // New jobs and shared bad marks should reach this page at once, not at the next
+  // poll. Realtime pushes every jobs / job_flags change (RLS still applies); a burst
+  // of changes (one worker sync writes many rows) is folded into one refresh. The
+  // poll above stays as the fallback if the socket drops.
   useEffect(() => {
     if (!live) return;
     const supabase = createClient();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const changed = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => router.refresh(), 300);
+    };
     const channel = supabase
-      .channel("job_flags")
-      .on("postgres_changes", { event: "*", schema: "public", table: "job_flags" }, () => {
-        clearTimeout(timer);
-        timer = setTimeout(() => router.refresh(), 300);
-      })
+      .channel("jobs_feed")
+      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, changed)
+      .on("postgres_changes", { event: "*", schema: "public", table: "job_flags" }, changed)
       .subscribe();
     return () => {
       clearTimeout(timer);
@@ -144,11 +147,41 @@ export function JobFeed({ jobs, isAdmin, live }: { jobs: JobRow[]; isAdmin: bool
     setFresh(new Set());
   };
 
+  // Clears the "New for me" list: marks every job on screen applied. Only the ids
+  // shown are sent, so a job that arrives while the dialog is open isn't swept up.
+  const markAllApplied = async () => {
+    const ids = jobs.map((j) => j.id);
+    if (!ids.length || !confirm(`Mark all ${ids.length} job${ids.length === 1 ? "" : "s"} on this page as applied?`)) return;
+    setMarking(true);
+    try {
+      const r = await fetch("/api/jobs/applied", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids }),
+      });
+      const d = await r.json().catch(() => ({ ok: false, message: `HTTP ${r.status}` }));
+      if (!d.ok) alert(d.message ?? "Couldn't update.");
+      else {
+        dismiss();
+        router.refresh();
+      }
+    } catch {
+      alert("Couldn't reach the server.");
+    } finally {
+      setMarking(false);
+    }
+  };
+
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {live && <span className="text-xs text-muted">Updates automatically</span>}
-        <button className="btn ml-auto" onClick={toggleAlerts}>
+        {markAll && jobs.length > 0 && (
+          <button className="btn ml-auto" onClick={markAllApplied} disabled={marking}>
+            {marking ? "Marking…" : "✓ Mark all as applied"}
+          </button>
+        )}
+        <button className={`btn ${markAll && jobs.length > 0 ? "" : "ml-auto"}`} onClick={toggleAlerts}>
           {alerts ? "🔔 Desktop alerts: on" : "🔕 Desktop alerts: off"}
         </button>
       </div>

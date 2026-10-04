@@ -349,6 +349,24 @@ export async function markApplied(userId: string, ref: JobRef, applied = true): 
   return { status: 200, body: { ok: true, status: applied ? "applied" : "opened" } };
 }
 
+/** Mark many stored jobs applied at once (the Jobs page's "Mark all as applied").
+ *  Keeps each job's first opened time; unknown ids are ignored. */
+export async function markAppliedMany(userId: string, ids: number[]): Promise<Result> {
+  const db = createAdminClient();
+  const { data: found, error } = await db.from("jobs").select("id").in("id", ids);
+  if (error) return { status: 400, body: { ok: false, message: error.message } };
+  const jobIds = (found ?? []).map((j) => Number(j.id));
+  if (!jobIds.length) return { status: 200, body: { ok: true, count: 0 } };
+  const { data: existing } = await db.from("user_jobs").select("job_id,opened_at")
+    .eq("user_id", userId).in("job_id", jobIds);
+  const opened = new Map((existing ?? []).map((r) => [Number(r.job_id), r.opened_at as string | null]));
+  const now = new Date().toISOString();
+  const rows = jobIds.map((id) => ({ user_id: userId, job_id: id, applied_at: now, opened_at: opened.get(id) || now }));
+  const { error: upErr } = await db.from("user_jobs").upsert(rows, { onConflict: "user_id,job_id" });
+  if (upErr) return { status: 400, body: { ok: false, message: upErr.message } };
+  return { status: 200, body: { ok: true, count: jobIds.length } };
+}
+
 export async function jobText(userId: string, ref: JobRef): Promise<Result> {
   const s = await getEffectiveSettings(userId);
   const { job, error } = await ensureJob(s, ref);
