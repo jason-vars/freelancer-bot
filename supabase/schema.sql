@@ -3,8 +3,8 @@
 -- Safe to re-run: every statement is idempotent.
 --
 -- Who writes what:
---   * the Python worker (secret key, bypasses RLS) writes `jobs` and `worker_status`
---     and reads `app_settings`;
+--   * the job fetcher (supabase/functions/fetch-jobs, or the older Python worker;
+--     secret key, bypasses RLS) writes `jobs` and `worker_status` and reads `app_settings`;
 --   * the web app writes everything else, as the signed-in user (RLS applies) or,
 --     for the userscript API, with the secret key after checking the user's API key.
 
@@ -220,6 +220,38 @@ create table if not exists public.worker_status (
 );
 insert into public.worker_status (id) values (1) on conflict (id) do nothing;
 
+-- ── Cloud fetcher (supabase/functions/fetch-jobs, run by pg_cron) ────────────────
+-- lock_until: the running cycle's lock, so overlapping cron calls can't alert twice.
+-- alert_floor_at: jobs posted before this are never alerted (reset after a pause/gap).
+alter table public.worker_status add column if not exists lock_until timestamptz;
+alter table public.worker_status add column if not exists alert_floor_at timestamptz;
+alter table public.worker_status add column if not exists last_fetch_at timestamptz;
+
+-- Projects the fetcher already evaluated, including ones it didn't store (skipped
+-- currency, too old). Pruned after a few days. Secret key only: RLS, no policies.
+create table if not exists public.fetch_seen (
+  id       bigint primary key,
+  seen_at  timestamptz not null default now()
+);
+create index if not exists fetch_seen_at on public.fetch_seen (seen_at);
+alter table public.fetch_seen enable row level security;
+
+-- Claims the next cycle: returns the worker_status row when this call may run (no
+-- other run holds the lock, and "Fetch every" has passed or "Fetch now" was pressed),
+-- else nothing.
+create or replace function public.begin_fetch_cycle(p_min_interval int, p_lease int)
+returns setof public.worker_status language sql security definer set search_path = public as $$
+  update public.worker_status
+     set lock_until = now() + make_interval(secs => p_lease), run_requested_at = null
+   where id = 1
+     and (lock_until is null or lock_until < now())
+     and (run_requested_at is not null or last_cycle_at is null
+          or last_cycle_at <= now() - make_interval(secs => greatest(p_min_interval - 5, 0)))
+  returning *;
+$$;
+revoke execute on function public.begin_fetch_cycle(int, int) from public, anon, authenticated;
+grant execute on function public.begin_fetch_cycle(int, int) to service_role;
+
 -- ── Row Level Security ───────────────────────────────────────────────────────────
 alter table public.profiles      enable row level security;
 alter table public.app_settings  enable row level security;
@@ -289,8 +321,9 @@ drop policy if exists "job_flags: own or admin delete" on public.job_flags;
 create policy "job_flags: own or admin delete" on public.job_flags
   for delete to authenticated using (user_id = auth.uid() or public.is_admin());
 
--- ── Realtime: the Jobs page subscribes to bad marks so they show for everyone at
--- once. Realtime still applies the select policy above. Guarded so re-running is safe.
+-- ── Realtime: the Jobs page subscribes to new jobs and bad marks so they show for
+-- everyone at once. Realtime still applies the select policies above. Guarded so
+-- re-running is safe.
 do $$
 begin
   if not exists (
@@ -298,6 +331,12 @@ begin
     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'job_flags'
   ) then
     alter publication supabase_realtime add table public.job_flags;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'jobs'
+  ) then
+    alter publication supabase_realtime add table public.jobs;
   end if;
 end $$;
 

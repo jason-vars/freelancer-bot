@@ -126,7 +126,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
       {error && <p className="mb-4 rounded-lg bg-bad-bg px-3 py-2 text-sm text-bad">Couldn&apos;t load jobs: {error.message}</p>}
       <p className="mb-3 text-sm text-muted">{total} job{total === 1 ? "" : "s"}</p>
 
-      <JobFeed key={`${view}|${search}|${page}`} jobs={jobs} isAdmin={isAdmin} live={page === 1} />
+      <JobFeed key={`${view}|${search}|${page}`} jobs={jobs} isAdmin={isAdmin} live={page === 1} markAll={view === "new"} />
 
       {pages > 1 && (
         <div className="mt-6 flex items-center justify-center gap-3 text-sm">

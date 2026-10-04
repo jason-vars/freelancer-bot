@@ -5,18 +5,19 @@ user signs in, sees the shared job list with **their own** Opened / Applied stat
 writes proposals with **their own** AI proposal and bid settings.
 
 ```
- Python worker (your server)          Supabase                      Vercel (this app)
- python -m bot.cli run-loop  ──jobs──▶ jobs, worker_status  ◀──────  Jobs / Settings / Admin pages
+ fetch-jobs Edge Function             Supabase                      Vercel (this app)
+ (pg_cron, every 30 s)      ──jobs──▶ jobs, worker_status  ◀──────  Jobs / Settings / Admin pages
    reads admin settings  ◀──────────── app_settings         ◀──────  Admin › Bot settings
    sends Telegram alerts (admin)       profiles, user_jobs  ◀──────  userscript API (/api/us/…)
-                                       user_settings
+                                       user_settings        ──Realtime──▶ Jobs page updates live
 ```
 
 * **Users** manage *AI proposal* and *Bid defaults* (My settings) and use the userscript.
 * **Admin** approves users and manages everything else: search keywords, filters, fetch
   interval and hours, alerts, the OpenAI key/model and the Freelancer token.
-* The fetching loop can't run on Vercel (Hobby plan cron runs once a day), so it stays a
-  long-running Python process, the existing `run-loop`, on any always-on machine.
+* Jobs are fetched by a Supabase Edge Function that pg_cron calls every 30 seconds, so no
+  always-on machine is needed. (Vercel's Hobby cron runs only once a day.) The Python
+  `run-loop` still works as an alternative; never run both.
 
 ## 1. Supabase
 
@@ -57,27 +58,40 @@ Then open **Admin › Bot settings** and fill in the Freelancer token, OpenAI ke
 filters, Telegram, and the fetch interval and hours. New users show up on **Admin**,
 waiting for approval.
 
-## 4. Job worker
+## 4. Job fetcher
 
-On the always-on machine, using the existing Python setup (see the top-level README and
-[`../deploy/README.md`](../deploy/README.md)), add to that checkout's `.env`:
+The fetcher is [`../supabase/functions/fetch-jobs`](../supabase/functions/fetch-jobs/index.ts),
+a port of the Python worker's fetch → filter → score → alert cycle. It reads the admin's
+settings (Freelancer token, keywords, filters, Telegram/Slack) from **Admin › Bot settings**.
 
-```
-CLOUD_SUPABASE_URL=https://<project>.supabase.co
-CLOUD_SUPABASE_KEY=sb_secret_...
-```
+1. **Re-run [`../supabase/schema.sql`](../supabase/schema.sql)** in the SQL Editor (adds the
+   fetcher's tables and turns on Realtime for `jobs`).
+2. **Pick a secret**, any long random string, e.g. `openssl rand -hex 32`.
+3. **Deploy the function**, either way:
+   * CLI, from the repo root:
+     ```bash
+     npx supabase login
+     npx supabase link --project-ref <project-ref>
+     npx supabase secrets set FETCH_JOBS_SECRET=<your secret>
+     npx supabase functions deploy fetch-jobs --no-verify-jwt
+     ```
+   * Dashboard: **Edge Functions › Deploy a new function › Via editor**, name it
+     `fetch-jobs`, paste `index.ts`, deploy. Then in its **Details** turn **off**
+     "Verify JWT", and under **Edge Functions › Secrets** add `FETCH_JOBS_SECRET`.
+4. **Schedule it**: open [`../supabase/fetcher_cron.sql`](../supabase/fetcher_cron.sql), put in
+   your project URL and the same secret, and run it in the SQL Editor.
+5. In **Admin › Bot settings**, set **Fetch every (seconds)** to `30` and make sure the
+   Freelancer token, keywords and Telegram settings are filled in. (The function reads
+   only these settings, not a `.env`.) Leave **Timezone** blank for UTC.
+6. **Stop the Python worker** (`run-loop` / the `freelancer-poll` service). Running both
+   sends every alert twice.
 
-and run the poller as before:
+Within a minute the Admin page should show a fresh heartbeat ("Stored N new job(s),
+alerted M."). To debug: **Edge Functions › fetch-jobs › Logs**, and
+`select * from cron.job_run_details order by start_time desc limit 5;`.
 
-```bash
-python -m bot.cli run-loop            # or the freelancer-poll systemd service
-python -m bot.cli telegram-listen     # optional: "Mark read" buttons on alerts
-```
-
-Each cycle the worker loads the admin's settings from Supabase (they override its `.env`),
-fetches and filters jobs, alerts the admin's Telegram/Slack, and copies every stored job to
-Supabase. The Admin page shows its last heartbeat and has a **Fetch now** button. Only
-jobs found after the worker starts in cloud mode are copied.
+Jobs posted before the fetcher started (or while it was paused or down) are stored
+but not alerted, the same as the Python worker after a restart.
 
 ## 5. Userscript (each user)
 
