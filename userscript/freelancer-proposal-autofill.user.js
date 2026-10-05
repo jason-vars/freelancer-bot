@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.28.0
+// @version      1.29.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -15,6 +15,8 @@
 // @grant        GM_openInTab
 // @grant        unsafeWindow
 // @grant        window.close
+// @grant        GM_getTabs
+// @grant        GM_saveTab
 // @connect      127.0.0.1
 // @connect      localhost
 // @updateURL    http://127.0.0.1:8765/userscript.user.js
@@ -27,6 +29,10 @@
 
 (function () {
   "use strict";
+
+  // Register this tab with Tampermonkey (here and on the bot's website), so a project
+  // tab can tell whether other tabs are open before it closes itself (closeTab).
+  try { GM_saveTab({ fbb: true }); } catch (e) { /* not supported: tabs never auto-close */ }
 
   // ── On the bot's own website (the @match on its address): job TITLES open in a
   // BACKGROUND tab, so you stay on the Jobs list (the "Open on Freelancer" button
@@ -48,7 +54,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.28.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.29.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -999,13 +1005,7 @@
           try { d = JSON.parse(r.responseText); } catch (e) {}
           if (!(r.status >= 200 && r.status < 300 && d && d.ok)) return failed((d && d.message) || "HTTP " + r.status);
           if (currentSeo() !== seo) return; // you moved on in this tab: leave it open
-          badge(why + " — marked bad. Closing this tab…", "info");
-          setTimeout(() => {
-            if (currentSeo() !== seo) return;
-            try { window.close(); } catch (e) {}
-            // Still here: the browser refused (Tampermonkey's window.close not granted).
-            setTimeout(() => { if (currentSeo() === seo) badge(why + " — marked bad. Close this tab when you're done.", "info"); }, 300);
-          }, 1500);
+          closeTab(seo, why + " — marked bad");
         },
         onerror: () => failed("bot unreachable"),
         ontimeout: () => failed("timed out"),
@@ -1023,6 +1023,27 @@
     runSeq++;            // drop a proposal still being written
     cancelAutoBid(null); // and never let a countdown place a bid on it
     autoMarkBad(seo, currentProjectId(), "marked from the project page", "Marked bad");
+  }
+
+  // Closes this tab, never the browser: closing a window's LAST tab closes the window
+  // (and with it, on Windows, the whole browser). So it only closes when Tampermonkey
+  // sees another tab running this script (the Jobs page or another project); else, or
+  // if Tampermonkey can't tell, the tab stays open and says so.
+  function closeTab(seo, done) {
+    const keepOpen = () => { if (currentSeo() === seo) badge(done + ". Close this tab when you're done.", "info"); };
+    if (typeof GM_getTabs !== "function") return keepOpen();
+    try {
+      GM_getTabs((tabs) => {
+        if (currentSeo() !== seo) return; // you moved on in this tab: leave it open
+        if (Object.keys(tabs || {}).length < 2) return keepOpen(); // the only tab we know of
+        badge(done + ". Closing this tab…", "info");
+        setTimeout(() => {
+          if (currentSeo() !== seo) return;
+          try { window.close(); } catch (e) {}
+          setTimeout(keepOpen, 300); // still here: the browser refused
+        }, 1500);
+      });
+    } catch (e) { keepOpen(); }
   }
 
   // Resolves "textarea", "alreadybid", "closed" (no proposal box, and the page says
