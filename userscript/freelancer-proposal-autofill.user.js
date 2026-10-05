@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.26.0
+// @version      1.28.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -48,7 +48,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.26.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.28.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -141,15 +141,20 @@
       if (t.length < 40 && /about the client/i.test(t)) { head = el; break; }
     }
     if (!head) return null;
-    // Climb to the card that holds the client's location/verification, but not so far
-    // that we swallow the project description (which could mention other countries).
+    // Climb to the card that holds the client's location, then keep ONLY the location
+    // part: from "About the Client" to "Member since" / the next section. Anything
+    // else on the page (the description, other widgets) may name other countries.
     let card = head;
     for (let i = 0; i < 6 && card.parentElement; i++) {
       card = card.parentElement;
-      if ((card.innerText || "").length > 400) break;
+      if (/member since|client engagement|client verification/i.test(card.innerText || "")) break;
     }
     const txt = clean(card.innerText || card.textContent);
-    return txt ? txt.slice(0, 300) : null;
+    const start = txt.search(/about the client/i);
+    if (start < 0) return null;
+    const rest = txt.slice(start);
+    const end = rest.search(/member since|client engagement|client verification/i);
+    return rest.slice(0, end > 0 ? end : 120).slice(0, 120);
   }
 
   // ── Country gate: blocks a skipped-country client as soon as the page shows it ──
@@ -169,12 +174,18 @@
   }
   function countryBlockReason(clientText) {
     const text = (clientText || "").toLowerCase();
-    const { skip, allow } = countryLists();
+    // Full names only (4+ letters), like the bot: a code like "IN" or "US" would match
+    // the words "in" and "us", and the page shows names anyway.
+    const lists = countryLists();
+    const skip = (lists.skip || []).filter((c) => String(c).trim().length >= 4);
+    const allow = (lists.allow || []).filter((c) => String(c).trim().length >= 4);
     if (!text || (!skip.length && !allow.length)) return null;
     const inText = (name) => new RegExp("\\b" + String(name).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").test(text);
     const hit = skip.find(inText);
-    if (hit) return { why: "client is in " + hit + " (a skipped country)", tag: "country: " + hit };
-    if (allow.length && !allow.some(inText)) return { why: "client's country isn't in the allowed list", tag: "country not allowed" };
+    if (hit) return { why: "client is in " + hit + " (a skipped country)", tag: "country: " + hit, bad: true };
+    // Not on the allow list blocks Generate/Place bid but is NOT marked bad: a name the
+    // list spells differently ("USA" vs "United States") must not hide the job for all.
+    if (allow.length && !allow.some(inText)) return { why: "client's country isn't in the allowed list", tag: "country not allowed", bad: false };
     return null;
   }
   // Hard skips (admin filters, skipped country) turn Generate and Place bid off. Soft
@@ -211,8 +222,8 @@
           const hit = countryBlockReason(text);
           if (hit) {
             block("country", "Skipped — " + hit.why + ".");
-            // The country lists are the admin's, so the job is useless to everyone.
-            autoMarkBad(seo, currentProjectId(), hit.tag, "Skipped — " + hit.why);
+            // A skipped country is the admin's call, so the job is useless to everyone.
+            if (hit.bad) autoMarkBad(seo, currentProjectId(), hit.tag, "Skipped — " + hit.why);
           }
           return resolve();
         }
@@ -318,6 +329,7 @@
     const navRow = document.createElement("div");
     navRow.style.cssText = "display:flex;gap:8px;";
     navRow.appendChild(mkBtn("⬇ Go to Place bid", "#0f766e", () => scrollToPlaceBid()));
+    navRow.appendChild(mkBtn("👎 Mark bad", "#b42318", () => markBadHere()));
     const copyRow = document.createElement("div");
     copyRow.style.cssText = "display:flex;gap:8px;";
     copyRow.appendChild(genBtn);
@@ -999,6 +1011,18 @@
         ontimeout: () => failed("timed out"),
       });
     } catch (e) { /* ignore */ }
+  }
+
+  // The panel's 👎 Mark bad: the same shared mark as on the Jobs page (the job leaves
+  // every user's lists), for what only you can judge — scam, fake budget, off-site
+  // contact… Confirmed first, since it affects everyone; then the tab closes.
+  function markBadHere() {
+    const seo = currentSeo();
+    if (!seo) return;
+    if (!window.confirm("Mark this job bad? It leaves every user's Jobs list (undo on the Jobs page).")) return;
+    runSeq++;            // drop a proposal still being written
+    cancelAutoBid(null); // and never let a countdown place a bid on it
+    autoMarkBad(seo, currentProjectId(), "marked from the project page", "Marked bad");
   }
 
   // Resolves "textarea", "alreadybid", "closed" (no proposal box, and the page says
