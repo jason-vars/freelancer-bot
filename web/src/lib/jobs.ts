@@ -157,9 +157,12 @@ function skipReason(s: Values, j: Job, clientCountry: string | null, collected: 
   }
 
   // Country, matched by NAME inside the "About the Client" text the userscript scraped.
+  // Only full names (4+ letters): a code like "IN" or "US" would match the words "in"
+  // and "us" in the text, and the page shows names, not codes.
   const text = (clientCountry ?? "").toLowerCase();
-  const allow = csv(s.BOT_ALLOW_COUNTRIES);
-  const block = csv(s.BOT_SKIP_COUNTRIES);
+  const names = (v: string | undefined) => csv(v).filter((c) => c.length >= 4);
+  const allow = names(s.BOT_ALLOW_COUNTRIES);
+  const block = names(s.BOT_SKIP_COUNTRIES);
   if (text && (allow.length || block.length)) {
     const inText = (name: string) => new RegExp("\\b" + name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").test(text);
     if (block.some(inText)) return "country_blocked";
