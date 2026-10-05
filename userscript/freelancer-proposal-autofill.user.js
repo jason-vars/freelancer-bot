@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.26.0
+// @version      1.27.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -48,7 +48,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.26.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.27.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -318,6 +318,7 @@
     const navRow = document.createElement("div");
     navRow.style.cssText = "display:flex;gap:8px;";
     navRow.appendChild(mkBtn("⬇ Go to Place bid", "#0f766e", () => scrollToPlaceBid()));
+    navRow.appendChild(mkBtn("👎 Mark bad", "#b42318", () => markBadHere()));
     const copyRow = document.createElement("div");
     copyRow.style.cssText = "display:flex;gap:8px;";
     copyRow.appendChild(genBtn);
@@ -999,6 +1000,18 @@
         ontimeout: () => failed("timed out"),
       });
     } catch (e) { /* ignore */ }
+  }
+
+  // The panel's 👎 Mark bad: the same shared mark as on the Jobs page (the job leaves
+  // every user's lists), for what only you can judge — scam, fake budget, off-site
+  // contact… Confirmed first, since it affects everyone; then the tab closes.
+  function markBadHere() {
+    const seo = currentSeo();
+    if (!seo) return;
+    if (!window.confirm("Mark this job bad? It leaves every user's Jobs list (undo on the Jobs page).")) return;
+    runSeq++;            // drop a proposal still being written
+    cancelAutoBid(null); // and never let a countdown place a bid on it
+    autoMarkBad(seo, currentProjectId(), "marked from the project page", "Marked bad");
   }
 
   // Resolves "textarea", "alreadybid", "closed" (no proposal box, and the page says
