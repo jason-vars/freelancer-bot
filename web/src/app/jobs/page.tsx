@@ -11,11 +11,11 @@ const PAGE_SIZE = 50;
 const PASSED = ["new", "alerting", "alerted", "alert_failed", "notify_skipped"];
 
 const VIEWS = {
-  new: "New for me",
-  passed: "All matching",
+  new: "New",
   opened: "Opened",
   applied: "Applied",
-  hidden: "Hidden by me",
+  passed: "All",
+  skipped: "Skipped",
   bad: "Marked bad",
 } as const;
 const ADMIN_VIEWS = { filtered: "Filtered out", all: "Everything" } as const;
@@ -49,16 +49,19 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
   const supabase = await createClient();
   let q = supabase
     .from("my_jobs")
-    .select("id,title,url,description,currency,budget_min,budget_max,bid_count,bid_avg,skills,posted_at,upgrades,score,status,filter_reason,opened_at,applied_at,proposal,amount,period_days,my_filter_reason,bad_count,bad_by_me,bad_reasons", { count: "exact" });
-  // "New for me" and "All matching" also apply the user's own filters (My settings);
-  // "Hidden by me" lists what those filters took out.
-  // Jobs anyone marked bad leave everyone's lists and move to "Marked bad".
-  if (view === "new") q = q.in("status", PASSED).is("my_filter_reason", null).eq("bad_count", 0).is("opened_at", null);
-  else if (view === "passed") q = q.in("status", PASSED).is("my_filter_reason", null).eq("bad_count", 0);
-  else if (view === "hidden") q = q.in("status", PASSED).not("my_filter_reason", "is", null);
-  else if (view === "bad") q = q.gt("bad_count", 0);
-  else if (view === "opened") q = q.not("opened_at", "is", null);
+    .select("id,title,url,description,currency,budget_min,budget_max,bid_count,bid_avg,skills,posted_at,upgrades,score,status,filter_reason,opened_at,applied_at,skipped_at,proposal,amount,period_days,my_filter_reason,bad_count,bad_by_me,bad_reasons", { count: "exact" });
+  // Each job sits in one of New / Opened / Applied / Skipped (your own state), and
+  // "All" lists every match. They apply your own filters (My settings) too: what those
+  // hide is under "Skipped". Jobs anyone marked bad leave everyone's lists and move to
+  // "Marked bad". JobFeed's belongsIn() must agree, so a change moves a card at once.
+  if (view === "new") q = q.in("status", PASSED).is("my_filter_reason", null).eq("bad_count", 0)
+    .is("opened_at", null).is("applied_at", null).is("skipped_at", null);
+  else if (view === "opened") q = q.not("opened_at", "is", null).is("applied_at", null).is("skipped_at", null).eq("bad_count", 0);
   else if (view === "applied") q = q.not("applied_at", "is", null);
+  else if (view === "passed") q = q.in("status", PASSED).is("my_filter_reason", null).eq("bad_count", 0);
+  else if (view === "skipped") q = q.is("applied_at", null).eq("bad_count", 0)
+    .or(`skipped_at.not.is.null,and(status.in.(${PASSED.join(",")}),my_filter_reason.not.is.null)`);
+  else if (view === "bad") q = q.gt("bad_count", 0);
   else if (view === "filtered") q = q.in("status", ["filtered", "skipped"]);
   if (search) q = q.ilike("title", `%${search.replace(/[%_]/g, "")}%`);
   const { data, count, error } = await q
@@ -88,6 +91,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
     score: r.score,
     openedAt: r.opened_at,
     appliedAt: r.applied_at,
+    skippedAt: r.skipped_at,
     proposal: r.proposal,
     amount: r.amount,
     periodDays: r.period_days,
@@ -126,7 +130,8 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
       {error && <p className="mb-4 rounded-lg bg-bad-bg px-3 py-2 text-sm text-bad">Couldn&apos;t load jobs: {error.message}</p>}
       <p className="mb-3 text-sm text-muted">{total} job{total === 1 ? "" : "s"}</p>
 
-      <JobFeed key={`${view}|${search}|${page}`} jobs={jobs} isAdmin={isAdmin} live={page === 1} markAll={view === "new"} />
+      <JobFeed key={`${view}|${search}|${page}`} jobs={jobs} isAdmin={isAdmin} live={page === 1} userId={profile.id}
+        view={view} markAll={view === "new"} />
 
       {pages > 1 && (
         <div className="mt-6 flex items-center justify-center gap-3 text-sm">

@@ -1386,7 +1386,9 @@ def _panel_options(sets: dict[str, str]) -> tuple[int, dict]:
     except Exception as exc:
         return 400, {"ok": False, "message": f"Config error: {exc}"}
     return 200, {"ok": True, "seal": bool(s.seal_bids), "autogen": bool(s.auto_generate),
-                 "autobid": bool(s.auto_bid)}
+                 "autobid": bool(s.auto_bid),
+                 # The userscript checks the client's country as soon as a project opens.
+                 "skip_countries": list(s.skip_countries), "allow_countries": list(s.allow_countries)}
 
 
 def _job_text(project_id: int) -> tuple[int, dict]:
