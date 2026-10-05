@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProfile } from "@/lib/auth";
-import { generateForUser, markApplied, markOpened } from "@/lib/jobs";
+import { generateForUser, markApplied, markOpened, markSkipped } from "@/lib/jobs";
 import { createClient } from "@/lib/supabase/server";
 
 // Job actions from the web Jobs page, as the signed-in user.
@@ -43,6 +43,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   else if (action === "open") r = await markOpened(profile.id, ref);
   else if (action === "applied") r = await markApplied(profile.id, ref, true);
   else if (action === "unapplied") r = await markApplied(profile.id, ref, false);
+  else if (action === "skip") r = await markSkipped(profile.id, [ref.id], true);
+  else if (action === "unskip") r = await markSkipped(profile.id, [ref.id], false);
   else return json(404, { ok: false, message: `Unknown action '${action}'.` });
   return json(r.status, r.body);
 }

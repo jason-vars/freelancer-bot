@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { userFromApiKey } from "@/lib/apikey";
-import { generateForUser, jobText, markApplied, type JobRef } from "@/lib/jobs";
+import { checkForUser, generateForUser, jobText, markApplied, markBadForUser, type JobRef } from "@/lib/jobs";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getEffectiveSettings, isTrue } from "@/lib/settings/store";
 
@@ -30,7 +30,12 @@ async function panelOptions(userId: string, q: URLSearchParams) {
     });
   }
   const s = await getEffectiveSettings(userId);
-  return json(200, { ok: true, seal: isTrue(s.BOT_SEAL_BIDS), autogen: isTrue(s.BOT_AUTO_GENERATE), autobid: isTrue(s.BOT_AUTO_BID) });
+  const list = (v: string | undefined) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  return json(200, {
+    ok: true, seal: isTrue(s.BOT_SEAL_BIDS), autogen: isTrue(s.BOT_AUTO_GENERATE), autobid: isTrue(s.BOT_AUTO_BID),
+    // The userscript checks the client's country as soon as a project opens.
+    skip_countries: list(s.BOT_SKIP_COUNTRIES), allow_countries: list(s.BOT_ALLOW_COUNTRIES),
+  });
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ action: string }> }) {
@@ -52,7 +57,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ action: 
   if (action === "generate") {
     r = await generateForUser(userId, ref, (q.get("country") ?? "").trim() || null, { manual: q.get("manual") === "1" });
   }
+  else if (action === "check") r = await checkForUser(userId, ref, (q.get("country") ?? "").trim() || null);
   else if (action === "applied") r = await markApplied(userId, ref);
+  else if (action === "bad") r = await markBadForUser(userId, ref, (q.get("reason") ?? "").trim() || "bad");
   else if (action === "text") r = await jobText(userId, ref);
   else return json(404, { ok: false, message: `Unknown action '${action}'.` });
   return json(r.status, r.body);

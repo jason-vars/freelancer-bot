@@ -19,6 +19,7 @@ export type JobRow = {
   score: number;
   openedAt: string | null;
   appliedAt: string | null;
+  skippedAt: string | null;
   proposal: string | null;
   amount: number | null;
   periodDays: number | null;
@@ -37,19 +38,30 @@ async function post(id: number, action: string, body?: Record<string, unknown>) 
   return data as { ok: boolean; message?: string; proposal?: string; amount?: number; period?: number; currency?: string };
 }
 
-export function JobList({ jobs, isAdmin, fresh }: { jobs: JobRow[]; isAdmin: boolean; fresh?: Set<number> }) {
+/** The user's state of one job, which decides the tab it belongs in. */
+export type JobState = { opened: boolean; applied: boolean; skipped: boolean; bad: boolean; myFilter: boolean };
+
+type Callbacks = {
+  /** The job's state changed here (opened, applied, skipped, marked bad). */
+  onState?: (id: number, state: JobState) => void;
+  /** The details panel opened or closed. */
+  onExpand?: (job: JobRow, open: boolean) => void;
+};
+
+export function JobList({ jobs, isAdmin, fresh, ...cb }: { jobs: JobRow[]; isAdmin: boolean; fresh?: Set<number> } & Callbacks) {
   if (!jobs.length) return <div className="card p-8 text-center text-sm text-muted">No jobs here yet.</div>;
   return (
     <ul className="space-y-3">
-      {jobs.map((j) => <Job key={j.id} job={j} isAdmin={isAdmin} fresh={fresh?.has(j.id) ?? false} />)}
+      {jobs.map((j) => <Job key={j.id} job={j} isAdmin={isAdmin} fresh={fresh?.has(j.id) ?? false} {...cb} />)}
     </ul>
   );
 }
 
-function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: boolean }) {
+function Job({ job, isAdmin, fresh, onState, onExpand }: { job: JobRow; isAdmin: boolean; fresh: boolean } & Callbacks) {
   const router = useRouter();
   const [opened, setOpened] = useState(Boolean(job.openedAt));
   const [applied, setApplied] = useState(Boolean(job.appliedAt));
+  const [skipped, setSkipped] = useState(Boolean(job.skippedAt));
   const [expanded, setExpanded] = useState(false);
   const [proposal, setProposal] = useState(job.proposal ?? "");
   const [pricing, setPricing] = useState(
@@ -69,10 +81,16 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
     setBadState(fromProps);
   }
 
+  // Tell the list about a state change, so the card leaves a tab it no longer fits.
+  const report = (patch: Partial<JobState>) => onState?.(job.id, {
+    opened, applied, skipped, bad: bad.count > 0, myFilter: Boolean(job.myFilterReason), ...patch,
+  });
+
   const markOpened = () => {
     if (!opened) {
       setOpened(true);
       void post(job.id, "open");
+      report({ opened: true });
     }
   };
 
@@ -94,7 +112,24 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
     if (d.ok) {
       setApplied(!applied);
       setOpened(true);
+      report({ applied: !applied, opened: true });
     } else setError(d.message ?? "Couldn't update.");
+  };
+
+  // Not bidding on it: moves it to Skipped at once; undone if the server says no.
+  const toggleSkipped = async () => {
+    const next = !skipped;
+    setSkipped(next);
+    report({ skipped: next });
+    setError("");
+    setBusy("skipped");
+    const d = await post(job.id, next ? "skip" : "unskip");
+    setBusy(null);
+    if (!d.ok) {
+      setSkipped(!next);
+      report({ skipped: !next });
+      setError(d.message ?? "Couldn't update.");
+    }
   };
 
   // Shared with everyone: a job marked bad leaves all users' New/All matching lists.
@@ -110,6 +145,8 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
     } else {
       setBadState({ count: 0, byMe: false, reasons: null });
     }
+    const after = action === "bad" ? before.count + (before.byMe ? 0 : 1) : action === "unbad" ? Math.max(0, before.count - 1) : 0;
+    report({ bad: after > 0 });
     setError("");
     setBusy("bad");
     const d = await post(job.id, action);
@@ -117,6 +154,7 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
     if (d.ok) router.refresh(); // moves it in/out of the New list and syncs exact reasons
     else {
       setBadState(before);
+      report({ bad: before.count > 0 });
       setError(d.message ?? "Couldn't update.");
     }
   };
@@ -145,6 +183,7 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
         {job.score > 0 && <span>· score {job.score}</span>}
         {fresh && <span className="chip chip-new">Just in</span>}
         {applied ? <span className="chip chip-ok">Applied</span>
+          : skipped ? <span className="chip">Skipped</span>
           : opened ? <span className="chip chip-warn">Opened</span>
           : <span className="chip">New</span>}
         {job.badges.map((b) => <span key={b} className="chip">{b}</span>)}
@@ -168,16 +207,22 @@ function Job({ job, isAdmin, fresh }: { job: JobRow; isAdmin: boolean; fresh: bo
       )}
 
       <div className="mt-3 flex flex-wrap gap-2">
-        <button className="btn" onClick={() => { setExpanded(!expanded); markOpened(); }}>
+        {/* Reading the details isn't opening the job: only opening it on Freelancer is. */}
+        <button className="btn" onClick={() => { onExpand?.(job, !expanded); setExpanded(!expanded); }}>
           {expanded ? "Hide" : "Details & proposal"}
         </button>
         <a className="btn" href={job.url} target="_blank" rel="noreferrer" onClick={markOpened}>Open on Freelancer ↗</a>
-        <button className="btn" onClick={toggleApplied} disabled={busy !== null}>
-          {applied ? "Unmark applied" : "Mark applied"}
-        </button>
+        {applied ? (
+          <button className="btn" onClick={toggleApplied} disabled={busy !== null}>Unmark applied</button>
+        ) : (
+          <button className="btn" onClick={toggleSkipped} disabled={busy !== null}>
+            {skipped ? "Unskip" : "Mark skipped"}
+          </button>
+        )}
+        {/* Judging a job bad needs a look at it first, so only opened jobs offer it. */}
         {bad.byMe ? (
           <button className="btn" onClick={() => setBad("unbad")} disabled={busy !== null}>Undo bad mark</button>
-        ) : (
+        ) : opened && (
           <button className="btn btn-danger" onClick={() => setBad("bad")} disabled={busy !== null}>👎 Mark bad</button>
         )}
         {isAdmin && bad.count > 0 && (

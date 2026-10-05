@@ -266,6 +266,39 @@ async function resolvePricing(s: Values, j: Job): Promise<[number, number]> {
 }
 
 // ── Actions ──────────────────────────────────────────────────────────────────────
+type Verdict = { skipped: true; hard: boolean; already_applied?: true; message: string };
+
+/** Why this user shouldn't get a proposal for the job, or null. `hard` = the admin's
+ *  filters (no override); the rest (own filters, bad mark, already applied) can be
+ *  overridden with ✨ Generate (manual skips own filters and bad marks). */
+async function skipVerdict(userId: string, s: Values, job: Job, collected: boolean, clientCountry: string | null, manual: boolean): Promise<Verdict | null> {
+  const { data: mine } = await createAdminClient().from("user_jobs").select("applied_at")
+    .eq("user_id", userId).eq("job_id", job.id).maybeSingle();
+  if (mine?.applied_at) {
+    return { skipped: true, hard: false, already_applied: true, message: "You've already applied to this project — not regenerating." };
+  }
+  const skip = skipReason(s, job, clientCountry, collected);
+  if (skip) return { skipped: true, hard: true, message: `Skipped — matches the filters (${skip}); no proposal generated.` };
+  if (manual) return null;
+  const personal = userFilterReason(s, job);
+  if (personal) return { skipped: true, hard: false, message: `Skipped — hidden by your own filters (${personal}); no proposal generated. Press ✨ Generate to write one anyway.` };
+  const bad = await badMark(job.id);
+  if (bad) return { skipped: true, hard: false, message: `Skipped — ${bad}; no proposal generated. Press ✨ Generate to write one anyway.` };
+  return null;
+}
+
+/** The skip filters alone, no OpenAI call: the userscript asks this the moment a
+ *  project page opens, so a skipped job says so before anything is generated. Also
+ *  records the job as opened. */
+export async function checkForUser(userId: string, ref: JobRef, clientCountry: string | null): Promise<Result> {
+  const s = await getEffectiveSettings(userId);
+  const { job, collected, error } = await ensureJob(s, ref);
+  if (error || !job) return error!;
+  await touchUserJob(userId, job.id, {});
+  const verdict = await skipVerdict(userId, s, job, collected, clientCountry, false);
+  return { status: 200, body: { ok: true, id: job.id, ...(verdict ?? { skipped: false }) } };
+}
+
 /** Generate a proposal for one user. Same contract as the Python /jobs/generate,
  *  so the userscript needs no changes beyond its base URL and API key. */
 // force: skip every filter and the "already applied" guard (the web Jobs page).
@@ -276,22 +309,10 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
   if (error || !job) return error!;
 
   if (!opts.force) {
-    const { data: mine } = await createAdminClient().from("user_jobs").select("applied_at")
-      .eq("user_id", userId).eq("job_id", job.id).maybeSingle();
-    if (mine?.applied_at) {
-      return { status: 200, body: { ok: false, skipped: true, already_applied: true, message: "You've already applied to this project — not regenerating." } };
-    }
-    const skip = skipReason(s, job, clientCountry, collected);
-    const personal = skip || opts.manual ? null : userFilterReason(s, job);
-    const bad = skip || personal || opts.manual ? null : await badMark(job.id);
-    if (skip || personal || bad) {
+    const verdict = await skipVerdict(userId, s, job, collected, clientCountry, Boolean(opts.manual));
+    if (verdict) {
       await touchUserJob(userId, job.id, {});
-      const message = skip
-        ? `Skipped — matches the filters (${skip}); no proposal generated.`
-        : personal
-          ? `Skipped — hidden by your own filters (${personal}); no proposal generated. Press ✨ Generate to write one anyway.`
-          : `Skipped — ${bad}; no proposal generated. Press ✨ Generate to write one anyway.`;
-      return { status: 200, body: { ok: false, skipped: true, message } };
+      return { status: 200, body: { ok: false, ...verdict } };
     }
   }
   if (!s.OPENAI_API_KEY) {
@@ -333,6 +354,18 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
   };
 }
 
+/** Shared "bad" mark from the userscript, e.g. a project Freelancer says no longer
+ *  takes bids: it leaves every user's lists. Kept if the user already marked it. */
+export async function markBadForUser(userId: string, ref: JobRef, reason: string): Promise<Result> {
+  const s = await getEffectiveSettings(userId);
+  const { job, error } = await ensureJob(s, ref);
+  if (error || !job) return error!;
+  const { error: e } = await createAdminClient().from("job_flags")
+    .upsert({ job_id: job.id, user_id: userId, reason: reason.trim().slice(0, 200) }, { onConflict: "job_id,user_id", ignoreDuplicates: true });
+  if (e) return { status: 400, body: { ok: false, message: e.message } };
+  return { status: 200, body: { ok: true } };
+}
+
 export async function markOpened(userId: string, ref: JobRef): Promise<Result> {
   const s = await getEffectiveSettings(userId);
   const { job, error } = await ensureJob(s, ref);
@@ -349,20 +382,17 @@ export async function markApplied(userId: string, ref: JobRef, applied = true): 
   return { status: 200, body: { ok: true, status: applied ? "applied" : "opened" } };
 }
 
-/** Mark many stored jobs applied at once (the Jobs page's "Mark all as applied").
- *  Keeps each job's first opened time; unknown ids are ignored. */
-export async function markAppliedMany(userId: string, ids: number[]): Promise<Result> {
+/** Mark stored jobs skipped (or not) for one user: "Mark skipped" / "Mark all as
+ *  skipped" on the Jobs page. Leaves opened/applied alone; unknown ids are ignored. */
+export async function markSkipped(userId: string, ids: number[], skipped = true): Promise<Result> {
   const db = createAdminClient();
   const { data: found, error } = await db.from("jobs").select("id").in("id", ids);
   if (error) return { status: 400, body: { ok: false, message: error.message } };
   const jobIds = (found ?? []).map((j) => Number(j.id));
   if (!jobIds.length) return { status: 200, body: { ok: true, count: 0 } };
-  const { data: existing } = await db.from("user_jobs").select("job_id,opened_at")
-    .eq("user_id", userId).in("job_id", jobIds);
-  const opened = new Map((existing ?? []).map((r) => [Number(r.job_id), r.opened_at as string | null]));
-  const now = new Date().toISOString();
-  const rows = jobIds.map((id) => ({ user_id: userId, job_id: id, applied_at: now, opened_at: opened.get(id) || now }));
-  const { error: upErr } = await db.from("user_jobs").upsert(rows, { onConflict: "user_id,job_id" });
+  const at = skipped ? new Date().toISOString() : null;
+  const { error: upErr } = await db.from("user_jobs")
+    .upsert(jobIds.map((id) => ({ user_id: userId, job_id: id, skipped_at: at })), { onConflict: "user_id,job_id" });
   if (upErr) return { status: 400, body: { ok: false, message: upErr.message } };
   return { status: 200, body: { ok: true, count: jobIds.length } };
 }

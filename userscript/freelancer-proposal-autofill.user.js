@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.20.0
+// @version      1.26.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -13,6 +13,8 @@
 // @grant        GM_setValue
 // @grant        GM_registerMenuCommand
 // @grant        GM_openInTab
+// @grant        unsafeWindow
+// @grant        window.close
 // @connect      127.0.0.1
 // @connect      localhost
 // @updateURL    http://127.0.0.1:8765/userscript.user.js
@@ -46,7 +48,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.20.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.26.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -150,6 +152,108 @@
     return txt ? txt.slice(0, 300) : null;
   }
 
+  // ── Country gate: blocks a skipped-country client as soon as the page shows it ──
+  // The bot sends its BOT_SKIP_COUNTRIES / BOT_ALLOW_COUNTRIES lists with the panel
+  // options; matched like the bot does (whole country names inside the "About the
+  // Client" text). A blocked project gets Generate and Place bid disabled, so no
+  // OpenAI call is made and no bid can go out by accident.
+  const COUNTRIES_KEY = "fbb:countries";
+  function countryLists() {
+    try { return JSON.parse(window.localStorage.getItem(COUNTRIES_KEY) || "") || { skip: [], allow: [] }; }
+    catch (e) { return { skip: [], allow: [] }; }
+  }
+  function cacheCountries(d) {
+    if (!Array.isArray(d.skip_countries) && !Array.isArray(d.allow_countries)) return;
+    const lists = { skip: d.skip_countries || [], allow: d.allow_countries || [] };
+    try { window.localStorage.setItem(COUNTRIES_KEY, JSON.stringify(lists)); } catch (e) {}
+  }
+  function countryBlockReason(clientText) {
+    const text = (clientText || "").toLowerCase();
+    const { skip, allow } = countryLists();
+    if (!text || (!skip.length && !allow.length)) return null;
+    const inText = (name) => new RegExp("\\b" + String(name).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b").test(text);
+    const hit = skip.find(inText);
+    if (hit) return { why: "client is in " + hit + " (a skipped country)", tag: "country: " + hit };
+    if (allow.length && !allow.some(inText)) return { why: "client's country isn't in the allowed list", tag: "country not allowed" };
+    return null;
+  }
+  // Hard skips (admin filters, skipped country) turn Generate and Place bid off. Soft
+  // ones (your own filters, a bad mark, already applied) only stop the automatic
+  // proposal: ✨ Generate still writes one if you want it anyway.
+  let countryBlock = null, serverBlock = null, softSkip = null;
+  let gateCheck = null;       // both checks for the current project
+  let runBtn = null, bidBtn = null;
+  const blockedReason = () => countryBlock || serverBlock;
+  function paintBlocked() {
+    const why = blockedReason();
+    for (const b of [runBtn, bidBtn]) {
+      if (!b) continue;
+      b.disabled = !!why;
+      b.style.opacity = why ? "0.4" : "1";
+      b.style.cursor = why ? "not-allowed" : "pointer";
+      b.title = why ? why : "";
+    }
+  }
+  function block(kind, why) {
+    if (kind === "country") countryBlock = why; else serverBlock = why;
+    paintBlocked();
+    cancelAutoBid(null);
+    badge(why + " Generate and Place bid are off.", "err");
+  }
+  // Waits (up to 20 s) for the "About the Client" block, then matches the country.
+  function checkCountry(seo) {
+    return new Promise((resolve) => {
+      const started = Date.now();
+      const tick = () => {
+        if (currentSeo() !== seo) return resolve(); // moved on: the next check owns it
+        const text = currentClientCountry();
+        if (text || Date.now() - started > 20000) {
+          const hit = countryBlockReason(text);
+          if (hit) {
+            block("country", "Skipped — " + hit.why + ".");
+            // The country lists are the admin's, so the job is useless to everyone.
+            autoMarkBad(seo, currentProjectId(), hit.tag, "Skipped — " + hit.why);
+          }
+          return resolve();
+        }
+        setTimeout(tick, 400);
+      };
+      tick();
+    });
+  }
+  // The bot's skip filters (currency, upgrades, your own filters, bad marks, already
+  // applied), without generating anything. A bot without /jobs/check (the older local
+  // one) or a network error just lets the normal generate decide, as before.
+  function checkServer(seo) {
+    const pid = currentProjectId();
+    const params = "seo=" + encodeURIComponent(seo) + (pid ? "&id=" + encodeURIComponent(pid) : "");
+    return new Promise((resolve) => {
+      GM_xmlhttpRequest({
+        method: "GET",
+        headers: botHeaders(),
+        url: BOT_BASE + "/jobs/check?" + params,
+        timeout: 20000,
+        onload: (r) => {
+          let d = null;
+          try { d = JSON.parse(r.responseText); } catch (e) {}
+          if (currentSeo() === seo && d && d.ok && d.skipped) {
+            if (d.hard) block("server", d.message || "Skipped by filter.");
+            else { softSkip = d.message || "Skipped."; if (!blockedReason()) badge(softSkip, "info"); }
+          }
+          resolve();
+        },
+        onerror: () => resolve(),
+        ontimeout: () => resolve(),
+      });
+    });
+  }
+  // Starts both checks the moment a project opens.
+  function startChecks(seo) {
+    countryBlock = serverBlock = softSkip = null;
+    paintBlocked();
+    gateCheck = seo ? Promise.all([checkServer(seo), checkCountry(seo)]) : null;
+  }
+
   // ── Detect that YOU have already bid on this project ──────────────────────
   // Freelancer replaces the bid form with a "retract / revise your bid" UI once
   // you've bid. We match ONLY phrases that appear AFTER you've bid — never text
@@ -201,8 +305,11 @@
     statusEl.textContent = "🤖 Bid bot ready";
     const row = document.createElement("div");
     row.style.cssText = "display:flex;gap:8px;";
-    row.appendChild(mkBtn("✨ Generate", "#3b82f6", () => run(true)));
-    row.appendChild(mkBtn("🚀 Place bid", "#e0218a", () => placeBid(0)));
+    runBtn = mkBtn("✨ Generate", "#3b82f6", () => run(true));
+    bidBtn = mkBtn("🚀 Place bid", "#e0218a", () => placeBid(0));
+    row.appendChild(runBtn);
+    row.appendChild(bidBtn);
+    paintBlocked();
     // Auto-bid and Seal are set on the bot's Settings page (My settings › Bid
     // defaults), not here: the panel only reads them. Their spot holds a jump to
     // Freelancer's own Place Bid button, which sits far below the proposal box.
@@ -297,6 +404,7 @@
     if (typeof d.seal === "boolean") cacheSeal(d.seal);
     if (typeof d.autogen === "boolean") cacheAutoGen(d.autogen);
     if (typeof d.autobid === "boolean") cacheAutoBid(d.autobid);
+    cacheCountries(d);
   }
 
   // ── Auto-generate toggle (Settings page: BOT_AUTO_GENERATE) ────────────────
@@ -538,6 +646,8 @@
   // button reads "Update bid" and clicking it is exactly what you asked for.
   async function placeBid(waitMs, isAuto) {
     cancelAutoBid(null); // a manual place-bid supersedes any pending countdown
+    if (gateCheck) await gateCheck;
+    if (blockedReason()) { badge(blockedReason() + " Not placing a bid.", "err"); return; }
     if (isAuto && hasAlreadyBid()) { badge("Already bid on this project — auto-bid skipped.", "info"); return; }
     const btn = await waitForPlaceBidButton(waitMs || 0);
     if (!btn) {
@@ -561,8 +671,8 @@
     const iv = setInterval(() => {
       if (hasAlreadyBid()) {
         clearInterval(iv);
-        markApplied(seo, pid); // record it in the bot's Jobs list
-        badge("Bid confirmed — marked applied.", "ok");
+        // Usually already done by the bid-request watcher; this is the fallback.
+        if (markAppliedOnce(seo, pid)) badge("Bid confirmed — marked applied.", "ok");
       } else if (Date.now() - started > 12000) {
         clearInterval(iv);
         badge("Couldn't confirm the bid was placed — not marking applied. If it did go through, use 🔄 Sync.", "info");
@@ -627,6 +737,72 @@
         onload: () => {}, onerror: () => {}, ontimeout: () => {},
       });
     } catch (e) { /* ignore */ }
+  }
+
+  // Once per project per tab: the bid-request watcher and the panel's confirmation
+  // can both see the same bid.
+  const appliedSent = new Set();
+  function markAppliedOnce(seo, pid) {
+    const key = pid || seo;
+    if (!key || appliedSent.has(key)) return false;
+    appliedSent.add(key);
+    markApplied(seo, pid);
+    return true;
+  }
+
+  // ── Watch Freelancer's own bid request ─────────────────────────────────────
+  // Marks the job applied the moment Freelancer's bid API answers success, whichever
+  // button placed the bid (ours, auto-bid, or Freelancer's own). It only LISTENS for
+  // the response after it arrives: the request itself is never held up or changed,
+  // and any error in here is swallowed so it can never break placing a bid.
+  const BID_API = /\/api\/projects\/0\.1\/bids\/?(\d+\/?)?(\?|$)/;
+  function onBidResponse(method, url, status) {
+    try {
+      if (!/^(POST|PUT)$/i.test(method || "") || !BID_API.test(String(url || "")) || status < 200 || status >= 300) return;
+      if (markAppliedOnce(currentSeo(), currentProjectId())) badge("Bid placed — marked applied.", "ok");
+    } catch (e) { /* never interfere with the bid */ }
+  }
+  function watchBidRequests() {
+    try {
+      const w = typeof unsafeWindow !== "undefined" ? unsafeWindow : window;
+      // Firefox runs userscripts in a separate realm: page code can only call our
+      // functions once they're exported to it.
+      const exp = typeof exportFunction === "function" ? (f) => exportFunction(f, w) : (f) => f;
+      const proto = w.XMLHttpRequest && w.XMLHttpRequest.prototype;
+      if (proto && !proto.__fbbBidWatch) {
+        const open = proto.open, send = proto.send;
+        proto.open = exp(function (method, url) {
+          try { this.__fbbReq = [method, url]; } catch (e) {}
+          return open.apply(this, arguments);
+        });
+        proto.send = exp(function () {
+          try {
+            const xhr = this, req = xhr.__fbbReq;
+            if (req && BID_API.test(String(req[1]))) {
+              xhr.addEventListener("load", exp(() => onBidResponse(req[0], req[1], xhr.status)));
+            }
+          } catch (e) {}
+          return send.apply(this, arguments);
+        });
+        proto.__fbbBidWatch = true;
+      }
+      if (typeof w.fetch === "function" && !w.fetch.__fbbBidWatch) {
+        const orig = w.fetch;
+        const wrapped = exp(function (input, init) {
+          const p = orig.apply(this, arguments);
+          try {
+            const url = typeof input === "string" ? input : (input && input.url) || "";
+            const method = (init && init.method) || (input && input.method) || "GET";
+            if (BID_API.test(String(url))) p.then(exp((r) => onBidResponse(method, url, r.status)), exp(() => {}));
+          } catch (e) {}
+          return p;
+        });
+        wrapped.__fbbBidWatch = true;
+        w.fetch = wrapped;
+      }
+    } catch (e) {
+      console.log("[fbb] couldn't watch bid requests; the panel's Place bid still marks applied:", e);
+    }
   }
 
   // ── Copy the job's description + skills to the clipboard ──────────────────
@@ -768,9 +944,76 @@
   // Freelancer is a slow SPA. Resolves the instant the proposal textarea appears
   // ("textarea"), or the instant we can tell you've already bid ("alreadybid"),
   // via a MutationObserver with a polling fallback and a hard timeout ("timeout").
+  // A project that no longer takes bids (awarded, in progress, completed, closed…)
+  // has no proposal box, so there is nothing to generate for. Returns the status, or
+  // null. Matched on Freelancer's status wording only: a short element that reads
+  // exactly like a status label, or an explicit "no longer accepting bids" message,
+  // so a description that merely mentions "completed" can't trigger it.
+  const CLOSED_LABEL = /^(closed|awarded|in progress|completed|complete|frozen|cancell?ed|expired|ended)$/i;
+  const CLOSED_TEXT = /(no longer accepting bids|bidding (?:has |is )?(?:closed|ended)|this project (?:has been|is) (?:awarded|closed|completed|cancell?ed)|project (?:is )?closed for bidding)/i;
+  function projectClosedStatus() {
+    for (const el of document.querySelectorAll("fl-tag, fl-badge, [class*='status'] , [class*='Status'], span, div")) {
+      if (el.children.length || el.offsetParent === null) continue;
+      const t = (el.textContent || "").trim();
+      if (t.length <= 14 && CLOSED_LABEL.test(t)) return t;
+    }
+    const m = ((document.body && document.body.innerText) || "").match(CLOSED_TEXT);
+    return m ? m[1] : null;
+  }
+
+  // The explicit "no longer accepting bids" kind of message, or null. Only this (not a
+  // bare status label) marks the job bad, because bad marks hide it for EVERY user.
+  function closedMessage() {
+    const m = ((document.body && document.body.innerText) || "").match(CLOSED_TEXT);
+    return m ? m[1] : null;
+  }
+  // Automatic shared "bad" mark (closed project, skipped country), then the tab is
+  // closed: nobody can use the job, so there's nothing left to do on this page. The
+  // tab only closes once the bot confirmed the mark, so it is never lost; if saving
+  // fails the tab stays open and says so.
+  const badSent = new Set();
+  function autoMarkBad(seo, pid, reason, why) {
+    const key = pid || seo;
+    if (!key || badSent.has(key)) return;
+    badSent.add(key);
+    const params = (pid ? "id=" + encodeURIComponent(pid) + "&" : "") + "seo=" + encodeURIComponent(seo) +
+      "&reason=" + encodeURIComponent(reason);
+    const failed = (msg) => badge(why + " — couldn't mark it bad (" + msg + "), so this tab stays open.", "err");
+    try {
+      GM_xmlhttpRequest({
+        method: "GET", headers: botHeaders(), url: BOT_BASE + "/jobs/bad?" + params, timeout: 15000,
+        onload: (r) => {
+          let d = null;
+          try { d = JSON.parse(r.responseText); } catch (e) {}
+          if (!(r.status >= 200 && r.status < 300 && d && d.ok)) return failed((d && d.message) || "HTTP " + r.status);
+          if (currentSeo() !== seo) return; // you moved on in this tab: leave it open
+          badge(why + " — marked bad. Closing this tab…", "info");
+          setTimeout(() => {
+            if (currentSeo() !== seo) return;
+            try { window.close(); } catch (e) {}
+            // Still here: the browser refused (Tampermonkey's window.close not granted).
+            setTimeout(() => { if (currentSeo() === seo) badge(why + " — marked bad. Close this tab when you're done.", "info"); }, 300);
+          }, 1500);
+        },
+        onerror: () => failed("bot unreachable"),
+        ontimeout: () => failed("timed out"),
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  // Resolves "textarea", "alreadybid", "closed" (no proposal box, and the page says
+  // the project is closed), or "timeout".
   function waitForBidState(timeoutMs) {
-    const check = () =>
-      hasAlreadyBid() ? "alreadybid" : (findProposalTextarea() ? "textarea" : null);
+    // "closed" must hold for a moment with no proposal box, so a page that shows its
+    // status before the bid form has rendered isn't mistaken for a closed one.
+    let closedSince = 0;
+    const check = () => {
+      if (hasAlreadyBid()) return "alreadybid";
+      if (findProposalTextarea()) return "textarea";
+      if (!projectClosedStatus()) { closedSince = 0; return null; }
+      if (!closedSince) closedSince = Date.now();
+      return Date.now() - closedSince >= 1200 ? "closed" : null;
+    };
     return new Promise((resolve) => {
       const first = check();
       if (first) return resolve(first);
@@ -808,6 +1051,12 @@
     const seo = currentSeo();
     if (!seo) return;
     if (!force && seo === lastSeo) return; // already handled this project in-tab
+    // Skip checks first, so a skipped project says so before anything else (they show
+    // their own message). ✨ Generate overrides a soft skip, never a hard one.
+    if (gateCheck) await gateCheck;
+    if (currentSeo() !== seo) return;
+    if (blockedReason()) return;
+    if (!force && softSkip) return;
     // Auto-generate OFF: opening a project does nothing, so browsing costs no OpenAI
     // call. Pressing ✨ Generate / Alt+G passes force=true and always generates. Note
     // lastSeo is NOT set here — if you switch the toggle on, a re-run still works.
@@ -821,6 +1070,7 @@
     const superseded = () => myRun !== runSeq || currentSeo() !== seo;
     cancelAutoBid(null); // a fresh generate restarts the countdown with the new text
 
+
     const state = await waitForBidState(90000);
     if (superseded()) return;
     if (state === "alreadybid") {
@@ -828,6 +1078,18 @@
       // applied here: auto-detect can mis-fire on bad networks, and the applied list is
       // kept accurate by the panel's Place-bid and the "Sync applied" button instead.
       badge("You've already bid on this — skipping. Use Sync to refresh the list.", "info");
+      return;
+    }
+    if (state === "closed") {
+      // Awarded / in progress / completed / closed: no proposal box, so no generate
+      // request (no OpenAI call), and nothing to bid on.
+      const why = closedMessage();
+      if (why) {
+        // Nobody can bid on it any more: take it off everyone's Jobs lists.
+        autoMarkBad(seo, currentProjectId(), "closed: " + why.toLowerCase(), "Project " + why.toLowerCase());
+      } else {
+        badge("Project is " + (projectClosedStatus() || "closed").toLowerCase() + " — not accepting bids, so no proposal.", "info");
+      }
       return;
     }
     if (state !== "textarea") {
@@ -920,6 +1182,8 @@
   // decide whether to generate. Reading first means a fresh browser obeys the saved
   // setting instead of the built-in default. On failure we fall back to the cached
   // values, which the buttons already show.
+  watchBidRequests();
+  startChecks(currentSeo()); // in parallel with reading the options
   optionsRequest({}).then(cacheOptions, () => {}).then(() => run(false));
   // Keyed on the PROJECT, not the raw path: Freelancer rewrites the URL of the same
   // project after load (…/slug -> …/slug/details), and treating that as a new page
@@ -931,6 +1195,7 @@
       lastWatchedSeo = seo;
       lastSeo = null;
       cancelAutoBid(null); // never let a countdown from the previous project fire here
+      startChecks(seo);
       run(false);
     }
   }, 1000);
