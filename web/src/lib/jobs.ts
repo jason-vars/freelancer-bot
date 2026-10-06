@@ -360,15 +360,27 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
 /** Shared "bad" mark from the userscript, e.g. a project Freelancer says no longer
  *  takes bids: it leaves every user's lists. Kept if the user already marked it. */
 export async function markBadForUser(userId: string, ref: JobRef, reason: string): Promise<Result> {
+  const notMarked = (why: string, message: string) => ({ status: 200, body: { ok: true, marked: false, reason: why, message } });
+  // A deleted project: database only, no Freelancer API call. Not stored = in nobody's
+  // list, so there is nothing to mark. (The userscript only reports it after the
+  // page's own visible "doesn't exist" message held for a few seconds.)
+  if (/^deleted:/.test(reason)) {
+    const stored = await findJob(ref);
+    if (!stored) return notMarked("not_found", "Not in your Jobs list, nothing to mark.");
+    return saveBadMark(userId, stored.id, reason);
+  }
   const s = await getEffectiveSettings(userId);
   const { job, error } = await ensureJob(s, ref);
-  // Not stored and gone from Freelancer (e.g. a deleted project): it's in nobody's
-  // list, so there is nothing to mark — not an error.
-  if (!job && error?.status === 404) return { status: 200, body: { ok: true, marked: false, message: error.body.message } };
+  // Not stored and gone from Freelancer: it's in nobody's list, so nothing to mark.
+  if (!job && error?.status === 404) return notMarked("not_found", "Not in your Jobs list, nothing to mark.");
   if (error || !job) return error!;
-  const { error: e } = await createAdminClient().from("job_flags")
-    .upsert({ job_id: job.id, user_id: userId, reason: reason.trim().slice(0, 200) }, { onConflict: "job_id,user_id", ignoreDuplicates: true });
-  if (e) return { status: 400, body: { ok: false, message: e.message } };
+  return saveBadMark(userId, job.id, reason);
+}
+
+async function saveBadMark(userId: string, jobId: number, reason: string): Promise<Result> {
+  const { error } = await createAdminClient().from("job_flags")
+    .upsert({ job_id: jobId, user_id: userId, reason: reason.trim().slice(0, 200) }, { onConflict: "job_id,user_id", ignoreDuplicates: true });
+  if (error) return { status: 400, body: { ok: false, message: error.message } };
   return { status: 200, body: { ok: true } };
 }
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.30.0
+// @version      1.32.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -54,7 +54,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.30.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.32.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -971,22 +971,37 @@
   // exactly like a status label, or an explicit "no longer accepting bids" message,
   // so a description that merely mentions "completed" can't trigger it.
   const CLOSED_LABEL = /^(closed|awarded|in progress|completed|complete|frozen|cancell?ed|expired|ended)$/i;
-  const CLOSED_TEXT = /(no longer accepting bids|bidding (?:has |is )?(?:closed|ended)|this project (?:has been|is) (?:awarded|closed|completed|cancell?ed)|project (?:is )?closed for bidding|this project (?:doesn['’]t|does not) exist|project (?:has been|was) (?:deleted|removed))/i;
+  const CLOSED_TEXT = /(no longer accepting bids|bidding (?:has |is )?(?:closed|ended)|this project (?:has been|is) (?:awarded|closed|completed|cancell?ed)|project (?:is )?closed for bidding)/i;
+  // A deleted project. Only trusted from a short, VISIBLE message held for 3 seconds
+  // with no bid form (no API call: the page is the only evidence).
+  const GONE_TEXT = /(this project (?:doesn['’]t|does not) exist)/i;
   function projectClosedStatus() {
     for (const el of document.querySelectorAll("fl-tag, fl-badge, [class*='status'] , [class*='Status'], span, div")) {
       if (el.children.length || el.offsetParent === null) continue;
       const t = (el.textContent || "").trim();
       if (t.length <= 14 && CLOSED_LABEL.test(t)) return t;
     }
-    const m = ((document.body && document.body.innerText) || "").match(CLOSED_TEXT);
-    return m ? m[1] : null;
+    return closedMessage();
   }
 
-  // The explicit "no longer accepting bids" kind of message, or null. Only this (not a
-  // bare status label) marks the job bad, because bad marks hide it for EVERY user.
+  // The explicit "no longer accepting bids" kind of message, or "This project doesn't
+  // exist", or null. Only these (not a bare status label) mark the job bad, because
+  // bad marks hide it for EVERY user.
   function closedMessage() {
     const m = ((document.body && document.body.innerText) || "").match(CLOSED_TEXT);
-    return m ? m[1] : null;
+    return m ? m[1] : goneMessage();
+  }
+  // "Doesn't exist" only from the page's own short, visible message: hidden templates
+  // and the notifications panel can hold similar words while the page loads.
+  function goneMessage() {
+    for (const el of document.querySelectorAll("h1, h2, h3, h4, h5, p, span, div, fl-text, fl-heading")) {
+      if (el.children.length > 3 || el.offsetParent === null) continue;
+      const t = (el.textContent || "").replace(/\s+/g, " ").trim();
+      if (t.length > 160) continue;
+      const m = t.match(GONE_TEXT);
+      if (m) return m[1];
+    }
+    return null;
   }
   // Automatic shared "bad" mark (closed project, skipped country), then the tab is
   // closed: nobody can use the job, so there's nothing left to do on this page. The
@@ -1007,7 +1022,12 @@
           let d = null;
           try { d = JSON.parse(r.responseText); } catch (e) {}
           if (!(r.status >= 200 && r.status < 300 && d && d.ok)) return failed((d && d.message) || "HTTP " + r.status);
-          if (d.marked === false) return closeTab(seo, why + " — not in your Jobs list, nothing to mark");
+          if (d.marked === false) {
+            // Gone and never stored: nothing to mark, still done with this tab.
+            if (d.reason === "not_found") return closeTab(seo, why + " — not in your Jobs list, nothing to mark");
+            // Freelancer says it's still open (or couldn't confirm): keep the tab.
+            return badge(d.message || "Not marked bad.", "info");
+          }
           if (currentSeo() !== seo) return; // you moved on in this tab: leave it open
           closeTab(seo, why + " — marked bad");
         },
@@ -1082,7 +1102,8 @@
       if (findProposalTextarea()) return "textarea";
       if (!projectClosedStatus()) { closedSince = 0; return null; }
       if (!closedSince) closedSince = Date.now();
-      return Date.now() - closedSince >= 1200 ? "closed" : null;
+      // A deleted-project message must hold longer: it can flash while a page loads.
+      return Date.now() - closedSince >= (goneMessage() ? 3000 : 1200) ? "closed" : null;
     };
     return new Promise((resolve) => {
       const first = check();
