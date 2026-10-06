@@ -362,6 +362,9 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
 export async function markBadForUser(userId: string, ref: JobRef, reason: string): Promise<Result> {
   const s = await getEffectiveSettings(userId);
   const { job, error } = await ensureJob(s, ref);
+  // Not stored and gone from Freelancer (e.g. a deleted project): it's in nobody's
+  // list, so there is nothing to mark — not an error.
+  if (!job && error?.status === 404) return { status: 200, body: { ok: true, marked: false, message: error.body.message } };
   if (error || !job) return error!;
   const { error: e } = await createAdminClient().from("job_flags")
     .upsert({ job_id: job.id, user_id: userId, reason: reason.trim().slice(0, 200) }, { onConflict: "job_id,user_id", ignoreDuplicates: true });

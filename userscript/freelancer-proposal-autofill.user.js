@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.29.0
+// @version      1.30.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -54,7 +54,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.29.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.30.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -223,6 +223,8 @@
       const started = Date.now();
       const tick = () => {
         if (currentSeo() !== seo) return resolve(); // moved on: the next check owns it
+        // A deleted / closed project page never shows the client box: stop waiting.
+        if (closedMessage()) return resolve();
         const text = currentClientCountry();
         if (text || Date.now() - started > 20000) {
           const hit = countryBlockReason(text);
@@ -269,6 +271,7 @@
     countryBlock = serverBlock = softSkip = null;
     paintBlocked();
     gateCheck = seo ? Promise.all([checkServer(seo), checkCountry(seo)]) : null;
+    if (seo) watchClosed(seo);
   }
 
   // ── Detect that YOU have already bid on this project ──────────────────────
@@ -968,7 +971,7 @@
   // exactly like a status label, or an explicit "no longer accepting bids" message,
   // so a description that merely mentions "completed" can't trigger it.
   const CLOSED_LABEL = /^(closed|awarded|in progress|completed|complete|frozen|cancell?ed|expired|ended)$/i;
-  const CLOSED_TEXT = /(no longer accepting bids|bidding (?:has |is )?(?:closed|ended)|this project (?:has been|is) (?:awarded|closed|completed|cancell?ed)|project (?:is )?closed for bidding)/i;
+  const CLOSED_TEXT = /(no longer accepting bids|bidding (?:has |is )?(?:closed|ended)|this project (?:has been|is) (?:awarded|closed|completed|cancell?ed)|project (?:is )?closed for bidding|this project (?:doesn['’]t|does not) exist|project (?:has been|was) (?:deleted|removed))/i;
   function projectClosedStatus() {
     for (const el of document.querySelectorAll("fl-tag, fl-badge, [class*='status'] , [class*='Status'], span, div")) {
       if (el.children.length || el.offsetParent === null) continue;
@@ -1004,6 +1007,7 @@
           let d = null;
           try { d = JSON.parse(r.responseText); } catch (e) {}
           if (!(r.status >= 200 && r.status < 300 && d && d.ok)) return failed((d && d.message) || "HTTP " + r.status);
+          if (d.marked === false) return closeTab(seo, why + " — not in your Jobs list, nothing to mark");
           if (currentSeo() !== seo) return; // you moved on in this tab: leave it open
           closeTab(seo, why + " — marked bad");
         },
@@ -1044,6 +1048,27 @@
         }, 1500);
       });
     } catch (e) { keepOpen(); }
+  }
+
+  // A project nobody can bid on: an explicit "no longer accepting bids" / "doesn't
+  // exist" message marks it bad for everyone and closes the tab; a bare status label
+  // only says so. Safe to call twice (autoMarkBad sends once per project).
+  function handleClosed(seo) {
+    if (currentSeo() !== seo) return;
+    const why = closedMessage();
+    if (why) {
+      const gone = /exist|deleted|removed/i.test(why);
+      autoMarkBad(seo, currentProjectId(),
+        gone ? "deleted: project doesn't exist" : "closed: " + why.toLowerCase(),
+        gone ? "Project doesn't exist" : "Project " + why.toLowerCase());
+    } else {
+      badge("Project is " + (projectClosedStatus() || "closed").toLowerCase() + " — not accepting bids, so no proposal.", "info");
+    }
+  }
+  // Runs on every project page, whatever the auto-generate setting: run() only gets
+  // to look at the page when it is about to generate.
+  function watchClosed(seo) {
+    waitForBidState(90000).then((state) => { if (state === "closed") handleClosed(seo); });
   }
 
   // Resolves "textarea", "alreadybid", "closed" (no proposal box, and the page says
@@ -1126,15 +1151,9 @@
       return;
     }
     if (state === "closed") {
-      // Awarded / in progress / completed / closed: no proposal box, so no generate
-      // request (no OpenAI call), and nothing to bid on.
-      const why = closedMessage();
-      if (why) {
-        // Nobody can bid on it any more: take it off everyone's Jobs lists.
-        autoMarkBad(seo, currentProjectId(), "closed: " + why.toLowerCase(), "Project " + why.toLowerCase());
-      } else {
-        badge("Project is " + (projectClosedStatus() || "closed").toLowerCase() + " — not accepting bids, so no proposal.", "info");
-      }
+      // Awarded / closed / deleted: no proposal box, so no generate request (no OpenAI
+      // call), and nothing to bid on. watchClosed() already handles the page.
+      handleClosed(seo);
       return;
     }
     if (state !== "textarea") {
