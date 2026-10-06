@@ -96,6 +96,28 @@ async function fetchLiveProject(s: Values, id: number): Promise<Job | null> {
   }
 }
 
+/** Whether Freelancer still takes bids on the project: "open", "closed" (awarded,
+ *  in progress, ended…), "gone" (deleted / not found), or null when it can't tell
+ *  (no token, network error). */
+async function liveProjectState(s: Values, id: number): Promise<"open" | "closed" | "gone" | null> {
+  if (!s.FLN_OAUTH_TOKEN) return null;
+  try {
+    const r = await fetch(`${freelancerBase(s)}/api/projects/0.1/projects/${id}/`, {
+      headers: { "freelancer-oauth-v1": s.FLN_OAUTH_TOKEN }, cache: "no-store",
+    });
+    if (r.status === 404) return "gone";
+    if (!r.ok) return null;
+    const p = (await r.json())?.result;
+    if (!p?.id) return "gone";
+    const status = String(p.status ?? "").toLowerCase();
+    const front = String(p.frontend_project_status ?? "").toLowerCase();
+    if (["deleted", "rejected"].includes(status)) return "gone";
+    return status === "active" || front === "open" ? "open" : "closed";
+  } catch {
+    return null;
+  }
+}
+
 // ── Lookups ──────────────────────────────────────────────────────────────────────
 async function findJob(ref: JobRef): Promise<Job | null> {
   const db = createAdminClient();
@@ -362,9 +384,18 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
 export async function markBadForUser(userId: string, ref: JobRef, reason: string): Promise<Result> {
   const s = await getEffectiveSettings(userId);
   const { job, error } = await ensureJob(s, ref);
-  // Not stored and gone from Freelancer (e.g. a deleted project): it's in nobody's
-  // list, so there is nothing to mark — not an error.
-  if (!job && error?.status === 404) return { status: 200, body: { ok: true, marked: false, message: error.body.message } };
+  const notMarked = (why: string, message: string) => ({ status: 200, body: { ok: true, marked: false, reason: why, message } });
+  // "Closed" / "doesn't exist" come from reading the page, which can mislead while it
+  // loads. A shared mark hides the job for everyone, so Freelancer's API must agree.
+  if (/^(closed|deleted):/.test(reason)) {
+    const id = job?.id ?? ref.id;
+    const state = id ? await liveProjectState(s, id) : null;
+    if (state === "open") return notMarked("open", "Freelancer says this project is still open — not marked bad.");
+    if (state === null) return notMarked("unverified", "Couldn't confirm with Freelancer that the project is closed — not marked bad.");
+    if (!job) return notMarked("not_found", "Not in your Jobs list, nothing to mark.");
+  }
+  // Not stored and gone from Freelancer: it's in nobody's list, so nothing to mark.
+  if (!job && error?.status === 404) return notMarked("not_found", "Not in your Jobs list, nothing to mark.");
   if (error || !job) return error!;
   const { error: e } = await createAdminClient().from("job_flags")
     .upsert({ job_id: job.id, user_id: userId, reason: reason.trim().slice(0, 200) }, { onConflict: "job_id,user_id", ignoreDuplicates: true });
