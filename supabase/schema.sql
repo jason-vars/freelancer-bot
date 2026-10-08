@@ -99,6 +99,13 @@ create table if not exists public.jobs (
 -- ALTER to stay safe to re-run on an existing database.
 alter table public.jobs add column if not exists project_type text;
 
+-- When the job was FIRST saved (synced_at moves on every later write). Set by the
+-- default on insert only; the fetcher never sends it. Jobs from before this column
+-- get synced_at as a best guess.
+alter table public.jobs add column if not exists found_at timestamptz;
+alter table public.jobs alter column found_at set default now();
+update public.jobs set found_at = synced_at where found_at is null;
+
 create index if not exists jobs_posted_at on public.jobs (posted_at desc);
 create index if not exists jobs_synced_at on public.jobs (synced_at desc);
 create index if not exists jobs_status on public.jobs (status);

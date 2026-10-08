@@ -21,6 +21,15 @@ const VIEWS = {
 const ADMIN_VIEWS = { filtered: "Filtered out", all: "Everything" } as const;
 type View = keyof typeof VIEWS | keyof typeof ADMIN_VIEWS;
 
+/** How long after posting the bot saved the job: "40s", "3m", "1h 5m". */
+function foundAfter(posted: string | null, found: string | null): string {
+  if (!posted || !found) return "";
+  const s = Math.max(0, Math.round((new Date(found).getTime() - new Date(posted).getTime()) / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
 function ago(iso: string | null): string {
   if (!iso) return "";
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -49,7 +58,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
   const supabase = await createClient();
   let q = supabase
     .from("my_jobs")
-    .select("id,title,url,description,currency,budget_min,budget_max,bid_count,bid_avg,skills,posted_at,upgrades,score,status,filter_reason,opened_at,applied_at,skipped_at,proposal,amount,period_days,my_filter_reason,bad_count,bad_by_me,bad_reasons", { count: "exact" });
+    .select("id,title,url,description,currency,budget_min,budget_max,bid_count,bid_avg,skills,posted_at,found_at,upgrades,score,status,filter_reason,opened_at,applied_at,skipped_at,proposal,amount,period_days,my_filter_reason,bad_count,bad_by_me,bad_reasons", { count: "exact" });
   // Each job sits in one of New / Opened / Applied / Skipped (your own state), and
   // "All" lists every match. They apply your own filters (My settings) too: what those
   // hide is under "Skipped". Jobs anyone marked bad leave everyone's lists and move to
@@ -84,6 +93,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
     budget: fmtBudget(r.budget_min, r.budget_max, r.currency),
     bids: r.bid_count != null ? `${r.bid_count} bids${r.bid_avg ? ` · avg ${Math.round(r.bid_avg)}` : ""}` : "",
     posted: ago(r.posted_at),
+    foundAfter: foundAfter(r.posted_at, r.found_at),
     badges: DISPLAY_UPGRADES.filter(([k]) => r.upgrades?.[k]).map(([, label]) => label),
     status: r.status,
     filterReason: r.filter_reason,
