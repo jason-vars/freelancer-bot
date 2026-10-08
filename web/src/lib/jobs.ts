@@ -378,6 +378,13 @@ export async function markBadForUser(userId: string, ref: JobRef, reason: string
 }
 
 async function saveBadMark(userId: string, jobId: number, reason: string): Promise<Result> {
+  // Already marked (by anyone): a job you're opening AGAIN, e.g. to see who was hired.
+  // Nothing new to record, and the userscript keeps that tab open.
+  const { data: existing } = await createAdminClient().from("job_flags").select("reason").eq("job_id", jobId);
+  if (existing?.length) {
+    const reasons = [...new Set(existing.map((f) => String(f.reason ?? "").trim()).filter(Boolean))].join("; ");
+    return { status: 200, body: { ok: true, marked: false, reason: "already_bad", message: `Already marked bad${reasons ? ` (${reasons})` : ""}.` } };
+  }
   const { error } = await createAdminClient().from("job_flags")
     .upsert({ job_id: jobId, user_id: userId, reason: reason.trim().slice(0, 200) }, { onConflict: "job_id,user_id", ignoreDuplicates: true });
   if (error) return { status: 400, body: { ok: false, message: error.message } };

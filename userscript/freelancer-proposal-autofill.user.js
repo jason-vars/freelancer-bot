@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.32.0
+// @version      1.33.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -54,7 +54,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.32.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.33.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -961,6 +961,29 @@
     });
   }
 
+  // Opening many jobs at once can hit OpenAI's rate limit or the bot's 60 s limit.
+  // Those failures are retried (up to 2 more tries), each after a random 4–10 s and
+  // longer the second time, so the waiting tabs don't all come back at once. Other
+  // errors (no API key, a filter) are reported straight away. Resolves null if a
+  // newer run took over the page meanwhile.
+  const TRANSIENT = /timed out|bad response|cannot reach|rate.?limit|429|50[0-4]|overloaded|temporarily|try again|timeout|ECONN|socket|network/i;
+  async function fetchProposalRetrying(seo, pid, country, manual, superseded) {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const d = await fetchProposal(seo, pid, country, manual);
+        if (d && !d.ok && !d.skipped && attempt < 2 && TRANSIENT.test(d.message || "")) throw d.message;
+        return d;
+      } catch (msg) {
+        if (attempt >= 2 || !TRANSIENT.test(String(msg))) throw msg;
+        const wait = Math.round((4 + Math.random() * 6) * (attempt + 1));
+        badge("Busy (" + String(msg).slice(0, 60) + ") — retrying in " + wait + " s (" + (attempt + 1) + "/2)…", "info");
+        await new Promise((r) => setTimeout(r, wait * 1000));
+        if (superseded()) return null;
+        badge("Generating proposal… (retry " + (attempt + 1) + "/2)", "info");
+      }
+    }
+  }
+
   // ── Wait for the bid form to render, OR for an "already bid" state ─────────
   // Freelancer is a slow SPA. Resolves the instant the proposal textarea appears
   // ("textarea"), or the instant we can tell you've already bid ("alreadybid"),
@@ -1025,6 +1048,9 @@
           if (d.marked === false) {
             // Gone and never stored: nothing to mark, still done with this tab.
             if (d.reason === "not_found") return closeTab(seo, why + " — not in your Jobs list, nothing to mark");
+            // Marked bad before: you reopened it on purpose (e.g. to see who was
+            // hired), so the tab stays open.
+            if (d.reason === "already_bad") return badge(why + " — " + (d.message || "already marked bad") + " Tab kept open.", "info");
             // Freelancer says it's still open (or couldn't confirm): keep the tab.
             return badge(d.message || "Not marked bad.", "info");
           }
@@ -1061,11 +1087,8 @@
         if (currentSeo() !== seo) return; // you moved on in this tab: leave it open
         if (Object.keys(tabs || {}).length < 2) return keepOpen(); // the only tab we know of
         badge(done + ". Closing this tab…", "info");
-        setTimeout(() => {
-          if (currentSeo() !== seo) return;
-          try { window.close(); } catch (e) {}
-          setTimeout(keepOpen, 300); // still here: the browser refused
-        }, 1500);
+        try { window.close(); } catch (e) {}
+        setTimeout(keepOpen, 300); // still here: the browser refused
       });
     } catch (e) { keepOpen(); }
   }
@@ -1207,8 +1230,8 @@
         // a short preview of the client text means the filter got something; "?" means
         // the "About the Client" block wasn't found, so the country filter can't apply.
         badge("Generating proposal… (client: " + (country ? country.slice(0, 32) : "?") + ")", "info");
-        data = await fetchProposal(seo, currentProjectId(), country, force);
-        if (superseded()) return; // a newer run owns the form now
+        data = await fetchProposalRetrying(seo, currentProjectId(), country, force, superseded);
+        if (!data || superseded()) return; // a newer run owns the form now
       }
       // Project matched a currency/country skip filter — don't fill, don't cache.
       if (data && data.skipped) {

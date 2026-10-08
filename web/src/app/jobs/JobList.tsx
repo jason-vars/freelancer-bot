@@ -12,6 +12,8 @@ export type JobRow = {
   budget: string;
   bids: string;
   posted: string;
+  /** How long after posting the bot found it, e.g. "40s" ("" if unknown). */
+  foundAfter: string;
   badges: string[];
   status: string;
   filterReason: string | null;
@@ -179,6 +181,7 @@ function Job({ job, isAdmin, fresh, onState, onExpand }: { job: JobRow; isAdmin:
 
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
         <span>{job.posted}</span>
+        {job.foundAfter && <span title="How long after posting the bot saved this job">· found after {job.foundAfter}</span>}
         {job.bids && <span>· {job.bids}</span>}
         {job.score > 0 && <span>· score {job.score}</span>}
         {fresh && <span className="chip chip-new">Just in</span>}
