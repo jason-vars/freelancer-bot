@@ -222,10 +222,10 @@ function Job({ job, isAdmin, fresh, onState, onExpand }: { job: JobRow; isAdmin:
             {skipped ? "Unskip" : "Mark skipped"}
           </button>
         )}
-        {/* Judging a job bad needs a look at it first, so only opened jobs offer it. */}
+        {/* On New too: the title and tags are often enough to tell a bad job. */}
         {bad.byMe ? (
           <button className="btn" onClick={() => setBad("unbad")} disabled={busy !== null}>Undo bad mark</button>
-        ) : opened && (
+        ) : (
           <button className="btn btn-danger" onClick={() => setBad("bad")} disabled={busy !== null}>👎 Mark bad</button>
         )}
         {isAdmin && bad.count > 0 && (
