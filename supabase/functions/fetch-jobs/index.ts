@@ -58,6 +58,8 @@ const LEASE_SECONDS = 170;
 const CONCURRENCY = 4;
 // Excluded projects are remembered this long so they aren't re-evaluated.
 const SEEN_DAYS = 3;
+// Jobs (and everyone's opened/applied/bad state on them) are deleted after this.
+const KEEP_DAYS = 7;
 
 // Defaults of bot/config.py (except the 30 s interval), for keys the admin never saved.
 const DEFAULTS: Values = {
@@ -627,6 +629,8 @@ async function cycle(db: SupabaseClient, s: Settings, floor: number): Promise<Ta
   }
 
   await db.from("fetch_seen").delete().lt("seen_at", new Date(Date.now() - SEEN_DAYS * 86400_000).toISOString());
+  // Jobs leave after a week, so the table (and the Jobs page) stays fast.
+  await db.rpc("prune_old_jobs", { p_days: KEEP_DAYS });
   return t;
 }
 
