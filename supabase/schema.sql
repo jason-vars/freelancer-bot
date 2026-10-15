@@ -110,6 +110,9 @@ create index if not exists jobs_posted_at on public.jobs (posted_at desc);
 create index if not exists jobs_synced_at on public.jobs (synced_at desc);
 create index if not exists jobs_status on public.jobs (status);
 create index if not exists jobs_url on public.jobs (url);
+-- The Jobs tabs filter on status and list newest first.
+create index if not exists jobs_status_posted on public.jobs (status, posted_at desc);
+create index if not exists jobs_found_at on public.jobs (found_at);
 
 -- ── Per-user job state: opened / applied / last generated proposal ──────────────
 create table if not exists public.user_jobs (
@@ -266,7 +269,25 @@ $$;
 revoke execute on function public.begin_fetch_cycle(int, int) from public, anon, authenticated;
 grant execute on function public.begin_fetch_cycle(int, int) to service_role;
 
+-- Deletes every job first saved more than p_days ago, with its per-user state and
+-- bad marks (cascade): old jobs are no longer biddable and only made the jobs table,
+-- and the Jobs page, slower. At most 2000 per call; the fetcher calls it every cycle.
+-- Returns how many it removed.
+drop function if exists public.prune_rejected_jobs(int);
+create or replace function public.prune_old_jobs(p_days int default 7)
+returns int language sql security definer set search_path = public as $$
+  with gone as (
+    delete from public.jobs
+     where id in (select id from public.jobs where found_at < now() - make_interval(days => p_days) limit 2000)
+    returning 1)
+  select count(*)::int from gone;
+$$;
+revoke execute on function public.prune_old_jobs(int) from public, anon, authenticated;
+grant execute on function public.prune_old_jobs(int) to service_role;
+
 -- ── Row Level Security ───────────────────────────────────────────────────────────
+-- Every check is wrapped as "(select …)" so Postgres runs it ONCE per query, not
+-- once per row: on a large jobs table the per-row form made the Jobs page time out.
 alter table public.profiles      enable row level security;
 alter table public.app_settings  enable row level security;
 alter table public.user_settings enable row level security;
@@ -277,63 +298,63 @@ alter table public.job_flags     enable row level security;
 
 drop policy if exists "profiles: read own or admin" on public.profiles;
 create policy "profiles: read own or admin" on public.profiles
-  for select to authenticated using (id = auth.uid() or public.is_admin());
+  for select to authenticated using (id = (select auth.uid()) or (select public.is_admin()));
 
 -- Only admins change role / approval. Users never update their own row directly
 -- (the API key is set through the server with the secret key).
 drop policy if exists "profiles: admin update" on public.profiles;
 create policy "profiles: admin update" on public.profiles
-  for update to authenticated using (public.is_admin()) with check (public.is_admin());
+  for update to authenticated using ((select public.is_admin())) with check ((select public.is_admin()));
 
 drop policy if exists "profiles: admin delete" on public.profiles;
 create policy "profiles: admin delete" on public.profiles
-  for delete to authenticated using (public.is_admin());
+  for delete to authenticated using ((select public.is_admin()));
 
 drop policy if exists "app_settings: admin" on public.app_settings;
 create policy "app_settings: admin" on public.app_settings
-  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+  for all to authenticated using ((select public.is_admin())) with check ((select public.is_admin()));
 
 drop policy if exists "user_settings: own" on public.user_settings;
 create policy "user_settings: own" on public.user_settings
   for all to authenticated
-  using (user_id = auth.uid() and public.is_approved())
-  with check (user_id = auth.uid() and public.is_approved());
+  using (user_id = (select auth.uid()) and (select public.is_approved()))
+  with check (user_id = (select auth.uid()) and (select public.is_approved()));
 
 drop policy if exists "user_settings: admin read" on public.user_settings;
 create policy "user_settings: admin read" on public.user_settings
-  for select to authenticated using (public.is_admin());
+  for select to authenticated using ((select public.is_admin()));
 
 drop policy if exists "jobs: approved read" on public.jobs;
 create policy "jobs: approved read" on public.jobs
-  for select to authenticated using (public.is_approved());
+  for select to authenticated using ((select public.is_approved()));
 
 drop policy if exists "user_jobs: own" on public.user_jobs;
 create policy "user_jobs: own" on public.user_jobs
   for all to authenticated
-  using (user_id = auth.uid() and public.is_approved())
-  with check (user_id = auth.uid() and public.is_approved());
+  using (user_id = (select auth.uid()) and (select public.is_approved()))
+  with check (user_id = (select auth.uid()) and (select public.is_approved()));
 
 drop policy if exists "user_jobs: admin read" on public.user_jobs;
 create policy "user_jobs: admin read" on public.user_jobs
-  for select to authenticated using (public.is_admin());
+  for select to authenticated using ((select public.is_admin()));
 
 -- Bad marks are shared: every approved user sees all of them, adds or changes only
 -- their own, and admins can clear anyone's.
 drop policy if exists "job_flags: approved read" on public.job_flags;
 create policy "job_flags: approved read" on public.job_flags
-  for select to authenticated using (public.is_approved());
+  for select to authenticated using ((select public.is_approved()));
 
 drop policy if exists "job_flags: own insert" on public.job_flags;
 create policy "job_flags: own insert" on public.job_flags
-  for insert to authenticated with check (user_id = auth.uid() and public.is_approved());
+  for insert to authenticated with check (user_id = (select auth.uid()) and (select public.is_approved()));
 
 drop policy if exists "job_flags: own update" on public.job_flags;
 create policy "job_flags: own update" on public.job_flags
-  for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+  for update to authenticated using (user_id = (select auth.uid())) with check (user_id = (select auth.uid()));
 
 drop policy if exists "job_flags: own or admin delete" on public.job_flags;
 create policy "job_flags: own or admin delete" on public.job_flags
-  for delete to authenticated using (user_id = auth.uid() or public.is_admin());
+  for delete to authenticated using (user_id = (select auth.uid()) or (select public.is_admin()));
 
 -- ── Realtime: the Jobs page subscribes to new jobs and bad marks so they show for
 -- everyone at once. Realtime still applies the select policies above. Guarded so
@@ -363,7 +384,7 @@ end $$;
 
 drop policy if exists "worker_status: admin" on public.worker_status;
 create policy "worker_status: admin" on public.worker_status
-  for all to authenticated using (public.is_admin()) with check (public.is_admin());
+  for all to authenticated using ((select public.is_admin())) with check ((select public.is_admin()));
 
 -- ── Make yourself admin (run once, after you register in the web app) ────────────
 -- update public.profiles set role = 'admin', status = 'approved', approved_at = now()

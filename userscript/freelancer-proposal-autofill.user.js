@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.33.0
+// @version      1.34.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -34,6 +34,26 @@
   // tab can tell whether other tabs are open before it closes itself (closeTab).
   try { GM_saveTab({ fbb: true }); } catch (e) { /* not supported: tabs never auto-close */ }
 
+  // Projects opened from the bot's Jobs page, as { seo: time }. A project tab in this
+  // list may close itself after an automatic bad mark even when Tampermonkey can't
+  // count the other tabs: the Jobs page it came from is still open, so closing it
+  // can never close the browser. Shared by all tabs through Tampermonkey's storage.
+  const FROM_SITE_KEY = "fbb:fromSite";
+  const seoOf = (path) => path.replace(/^\/+/, "").replace(/\/+$/, "").replace(/^projects\//, "").replace(/\/details$/, "") || null;
+  function rememberFromSite(href) {
+    try {
+      const seo = seoOf(new URL(href).pathname);
+      if (!seo) return;
+      const now = Date.now(), list = GM_getValue(FROM_SITE_KEY, {}) || {};
+      for (const k of Object.keys(list)) if (now - list[k] > 6 * 3600 * 1000) delete list[k];
+      list[seo] = now;
+      GM_setValue(FROM_SITE_KEY, list);
+    } catch (e) { /* storage unavailable: falls back to the tab count */ }
+  }
+  function openedFromSite(seo) {
+    try { return !!seo && !!(GM_getValue(FROM_SITE_KEY, {}) || {})[seo]; } catch (e) { return false; }
+  }
+
   // ── On the bot's own website (the @match on its address): job TITLES open in a
   // BACKGROUND tab, so you stay on the Jobs list (the "Open on Freelancer" button
   // still opens and switches to the tab). A web page can't do that by itself
@@ -42,6 +62,13 @@
   // marks the job opened); only the browser's default "open and switch" is replaced.
   // Ctrl/Shift/middle-click keep the browser's own behaviour.
   if (!/\/projects\//.test(location.pathname)) {
+    // Any project link (title, "Open on Freelancer", middle-click): remember it.
+    const record = (e) => {
+      const link = e.target && e.target.closest ? e.target.closest("a[href*='/projects/']") : null;
+      if (link) rememberFromSite(link.href);
+    };
+    document.addEventListener("click", record, true);
+    document.addEventListener("auxclick", record, true);
     document.addEventListener("click", (e) => {
       const a = e.target && e.target.closest ? e.target.closest("a[data-fbb-bg-open]") : null;
       if (!a || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
@@ -54,7 +81,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.33.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.34.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -102,9 +129,7 @@
   // That is exactly the string the bot stored as the project's `url`, so it can
   // look up an already-collected project without the numeric id.
   function currentSeo() {
-    let p = location.pathname.replace(/^\/+/, "").replace(/\/+$/, "");
-    p = p.replace(/^projects\//, "").replace(/\/details$/, "");
-    return p || null;
+    return seoOf(location.pathname);
   }
 
   // ── Scrape the numeric project id from the page ───────────────────────────
@@ -1081,14 +1106,19 @@
   // if Tampermonkey can't tell, the tab stays open and says so.
   function closeTab(seo, done) {
     const keepOpen = () => { if (currentSeo() === seo) badge(done + ". Close this tab when you're done.", "info"); };
-    if (typeof GM_getTabs !== "function") return keepOpen();
+    const close = () => {
+      badge(done + ". Closing this tab…", "info");
+      try { window.close(); } catch (e) {}
+      setTimeout(keepOpen, 300); // still here: the browser refused
+    };
+    // Opened from the Jobs page: that page is still open, so closing is safe.
+    const fromSite = openedFromSite(seo);
+    if (typeof GM_getTabs !== "function") return fromSite ? close() : keepOpen();
     try {
       GM_getTabs((tabs) => {
         if (currentSeo() !== seo) return; // you moved on in this tab: leave it open
-        if (Object.keys(tabs || {}).length < 2) return keepOpen(); // the only tab we know of
-        badge(done + ". Closing this tab…", "info");
-        try { window.close(); } catch (e) {}
-        setTimeout(keepOpen, 300); // still here: the browser refused
+        if (Object.keys(tabs || {}).length < 2 && !fromSite) return keepOpen(); // the only tab we know of
+        close();
       });
     } catch (e) { keepOpen(); }
   }
