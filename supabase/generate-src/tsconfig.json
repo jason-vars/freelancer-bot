@@ -1,0 +1,11 @@
+{
+  "//": "Resolves the web app's imports for the bundled `generate` Edge Function (web/scripts/build-generate-fn.mjs).",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/lib/supabase/admin": ["./admin.ts"],
+      "server-only": ["./empty.ts"],
+      "@/*": ["../../web/src/*"]
+    }
+  }
+}

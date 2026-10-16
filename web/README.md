@@ -93,6 +93,23 @@ alerted M."). To debug: **Edge Functions › fetch-jobs › Logs**, and
 Jobs posted before the fetcher started (or while it was paused or down) are stored
 but not alerted, the same as the Python worker after a restart.
 
+## 4b. Proposal function
+
+The userscript's proposal requests go to a second Edge Function,
+[`../supabase/functions/generate`](../supabase/functions/generate/index.ts), so a slow
+OpenAI reply is never cut off by the website host's request time limit (~10 s on
+Netlify). It is **built from the web app's own code** (`src/lib/jobs.ts`, `proposal.ts`,
+settings): after changing proposal, pricing, filter or settings code, run
+`npm run build:generate-fn` here and redeploy it.
+
+Deploy: **Edge Functions › Deploy a new function › Via editor**, name it `generate`,
+paste `supabase/functions/generate/index.ts`, deploy, then turn **Verify JWT** off (the
+function checks the user's API key itself). No secrets to add. Or with the CLI:
+`npx supabase functions deploy generate --no-verify-jwt`.
+
+The hosted userscript is pointed at it automatically; until it's deployed, proposals
+fall back to the website as before.
+
 ## 5. Userscript (each user)
 
 On **My settings**: install the userscript from the link shown (it points at this site),
