@@ -7,3 +7,8 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# The server part (pages, API routes, login). Without it only static files go up and
+# every page is a 404.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
