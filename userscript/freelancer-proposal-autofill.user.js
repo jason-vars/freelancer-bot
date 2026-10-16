@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.34.0
+// @version      1.35.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -81,11 +81,14 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.34.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.35.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
   const BOT_BASE = "http://127.0.0.1:8765";
+  // Where proposals are written. The hosted copy points this at the Supabase
+  // "generate" function (no ~10 s host time limit); empty = the bot itself.
+  const GEN_URL = "";
   // Your personal API key for the hosted (multi-user) bot, sent as X-Bot-Key. Kept in
   // Tampermonkey's own storage, which freelancer.com's page scripts can't read. The
   // local bot ignores it, so it's only needed for the hosted one.
@@ -968,13 +971,16 @@
       (pid ? "&id=" + encodeURIComponent(pid) : "") +
       (country ? "&country=" + encodeURIComponent(country) : "") +
       (manual ? "&manual=1" : "");
+    // The Supabase function first; if it isn't deployed (404), the website as before.
+    const viaSite = (r) => r && r.status === 404 && GEN_URL && /not.?found/i.test(r.responseText || "");
     return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({
+      const send = (url, fallback) => GM_xmlhttpRequest({
         method: "GET",
         headers: botHeaders(),
-        url: BOT_BASE + "/jobs/generate?" + params,
-        timeout: 60000,
+        url: url + "?" + params,
+        timeout: 150000,
         onload: (r) => {
+          if (fallback && viaSite(r)) return send(BOT_BASE + "/jobs/generate", false);
           let d;
           try { d = JSON.parse(r.responseText); } catch (e) { return reject("Bad response from bot."); }
           if (r.status >= 200 && r.status < 300) resolve(d);
@@ -983,6 +989,7 @@
         onerror: () => reject("Cannot reach the bot at " + BOT_BASE + " — is `python -m bot serve` running?"),
         ontimeout: () => reject("Bot timed out generating the proposal."),
       });
+      send(GEN_URL || BOT_BASE + "/jobs/generate", !!GEN_URL);
     });
   }
 

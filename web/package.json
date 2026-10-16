@@ -8,7 +8,8 @@
     "prebuild": "node scripts/embed-userscript.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "build:generate-fn": "node scripts/build-generate-fn.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
