@@ -169,15 +169,24 @@ export function extractJson(text: string): Record<string, unknown> {
   return {};
 }
 
+// GPT-5 models reason before answering; the default effort can take longer than a
+// host allows one request (about 10 s on Netlify). A bid needs little of it.
+const reasons = (model: string) => /^(gpt-5|o\d)/i.test(model);
+
 async function ask(client: OpenAI, model: string, system: string, user: string): Promise<string> {
-  const resp = await client.responses.create({
-    model,
-    input: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-  });
-  return (resp.output_text || "").trim();
+  const input = [
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: user },
+  ];
+  try {
+    const resp = await client.responses.create({ model, input, ...(reasons(model) ? { reasoning: { effort: "low" as const } } : {}) });
+    return (resp.output_text || "").trim();
+  } catch (e) {
+    // A model that doesn't take the reasoning setting: ask again without it.
+    if (!reasons(model) || !/reasoning/i.test(String((e as Error).message))) throw e;
+    const resp = await client.responses.create({ model, input });
+    return (resp.output_text || "").trim();
+  }
 }
 
 /** Split the model's reply into [lead, proposal].

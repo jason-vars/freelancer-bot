@@ -322,6 +322,9 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
     return { status: 400, body: { ok: false, message: "No OpenAI API key is set — ask the admin to add one in Admin › Settings." } };
   }
 
+  // Pricing (possibly its own OpenAI call) runs alongside the proposal, not after it,
+  // so the request finishes within the host's time limit.
+  const pricing = resolvePricing(s, job);
   let proposal: string;
   try {
     proposal = await generateProposal(s.OPENAI_API_KEY, s.OPENAI_MODEL || "gpt-5.2-mini", {
@@ -343,7 +346,7 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
     const err = e as Error;
     return { status: 400, body: { ok: false, message: `OpenAI generation failed: ${err.name}: ${String(err.message).slice(0, 200)}` } };
   }
-  const [amount, period] = await resolvePricing(s, job);
+  const [amount, period] = await pricing;
   await touchUserJob(userId, job.id, {
     proposal, amount, period_days: period, generated_at: new Date().toISOString(),
   });
