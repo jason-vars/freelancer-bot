@@ -1,0 +1,9 @@
+# Netlify: build the Next.js web app in web/, not the Python bot at the repo root.
+# Netlify's Next.js runtime is added automatically for Next.js sites.
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
