@@ -145,6 +145,12 @@ function splitPortfolioEntry(entry: string): [string, string] {
   return [e, ""];
 }
 
+/** Always OpenAI itself: the SDK otherwise follows OPENAI_BASE_URL, which hosts
+ *  like Netlify set for their own AI gateway, and that gateway rejects our key (401). */
+function openai(apiKey: string): OpenAI {
+  return new OpenAI({ apiKey, baseURL: "https://api.openai.com/v1" });
+}
+
 export function extractJson(text: string): Record<string, unknown> {
   if (!text) return {};
   try {
@@ -195,7 +201,7 @@ export function splitLeadLine(text: string): [string, string] {
 }
 
 export async function generateProposal(apiKey: string, model: string, d: ProposalInput): Promise<string> {
-  const client = new OpenAI({ apiKey });
+  const client = openai(apiKey);
   const portfolio = d.portfolioUrls.filter((u) => u.trim());
   const bullets = d.profileBullets.length ? d.profileBullets : DEFAULT_PROFILE_BULLETS;
   const template = d.template.trim();
@@ -511,7 +517,7 @@ ${jobBlock(j)}
 
 Give the bid amount and delivery days as the JSON object only.`;
   try {
-    const obj = extractJson(await ask(new OpenAI({ apiKey }), model, system, user));
+    const obj = extractJson(await ask(openai(apiKey), model, system, user));
     const amount = Number(obj.amount);
     const days = Math.trunc(Number(obj.days));
     if (!(amount > 0) || !(days > 0)) return null;
