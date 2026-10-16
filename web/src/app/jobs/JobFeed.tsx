@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { JobList, type JobRow, type JobState } from "./JobList";
 
@@ -11,7 +11,12 @@ import { JobList, type JobRow, type JobState } from "./JobList";
 // The page keys this component by view/search/page, so switching views remounts it
 // instead of counting the new view's jobs as "new".
 
-const POLL_MS = 20_000;
+// Backup only: Realtime brings changes at once. Each poll and each refresh is server
+// work billed by the host, so it's slow and skipped in background tabs.
+const POLL_MS = 300_000;
+// Worker statuses of jobs that show in the lists (page.tsx PASSED). Realtime only
+// wakes the page for NEW jobs in one of these, not for filtered ones or status edits.
+const LISTED = "new,alerting,alerted,alert_failed,notify_skipped";
 const ALERTS_KEY = "fbb:desktopAlerts";
 
 function beep() {
@@ -114,7 +119,7 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
       }
     };
     void check();
-    const timer = setInterval(() => { if (!document.hidden || alerts) void check(); }, POLL_MS);
+    const timer = setInterval(() => { if (!document.hidden) void check(); }, POLL_MS);
     const onVisible = () => { if (!document.hidden) void check(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
@@ -122,29 +127,56 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [live, alerts, router]);
+  }, [live, router]);
 
-  // New jobs, shared bad marks and this user's own opened/applied changes (also from
-  // the userscript) should reach this page at once, not at the next poll. Realtime
-  // pushes every jobs / job_flags / own user_jobs change (RLS still applies); a burst
-  // of changes (one worker sync writes many rows) is folded into one refresh. The
+  // Jobs announced straight from a Realtime message (background tab), so the refresh
+  // that later shows them doesn't alert a second time.
+  const notified = useRef(new Set<number>());
+  const alertsRef = useRef(alerts);
+  useEffect(() => { alertsRef.current = alerts; }, [alerts]);
+
+  // New listed jobs, shared bad marks and this user's own opened/applied changes (also
+  // from the userscript) reach this page at once. A burst is folded into one refresh.
+  // A background tab doesn't re-render at all (each refresh is billed server work):
+  // it alerts from the message itself and refreshes once you come back to it. The
   // poll above stays as the fallback if the socket drops.
   useEffect(() => {
     if (!live) return;
     const supabase = createClient();
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let pending = false;
     const changed = () => {
+      if (document.hidden) { pending = true; return; }
       clearTimeout(timer);
       timer = setTimeout(() => router.refresh(), 300);
     };
+    const jobAdded = (payload: { new: Record<string, unknown> }) => {
+      const j = payload.new;
+      if (document.hidden && alertsRef.current && "Notification" in window && Notification.permission === "granted") {
+        const id = Number(j.id);
+        if (!notified.current.has(id)) {
+          notified.current.add(id);
+          const n = (x: unknown) => (x == null ? "" : Number(x).toLocaleString("en-US", { maximumFractionDigits: 0 }));
+          const budget = j.budget_min == null && j.budget_max == null ? "" : ` (${n(j.budget_min)}–${n(j.budget_max)} ${j.currency ?? ""})`;
+          notify("New job", `• ${String(j.title ?? "")}${budget}`, `fbb-new-jobs-${id}`);
+          beep();
+        }
+      }
+      changed();
+    };
+    const onVisible = () => {
+      if (!document.hidden && pending) { pending = false; changed(); }
+    };
+    document.addEventListener("visibilitychange", onVisible);
     const channel = supabase
       .channel("jobs_feed")
-      .on("postgres_changes", { event: "*", schema: "public", table: "jobs" }, changed)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "jobs", filter: `status=in.(${LISTED})` }, jobAdded)
       .on("postgres_changes", { event: "*", schema: "public", table: "job_flags" }, changed)
       .on("postgres_changes", { event: "*", schema: "public", table: "user_jobs", filter: `user_id=eq.${userId}` }, changed)
       .subscribe();
     return () => {
       clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
       void supabase.removeChannel(channel);
     };
   }, [live, router, userId]);
@@ -166,11 +198,15 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
   // Desktop notification + sound for each batch, when enabled.
   useEffect(() => {
     if (!latest.length || !alerts || !("Notification" in window) || Notification.permission !== "granted") return;
-    const n = latest.length;
+    // Skip jobs a background tab already announced from the Realtime message.
+    const todo = latest.filter((j) => !notified.current.has(j.id));
+    todo.forEach((j) => notified.current.add(j.id));
+    if (!todo.length) return;
+    const n = todo.length;
     // A tag per batch: macOS keeps notifications in Notification Center, and one
     // with a reused tag silently replaces the old one there instead of popping up.
-    notify(`${n} new job${n === 1 ? "" : "s"}`, latest.slice(0, 3).map((j) => `• ${j.title} (${j.budget})`).join("\n"),
-      `fbb-new-jobs-${latest[0].id}`);
+    notify(`${n} new job${n === 1 ? "" : "s"}`, todo.slice(0, 3).map((j) => `• ${j.title} (${j.budget})`).join("\n"),
+      `fbb-new-jobs-${todo[0].id}`);
     beep();
   }, [latest, alerts]);
 
