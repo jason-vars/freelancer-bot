@@ -325,9 +325,11 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
   // Pricing (possibly its own OpenAI call) runs alongside the proposal, not after it,
   // so the request finishes within the host's time limit.
   const pricing = resolvePricing(s, job);
-  let proposal: string;
+  let proposal: string, question: string;
   try {
-    proposal = await generateProposal(s.OPENAI_API_KEY, s.OPENAI_MODEL || "gpt-5.2-mini", {
+    // One call writes the proposal and, when the setting is on, the Clarification
+    // Board question.
+    ({ proposal, question } = await generateProposal(s.OPENAI_API_KEY, s.OPENAI_MODEL || "gpt-5.2-mini", {
       title: job.title, description: job.description ?? "", skills: job.skills ?? "",
       budgetMin: job.budget_min, budgetMax: job.budget_max, currency: job.currency,
       profileBullets: lines(s.BOT_PROFILE_BULLETS),
@@ -337,11 +339,12 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
       includeName: isTrue(s.BOT_INCLUDE_NAME),
       includeProfile: isTrue(s.BOT_INCLUDE_PROFILE),
       askQuestion: isTrue(s.BOT_ASK_QUESTION),
+      clarify: isTrue(s.BOT_CLARIFY_QUESTION),
       template: s.BOT_PROPOSAL_TEMPLATE ?? "",
       prefix: s.BOT_PROPOSAL_PREFIX ?? "",
       suffix: s.BOT_PROPOSAL_SUFFIX ?? "",
       prefixInline: isTrue(s.BOT_PROPOSAL_PREFIX_INLINE),
-    });
+    }));
   } catch (e) {
     const err = e as Error;
     return { status: 400, body: { ok: false, message: `OpenAI generation failed: ${err.name}: ${String(err.message).slice(0, 200)}` } };
@@ -356,6 +359,7 @@ export async function generateForUser(userId: string, ref: JobRef, clientCountry
       ok: true, id: job.id, proposal, amount, period, currency: job.currency ?? "",
       milestone: int(s.BOT_DEFAULT_MILESTONE_PERCENT, 50),
       seal: isTrue(s.BOT_SEAL_BIDS), autogen: isTrue(s.BOT_AUTO_GENERATE), autobid: isTrue(s.BOT_AUTO_BID),
+      question,
     },
   };
 }

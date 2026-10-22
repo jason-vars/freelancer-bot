@@ -183,6 +183,13 @@ var GROUPS = [
         default: "1"
       },
       {
+        key: "BOT_CLARIFY_QUESTION",
+        label: "Post a clarification question",
+        kind: "bool",
+        help: "On = the AI also writes one question about the job. The userscript types it into the project's public Clarification Board when it fills the bid, and posts it when the bid is placed. Edit or clear the box first to change or skip it. Written in the same OpenAI call as the proposal, usually its main question reworded.",
+        default: "0"
+      },
+      {
         key: "BOT_DEFAULT_PERIOD_DAYS",
         label: "Default period (days)",
         kind: "int",
@@ -423,6 +430,7 @@ async function getEffectiveSettings(userId) {
 // src/lib/proposal.ts
 import OpenAI from "npm:openai@^7.25.0";
 var LEAD_MARKER = "LEAD:";
+var CLARIFY_MARKER = "CLARIFY:";
 var DEFAULT_PROFILE_BULLETS = [
   "Senior engineer who has shipped many similar production projects end to end.",
   "Strong across the job's stack \u2014 modern web, APIs, mobile, and integrations.",
@@ -494,6 +502,11 @@ function systemRules(o) {
   lines2.push(
     `- REQUIRED FIRST LINE (read by software and removed before anyone sees it, so it applies even if the instructions say to output only the proposal): write '${LEAD_MARKER} <text>' when the job post tells bidders to begin their proposal with a specific word, code or phrase (an anti-AI check, e.g. 'start your bid with the word Bundle'), copying that text exactly with its casing, and nothing else. Otherwise write '${LEAD_MARKER} NONE'. Then start the proposal on the next line, without repeating that word \u2014 it is placed at the top automatically.`
   );
+  if (o.clarify) {
+    lines2.push(
+      `- REQUIRED LAST LINE (also read by software and removed before anyone sees it): after the proposal, write '${CLARIFY_MARKER} <question>', one question to post on the job's PUBLIC Clarification Board, which the client and every other bidder read. Use the most important question your proposal asks, reworded to stand on its own; if the proposal asks none, ask about something in THIS post that is unclear and would change how the work is done. One sentence under 200 characters ending with '?'. No greeting, no self-promotion, no links, no contact details, never about budget, deadline or start date. If the post is too empty to ask anything specific, write '${CLARIFY_MARKER} NONE'.`
+    );
+  }
   if (o.hasTemplate) {
     lines2.push(
       "",
@@ -569,6 +582,19 @@ function splitLeadLine(text) {
   }
   return ["", (text || "").trim()];
 }
+function splitClarifyLine(text) {
+  const lines2 = (text || "").trim().split("\n");
+  for (let i = lines2.length - 1; i >= 0; i--) {
+    const m = /^\W*CLARIFY\W*:\s*(.*)$/i.exec(lines2[i].trim());
+    if (!m) continue;
+    const rest = [...lines2.slice(0, i), ...lines2.slice(i + 1)].join("\n").trim();
+    let q = m[1].replace(/^(q\d*|question)\s*[:.)-]\s*/i, "").replace(/^[\s"'“”‘’*`]+|[\s"'“”‘’*`]+$/g, "");
+    if (/^(none|n\/a|na|null|-)?\W*$/i.test(q)) q = "";
+    if (q.length > 300) q = q.slice(0, 300).replace(/\s+\S*$/, "") + "?";
+    return [q, rest];
+  }
+  return ["", (text || "").trim()];
+}
 async function generateProposal(apiKey, model, d) {
   const client = openai(apiKey);
   const portfolio2 = d.portfolioUrls.filter((u) => u.trim());
@@ -604,26 +630,29 @@ async function generateProposal(apiKey, model, d) {
     }
   }
   if (template) blocks.push("", "USER TEMPLATE to follow (adapt its wording to this job):", template);
-  blocks.push("", `Write the proposal now, starting with the '${LEAD_MARKER}' line.`);
+  blocks.push("", `Write the proposal now, starting with the '${LEAD_MARKER}' line` + (d.clarify ? ` and ending with the '${CLARIFY_MARKER}' line.` : "."));
   const system = systemRules({
     askQuestion: d.askQuestion,
+    clarify: d.clarify,
     includeProfile: d.includeProfile,
     hasTemplate: Boolean(template),
     hasPortfolio: portfolio2.length > 0,
     userInstructions: d.extraInstructions
   });
-  const [lead, rawBody] = splitLeadLine(await ask(client, model, system, blocks.join("\n")));
+  const [question, reply] = splitClarifyLine(await ask(client, model, system, blocks.join("\n")));
+  const [lead, rawBody] = splitLeadLine(reply);
   let body = sanitize(rawBody);
   if (d.prefixInline) body = mergeGreetingLine(body);
   body = enforceTemplateFraming(body, template);
   body = fixGreetingCase(localizeBodyGreeting(body));
-  return assemble(stripLeadFromBody(body, lead), {
+  const proposal = assemble(stripLeadFromBody(body, lead), {
     lead,
     prefix: d.prefix,
     suffix: d.suffix,
     signature: d.includeName ? signature : "",
     prefixInline: d.prefixInline
   });
+  return { proposal, question: d.clarify ? question : "" };
 }
 var norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 function stripLeadFromBody(body, lead) {
@@ -1049,9 +1078,9 @@ async function generateForUser(userId, ref, clientCountry, opts = {}) {
     return { status: 400, body: { ok: false, message: "No OpenAI API key is set \u2014 ask the admin to add one in Admin \u203A Settings." } };
   }
   const pricing = resolvePricing(s, job);
-  let proposal;
+  let proposal, question;
   try {
-    proposal = await generateProposal(s.OPENAI_API_KEY, s.OPENAI_MODEL || "gpt-5.2-mini", {
+    ({ proposal, question } = await generateProposal(s.OPENAI_API_KEY, s.OPENAI_MODEL || "gpt-5.2-mini", {
       title: job.title,
       description: job.description ?? "",
       skills: job.skills ?? "",
@@ -1065,11 +1094,12 @@ async function generateForUser(userId, ref, clientCountry, opts = {}) {
       includeName: isTrue(s.BOT_INCLUDE_NAME),
       includeProfile: isTrue(s.BOT_INCLUDE_PROFILE),
       askQuestion: isTrue(s.BOT_ASK_QUESTION),
+      clarify: isTrue(s.BOT_CLARIFY_QUESTION),
       template: s.BOT_PROPOSAL_TEMPLATE ?? "",
       prefix: s.BOT_PROPOSAL_PREFIX ?? "",
       suffix: s.BOT_PROPOSAL_SUFFIX ?? "",
       prefixInline: isTrue(s.BOT_PROPOSAL_PREFIX_INLINE)
-    });
+    }));
   } catch (e) {
     const err = e;
     return { status: 400, body: { ok: false, message: `OpenAI generation failed: ${err.name}: ${String(err.message).slice(0, 200)}` } };
@@ -1093,7 +1123,8 @@ async function generateForUser(userId, ref, clientCountry, opts = {}) {
       milestone: int(s.BOT_DEFAULT_MILESTONE_PERCENT, 50),
       seal: isTrue(s.BOT_SEAL_BIDS),
       autogen: isTrue(s.BOT_AUTO_GENERATE),
-      autobid: isTrue(s.BOT_AUTO_BID)
+      autobid: isTrue(s.BOT_AUTO_BID),
+      question
     }
   };
 }

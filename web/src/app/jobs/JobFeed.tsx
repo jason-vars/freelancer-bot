@@ -80,6 +80,51 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
     if (open) next.set(job.id, job); else next.delete(job.id);
     return next;
   });
+  // Bad marks made on this page, newest last: Ctrl+Z takes them back one at a time.
+  // The toast shows the latest for a few seconds with an Undo button.
+  const [badUndo, setBadUndo] = useState<JobRow[]>([]);
+  const [toast, setToast] = useState<JobRow | null>(null);
+  const onBad = (job: JobRow) => {
+    setBadUndo((u) => [...u.filter((j) => j.id !== job.id), job]);
+    setToast(job);
+  };
+  const undoBad = async () => {
+    const job = badUndo[badUndo.length - 1];
+    if (!job) return;
+    setBadUndo((u) => u.filter((j) => j.id !== job.id));
+    setToast(null);
+    try {
+      const r = await fetch(`/api/jobs/${job.id}/unbad`, { method: "POST" });
+      const d = await r.json().catch(() => ({ ok: false, message: `HTTP ${r.status}` }));
+      if (!d.ok) throw new Error(d.message ?? "Couldn't undo.");
+    } catch (e) {
+      setBadUndo((u) => [...u, job]);
+      return alert(`Couldn't undo the bad mark: ${(e as Error).message}`);
+    }
+    // Back in the list: the refresh brings it with its mark gone.
+    setGone((g) => { const next = new Set(g); next.delete(job.id); return next; });
+    router.refresh();
+  };
+  // Ctrl+Z / Cmd+Z, except while typing (a text box keeps its own undo).
+  const undoRef = useRef(undoBad);
+  useEffect(() => { undoRef.current = undoBad; });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "z") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      void undoRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 8000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
   const [marking, setMarking] = useState(false);
   const [prevJobs, setPrevJobs] = useState(serverJobs);
   const [known, setKnown] = useState(() => new Set(serverJobs.map((j) => j.id)));
@@ -281,7 +326,14 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
           </button>
         </div>
       )}
-      <JobList jobs={jobs} isAdmin={isAdmin} fresh={fresh} onState={onState} onExpand={onExpand} />
+      <JobList jobs={jobs} isAdmin={isAdmin} fresh={fresh} onState={onState} onExpand={onExpand} onBad={onBad} />
+      {toast && (
+        <div className="fixed inset-x-4 bottom-4 z-20 mx-auto flex max-w-lg items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2 text-sm shadow-lg">
+          <span className="min-w-0 flex-1 truncate">👎 Marked bad: {toast.title}</span>
+          <button className="btn" onClick={() => void undoBad()}>Undo</button>
+          <span className="hidden text-xs text-muted sm:inline">Ctrl+Z</span>
+        </div>
+      )}
     </div>
   );
 }

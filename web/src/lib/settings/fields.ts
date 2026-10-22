@@ -124,6 +124,8 @@ export const GROUPS: Group[] = [
         help: "On = after the userscript fills a bid form, it places the bid by itself after a 5-second countdown (Esc cancels). Off = you press Place bid yourself.", default: "0" },
       { key: "BOT_SEAL_BIDS", label: "Seal bids (free upgrade)", kind: "bool",
         help: "The userscript ticks Freelancer's FREE 'Sealed' upgrade when it fills a bid. Paid upgrades are never touched.", default: "1" },
+      { key: "BOT_CLARIFY_QUESTION", label: "Post a clarification question", kind: "bool",
+        help: "On = the AI also writes one question about the job. The userscript types it into the project's public Clarification Board when it fills the bid, and posts it when the bid is placed. Edit or clear the box first to change or skip it. Written in the same OpenAI call as the proposal, usually its main question reworded.", default: "0" },
       { key: "BOT_DEFAULT_PERIOD_DAYS", label: "Default period (days)", kind: "int",
         help: "Delivery period offered when no rule matches.", default: "7" },
       { key: "BOT_DEFAULT_MILESTONE_PERCENT", label: "Default milestone %", kind: "int",

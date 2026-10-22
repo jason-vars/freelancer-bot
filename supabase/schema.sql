@@ -154,60 +154,87 @@ returns text[] language sql immutable as $$
   from unnest(string_to_array(coalesce(s, ''), ',')) as x;
 $$;
 
--- Why the user's own filters hide this job, or null when it passes them.
-create or replace function public.user_filter_reason(j public.jobs, v jsonb)
-returns text language plpgsql stable as $$
+-- Dropped first: it depends on the filter function below, and `j.*` grows when jobs
+-- gains a column, which "create or replace" refuses.
+drop view if exists public.my_jobs;
+-- The old form took the whole job row and the raw settings, re-parsing every keyword
+-- list once per job: on ~10k jobs that pushed the Jobs page past the statement timeout.
+drop function if exists public.user_filter_reason(public.jobs, jsonb);
+
+-- Why the user's own filters hide this job, or null when it passes them. The lists
+-- arrive already parsed by csv_list() (once per query, in my_jobs); null lists mean
+-- the user has no settings row.
+create or replace function public.user_filter_reason(
+  p_title text, p_descr text, p_skills text, p_currency text, p_budget numeric, p_bids integer,
+  f_keywords text[], f_ex_title text[], f_ex_desc text[], f_ex_skills text[], f_skip_cur text[],
+  f_min_budget numeric, f_max_bids integer)
+returns text language plpgsql immutable as $$
 declare
   kw text;
-  title text := lower(coalesce(j.title, ''));
-  descr text := lower(coalesce(j.description, ''));
-  skills text := lower(coalesce(j.skills, ''));
-  budget numeric := coalesce(j.budget_max, j.budget_min);
-  wanted text[];
+  title text := lower(coalesce(p_title, ''));
+  skills text := lower(coalesce(p_skills, ''));
+  descr text;
+  hit boolean := false;
 begin
-  if v is null then return null; end if;
-  wanted := public.csv_list(v ->> 'MY_KEYWORDS');
-  if cardinality(wanted) > 0 and not exists (
-       select 1 from unnest(wanted) k where position(k in title || ' ' || descr || ' ' || skills) > 0) then
-    return 'none of my keywords';
+  if f_keywords is null then return null; end if;
+  if cardinality(f_keywords) > 0 or cardinality(f_ex_desc) > 0 then
+    descr := lower(coalesce(p_descr, ''));
   end if;
-  foreach kw in array public.csv_list(v ->> 'MY_EXCLUDE_TITLE') loop
+  if cardinality(f_keywords) > 0 then
+    foreach kw in array f_keywords loop
+      if position(kw in title || ' ' || descr || ' ' || skills) > 0 then hit := true; exit; end if;
+    end loop;
+    if not hit then return 'none of my keywords'; end if;
+  end if;
+  foreach kw in array f_ex_title loop
     if position(kw in title) > 0 then return 'title has "' || kw || '"'; end if;
   end loop;
-  foreach kw in array public.csv_list(v ->> 'MY_EXCLUDE_DESC') loop
+  foreach kw in array f_ex_desc loop
     if position(kw in descr) > 0 then return 'description has "' || kw || '"'; end if;
   end loop;
-  foreach kw in array public.csv_list(v ->> 'MY_EXCLUDE_SKILLS') loop
+  foreach kw in array f_ex_skills loop
     if position(kw in skills) > 0 then return 'skill "' || kw || '"'; end if;
   end loop;
-  if lower(coalesce(j.currency, '')) = any (public.csv_list(v ->> 'MY_SKIP_CURRENCIES')) then
-    return 'currency ' || j.currency;
+  if lower(coalesce(p_currency, '')) = any (f_skip_cur) then
+    return 'currency ' || p_currency;
   end if;
-  if (v ->> 'MY_MIN_BUDGET') ~ '^\d+$' and (v ->> 'MY_MIN_BUDGET')::numeric > 0
-     and budget is not null and budget < (v ->> 'MY_MIN_BUDGET')::numeric then
-    return 'budget below ' || (v ->> 'MY_MIN_BUDGET');
+  if f_min_budget > 0 and p_budget is not null and p_budget < f_min_budget then
+    return 'budget below ' || f_min_budget;
   end if;
-  if (v ->> 'MY_MAX_BIDS') ~ '^\d+$' and (v ->> 'MY_MAX_BIDS')::int > 0
-     and coalesce(j.bid_count, 0) > (v ->> 'MY_MAX_BIDS')::int then
-    return 'more than ' || (v ->> 'MY_MAX_BIDS') || ' bids';
+  if f_max_bids > 0 and coalesce(p_bids, 0) > f_max_bids then
+    return 'more than ' || f_max_bids || ' bids';
   end if;
   return null;
 end $$;
 
 -- Jobs joined with the CURRENT user's state and personal filter verdict.
 -- security_invoker makes the view obey the caller's RLS on every table.
--- Dropped first: `j.*` grows when jobs gains a column, and "create or replace"
--- refuses to change a view's existing columns.
-drop view if exists public.my_jobs;
 create view public.my_jobs with (security_invoker = true) as
   select j.*, uj.opened_at, uj.applied_at, uj.proposal, uj.amount, uj.period_days, uj.generated_at, uj.skipped_at,
-         public.user_filter_reason(j, us."values") as my_filter_reason,
+         public.user_filter_reason(j.title, j.description, j.skills, j.currency,
+           coalesce(j.budget_max, j.budget_min), j.bid_count,
+           uf.keywords, uf.ex_title, uf.ex_desc, uf.ex_skills, uf.skip_cur, uf.min_budget, uf.max_bids)
+           as my_filter_reason,
          coalesce(fl.bad_count, 0) as bad_count,
          coalesce(fl.bad_by_me, false) as bad_by_me,
          fl.bad_reasons
   from public.jobs j
   left join public.user_jobs uj on uj.job_id = j.id and uj.user_id = auth.uid()
-  left join public.user_settings us on us.user_id = auth.uid()
+  -- The user's filter settings, parsed once. "offset 0" keeps Postgres from inlining
+  -- this subquery, which would re-run csv_list() for every job.
+  left join (
+    select public.csv_list(us."values" ->> 'MY_KEYWORDS') as keywords,
+           public.csv_list(us."values" ->> 'MY_EXCLUDE_TITLE') as ex_title,
+           public.csv_list(us."values" ->> 'MY_EXCLUDE_DESC') as ex_desc,
+           public.csv_list(us."values" ->> 'MY_EXCLUDE_SKILLS') as ex_skills,
+           public.csv_list(us."values" ->> 'MY_SKIP_CURRENCIES') as skip_cur,
+           case when us."values" ->> 'MY_MIN_BUDGET' ~ '^\d{1,15}$'
+                then (us."values" ->> 'MY_MIN_BUDGET')::numeric end as min_budget,
+           case when us."values" ->> 'MY_MAX_BIDS' ~ '^\d{1,9}$'
+                then (us."values" ->> 'MY_MAX_BIDS')::int end as max_bids
+    from public.user_settings us where us.user_id = auth.uid()
+    offset 0
+  ) uf on true
   left join lateral (
     select count(*) as bad_count,
            bool_or(f.user_id = auth.uid()) as bad_by_me,

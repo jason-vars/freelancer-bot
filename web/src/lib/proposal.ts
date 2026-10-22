@@ -7,6 +7,9 @@ import OpenAI from "openai";
 
 // First line of every proposal reply: the client's required start word, or NONE.
 const LEAD_MARKER = "LEAD:";
+// Last line when "Post a clarification question" is on: the Clarification Board
+// question, or NONE. Same call as the proposal, so no second OpenAI request.
+const CLARIFY_MARKER = "CLARIFY:";
 
 const DEFAULT_PROFILE_BULLETS = [
   "Senior engineer who has shipped many similar production projects end to end.",
@@ -28,6 +31,8 @@ export type ProposalInput = {
   includeName: boolean;
   includeProfile: boolean;
   askQuestion: boolean;
+  /** Also return a question for the project's public Clarification Board. */
+  clarify: boolean;
   template: string;
   prefix: string;
   suffix: string;
@@ -35,7 +40,7 @@ export type ProposalInput = {
 };
 
 function systemRules(o: {
-  askQuestion: boolean; includeProfile: boolean; hasTemplate: boolean;
+  askQuestion: boolean; clarify: boolean; includeProfile: boolean; hasTemplate: boolean;
   hasPortfolio: boolean; userInstructions: string;
 }): string {
   const custom = Boolean(o.userInstructions.trim());
@@ -111,6 +116,17 @@ function systemRules(o: {
     `Otherwise write '${LEAD_MARKER} NONE'. Then start the proposal on the next line, without repeating that ` +
     "word — it is placed at the top automatically.",
   );
+  if (o.clarify) {
+    lines.push(
+      "- REQUIRED LAST LINE (also read by software and removed before anyone sees it): after the proposal, " +
+      `write '${CLARIFY_MARKER} <question>', one question to post on the job's PUBLIC Clarification Board, ` +
+      "which the client and every other bidder read. Use the most important question your proposal asks, " +
+      "reworded to stand on its own; if the proposal asks none, ask about something in THIS post that is " +
+      "unclear and would change how the work is done. One sentence under 200 characters ending with '?'. " +
+      "No greeting, no self-promotion, no links, no contact details, never about budget, deadline or start " +
+      `date. If the post is too empty to ask anything specific, write '${CLARIFY_MARKER} NONE'.`,
+    );
+  }
 
   if (o.hasTemplate) {
     lines.push(
@@ -209,7 +225,26 @@ export function splitLeadLine(text: string): [string, string] {
   return ["", (text || "").trim()];
 }
 
-export async function generateProposal(apiKey: string, model: string, d: ProposalInput): Promise<string> {
+/** Split the reply into [question, rest] at its `CLARIFY: <question>` line (searched
+ *  from the end, where it belongs). The line is always removed, so "CLARIFY: NONE"
+ *  never reaches the bid; NONE or a missing line gives "". */
+export function splitClarifyLine(text: string): [string, string] {
+  const lines = (text || "").trim().split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = /^\W*CLARIFY\W*:\s*(.*)$/i.exec(lines[i].trim());
+    if (!m) continue;
+    const rest = [...lines.slice(0, i), ...lines.slice(i + 1)].join("\n").trim();
+    let q = m[1].replace(/^(q\d*|question)\s*[:.)-]\s*/i, "").replace(/^[\s"'“”‘’*`]+|[\s"'“”‘’*`]+$/g, "");
+    if (/^(none|n\/a|na|null|-)?\W*$/i.test(q)) q = "";
+    if (q.length > 300) q = q.slice(0, 300).replace(/\s+\S*$/, "") + "?";
+    return [q, rest];
+  }
+  return ["", (text || "").trim()];
+}
+
+export async function generateProposal(
+  apiKey: string, model: string, d: ProposalInput,
+): Promise<{ proposal: string; question: string }> {
   const client = openai(apiKey);
   const portfolio = d.portfolioUrls.filter((u) => u.trim());
   const bullets = d.profileBullets.length ? d.profileBullets : DEFAULT_PROFILE_BULLETS;
@@ -247,24 +282,29 @@ export async function generateProposal(apiKey: string, model: string, d: Proposa
   }
   if (template) blocks.push("", "USER TEMPLATE to follow (adapt its wording to this job):", template);
   // The reminder sits last because the end of the prompt is what models follow most.
-  blocks.push("", `Write the proposal now, starting with the '${LEAD_MARKER}' line.`);
+  blocks.push("", `Write the proposal now, starting with the '${LEAD_MARKER}' line` +
+    (d.clarify ? ` and ending with the '${CLARIFY_MARKER}' line.` : "."));
 
   const system = systemRules({
-    askQuestion: d.askQuestion, includeProfile: d.includeProfile, hasTemplate: Boolean(template),
-    hasPortfolio: portfolio.length > 0, userInstructions: d.extraInstructions,
+    askQuestion: d.askQuestion, clarify: d.clarify, includeProfile: d.includeProfile,
+    hasTemplate: Boolean(template), hasPortfolio: portfolio.length > 0, userInstructions: d.extraInstructions,
   });
-  // Its first line carries the client-required start word (or NONE), not proposal text.
-  const [lead, rawBody] = splitLeadLine(await ask(client, model, system, blocks.join("\n")));
+  // The last line may carry the Clarification Board question, the first one the
+  // client-required start word (or NONE): neither is proposal text. The CLARIFY line
+  // is stripped even when the setting is off, in case the model adds one anyway.
+  const [question, reply] = splitClarifyLine(await ask(client, model, system, blocks.join("\n")));
+  const [lead, rawBody] = splitLeadLine(reply);
 
   let body = sanitize(rawBody);
   if (d.prefixInline) body = mergeGreetingLine(body);
   body = enforceTemplateFraming(body, template);
   // "Hi, You need ..." -> "Hi, you need ..." however the greeting got there.
   body = fixGreetingCase(localizeBodyGreeting(body));
-  return assemble(stripLeadFromBody(body, lead), {
+  const proposal = assemble(stripLeadFromBody(body, lead), {
     lead, prefix: d.prefix, suffix: d.suffix,
     signature: d.includeName ? signature : "", prefixInline: d.prefixInline,
   });
+  return { proposal, question: d.clarify ? question : "" };
 }
 
 const norm = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
