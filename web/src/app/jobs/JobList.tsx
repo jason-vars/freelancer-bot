@@ -48,6 +48,8 @@ type Callbacks = {
   onState?: (id: number, state: JobState) => void;
   /** The details panel opened or closed. */
   onExpand?: (job: JobRow, open: boolean) => void;
+  /** You marked the job bad here (saved), so the list can offer Ctrl+Z / Undo. */
+  onBad?: (job: JobRow) => void;
 };
 
 export function JobList({ jobs, isAdmin, fresh, ...cb }: { jobs: JobRow[]; isAdmin: boolean; fresh?: Set<number> } & Callbacks) {
@@ -59,7 +61,7 @@ export function JobList({ jobs, isAdmin, fresh, ...cb }: { jobs: JobRow[]; isAdm
   );
 }
 
-function Job({ job, isAdmin, fresh, onState, onExpand }: { job: JobRow; isAdmin: boolean; fresh: boolean } & Callbacks) {
+function Job({ job, isAdmin, fresh, onState, onExpand, onBad }: { job: JobRow; isAdmin: boolean; fresh: boolean } & Callbacks) {
   const router = useRouter();
   const [opened, setOpened] = useState(Boolean(job.openedAt));
   const [applied, setApplied] = useState(Boolean(job.appliedAt));
@@ -135,7 +137,8 @@ function Job({ job, isAdmin, fresh, onState, onExpand }: { job: JobRow; isAdmin:
   };
 
   // Shared with everyone: a job marked bad leaves all users' New/All matching lists.
-  // One click marks it: no reason prompt (Undo bad mark reverses a slip).
+  // One click marks it: no reason prompt (Ctrl+Z, the Undo toast or Undo bad mark
+  // reverses a slip).
   const setBad = async (action: "bad" | "unbad" | "clearbad") => {
     if (action === "clearbad" && !confirm("Remove every user's bad mark from this job?")) return;
     // Show the result immediately; undo it if the server says no.
@@ -153,8 +156,10 @@ function Job({ job, isAdmin, fresh, onState, onExpand }: { job: JobRow; isAdmin:
     setBusy("bad");
     const d = await post(job.id, action);
     setBusy(null);
-    if (d.ok) router.refresh(); // moves it in/out of the New list and syncs exact reasons
-    else {
+    if (d.ok) {
+      router.refresh(); // moves it in/out of the New list and syncs exact reasons
+      if (action === "bad" && !before.byMe) onBad?.(job);
+    } else {
       setBadState(before);
       report({ bad: before.count > 0 });
       setError(d.message ?? "Couldn't update.");

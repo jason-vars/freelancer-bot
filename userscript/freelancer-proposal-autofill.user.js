@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.35.0
+// @version      1.36.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -81,7 +81,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.35.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.36.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -593,6 +593,84 @@
     return cb.checked === !!on;
   }
 
+  // ── Clarification Board question (Settings page: BOT_CLARIFY_QUESTION) ─────
+  // The bot sends `question` with the proposal when the setting is on. It is typed
+  // into the board's "Ask a question..." box together with the proposal, and posted
+  // only once the bid has actually gone through: the board is public, so a job you
+  // end up not bidding on never gets a question. Edit the box to change it, clear it
+  // to skip it. Posted at most once per project per tab.
+  let pendingQuestion = null; // { seo, text, box }
+  function findQuestionTextarea() {
+    for (const ta of document.querySelectorAll("textarea")) {
+      if (ta.offsetParent === null || ta.disabled || ta.readOnly || ta.closest("[data-fbb-panel]")) continue;
+      if (ta.id === "descriptionTextArea" || ta.getAttribute("name") === "descriptionTextArea") continue;
+      if (/ask a question/i.test(ta.getAttribute("placeholder") || "")) return ta;
+    }
+    return null;
+  }
+  // The board's own "Post" button: the nearest one around the box, so a Post button
+  // elsewhere on the page (a reply form) is never clicked.
+  function findQuestionPostButton(box) {
+    let el = box;
+    for (let i = 0; i < 8 && el && el.parentElement; i++) {
+      el = el.parentElement;
+      const b = Array.from(el.querySelectorAll("button")).find(
+        (x) => x.offsetParent !== null && /^post$/i.test((x.textContent || "").trim())
+      );
+      if (b) return b;
+    }
+    return null;
+  }
+  // Type the text the way Angular notices it. No blur: the board collapses an
+  // unfocused box, which can hide its Post button.
+  function typeQuestion(box, text) {
+    box.focus();
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set;
+    setter.call(box, text);
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+    box.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+  function fillQuestion(text) {
+    const seo = currentSeo();
+    pendingQuestion = null;
+    if (!text || !seo || CACHE.getItem("fbb:qposted:" + seo)) return false;
+    const box = findQuestionTextarea();
+    if (!box) return false;
+    // Never overwrite a question you're typing yourself.
+    if ((box.value || "").trim() && box.value.trim() !== text) return false;
+    typeQuestion(box, text);
+    pendingQuestion = { seo, text, box };
+    return true;
+  }
+  // Called once the bid is confirmed. Posts what's in the box: your edits win, and
+  // an emptied box means you decided not to ask.
+  function postPendingQuestion() {
+    const q = pendingQuestion;
+    if (!q || q.seo !== currentSeo()) return;
+    pendingQuestion = null;
+    const once = "fbb:qposted:" + q.seo;
+    if (CACHE.getItem(once)) return;
+    let box = findQuestionTextarea();
+    if (!box) return;
+    // The page re-rendered the board after the bid: put the question back.
+    if (box !== q.box && !(box.value || "").trim()) typeQuestion(box, q.text);
+    if (!(box.value || "").trim()) return;
+    const started = Date.now();
+    const iv = setInterval(() => {
+      box = findQuestionTextarea() || box;
+      const btn = findQuestionPostButton(box);
+      if (btn && !btnDisabled(btn)) {
+        clearInterval(iv);
+        CACHE.setItem(once, "1");
+        btn.click();
+        badge("Bid placed — question posted on the Clarification Board.", "ok");
+      } else if (Date.now() - started > 8000) {
+        clearInterval(iv);
+        badge("Bid placed, but the question's Post button never became clickable — post it yourself.", "info");
+      }
+    }, 300);
+  }
+
   // Freelancer's submit button is "Place Bid" or "Create Bid" (never "Write my bid",
   // which is their own AI writer — excluded by the verb list). Buttons inside our own
   // panel are skipped (ours says "Place bid" too), and so are disabled ones: Angular
@@ -796,6 +874,8 @@
     if (!key || appliedSent.has(key)) return false;
     appliedSent.add(key);
     markApplied(seo, pid);
+    // The bid went through, whichever button placed it: now the question may go out.
+    postPendingQuestion();
     return true;
   }
 
@@ -957,6 +1037,8 @@
     const wantSeal = typeof data.seal === "boolean" ? data.seal : sealOn();
     if (typeof data.seal === "boolean") cacheSeal(data.seal);
     if (wantSeal && applySealed(true)) filled.push("sealed");
+    // Only with the proposal: a question alone would be posted with no bid behind it.
+    if (filled.includes("proposal") && fillQuestion(data.question)) filled.push("question");
     return filled;
   }
 
