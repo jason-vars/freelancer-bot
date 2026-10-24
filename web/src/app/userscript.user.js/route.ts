@@ -7,7 +7,9 @@ export function GET(req: Request) {
   const origin = new URL(req.url).origin;
   const host = new URL(req.url).hostname;
   // Proposals are written by the Supabase "generate" function (no ~10 s host limit).
-  const supabase = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/+$/, "");
+  // Trimmed: a newline pasted into the host's env setting would otherwise land inside
+  // a string literal below and stop the whole userscript with a SyntaxError.
+  const supabase = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
   const genUrl = supabase ? `${supabase}/functions/v1/generate` : "";
   const body = USERSCRIPT_SOURCE
     .replace(/^\/\/ @name(\s+)(.*)$/m, (_m, sp, name) => `// @name${sp}${name} (hosted)`)
