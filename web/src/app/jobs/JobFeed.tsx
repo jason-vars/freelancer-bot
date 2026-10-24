@@ -1,20 +1,22 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { JobList, type JobRow, type JobState } from "./JobList";
+import { loadJobs } from "./jobsQuery";
+import { PAGE_SIZE, jobsHref, type View } from "./views";
 
-// Live job list: polls /api/jobs/version and re-renders the page in place when the
-// worker stored something, then highlights the jobs that weren't there before and
-// counts them in a banner and the tab title (plus an optional desktop alert).
-// The page keys this component by view/search/page, so switching views remounts it
-// instead of counting the new view's jobs as "new".
+// Live job list. It loads the tab straight from Supabase in the browser and reloads
+// it there when Realtime reports a change, so new jobs show within a second of the
+// fetcher saving them and cost the web host nothing. Jobs that weren't there before
+// are highlighted and counted in a banner and the tab title (plus an optional
+// desktop alert). The page keys this component by view/search/page, so switching
+// views remounts it instead of counting the new view's jobs as "new".
 
-// Backup only: Realtime brings changes at once. Each poll and each refresh is server
-// work billed by the host, so it's slow and skipped in background tabs.
+// Backup only, in case the Realtime socket drops: Realtime brings changes at once.
 const POLL_MS = 300_000;
-// Worker statuses of jobs that show in the lists (page.tsx PASSED). Realtime only
+// Worker statuses of jobs that show in the lists (views.ts PASSED). Realtime only
 // wakes the page for NEW jobs in one of these, not for filtered ones or status edits.
 const LISTED = "new,alerting,alerted,alert_failed,notify_skipped";
 const ALERTS_KEY = "fbb:desktopAlerts";
@@ -45,7 +47,7 @@ function notify(title: string, body: string, tag: string) {
 }
 
 /** Whether a job in this state still belongs in the tab. Mirrors the tab queries in
- *  page.tsx, so a status change moves the card right away instead of after a refresh. */
+ *  jobsQuery.ts, so a status change moves the card right away instead of after a reload. */
 function belongsIn(view: string, s: JobState): boolean {
   switch (view) {
     case "new": return !s.opened && !s.applied && !s.skipped && !s.bad;
@@ -58,17 +60,54 @@ function belongsIn(view: string, s: JobState): boolean {
   }
 }
 
-export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll = false }: {
-  jobs: JobRow[]; isAdmin: boolean; live: boolean; userId: string; view: string; markAll?: boolean;
+export function JobFeed({ isAdmin, userId, view, search, page }: {
+  isAdmin: boolean; userId: string; view: View; search: string; page: number;
 }) {
-  const router = useRouter();
+  // Only the first page follows new jobs; older pages are a fixed slice.
+  const live = page === 1;
+  const markAll = view === "new";
+
+  // The tab's jobs as last loaded (null until the first load) and its total count.
+  const [loaded, setLoaded] = useState<JobRow[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [error, setError] = useState("");
+  const [fresh, setFresh] = useState<Set<number>>(() => new Set());
+  const [latest, setLatest] = useState<JobRow[]>([]);
+  // Ids shown so far; null until the first load, whose jobs are not "new".
+  const known = useRef<Set<number> | null>(null);
+  // Newest load wins: a slow reply never replaces a newer list.
+  const seq = useRef(0);
+
+  const reload = useCallback(async () => {
+    const mine = ++seq.current;
+    const r = await loadJobs(view, search, page, isAdmin);
+    if (mine !== seq.current) return;
+    setError(r.error);
+    if (r.error) { setLoaded((cur) => cur ?? []); return; } // keep the last good list
+    setLoaded(r.jobs);
+    setTotal(r.total);
+    if (!known.current) { known.current = new Set(r.jobs.map((j) => j.id)); return; }
+    const seen = known.current;
+    const added = r.jobs.filter((j) => !seen.has(j.id));
+    if (added.length) {
+      added.forEach((j) => seen.add(j.id));
+      setFresh((f) => new Set([...f, ...added.map((j) => j.id)]));
+      setLatest(added);
+    }
+  }, [view, search, page, isAdmin]);
+  const reloadRef = useRef(reload);
+  useEffect(() => { reloadRef.current = reload; });
+
+  useEffect(() => { void reloadRef.current(); }, []);
+
+  const rows = loaded ?? [];
   // Jobs whose status changed here so they no longer belong in this tab: hidden at
-  // once, before the server refresh drops them.
+  // once, before the reload drops them.
   const [gone, setGone] = useState<Set<number>>(() => new Set());
-  // Expanded cards stay on screen even when a refresh drops them (e.g. opening one
+  // Expanded cards stay on screen even when a reload drops them (e.g. opening one
   // in "New for me"), so a proposal being read or edited never vanishes.
   const [pinned, setPinned] = useState<Map<number, JobRow>>(() => new Map());
-  const jobs = [...[...pinned.values()].filter((p) => !serverJobs.some((j) => j.id === p.id)), ...serverJobs]
+  const jobs = [...[...pinned.values()].filter((p) => !rows.some((j) => j.id === p.id)), ...rows]
     .filter((j) => pinned.has(j.id) || !gone.has(j.id));
   const onState = (id: number, s: JobState) => setGone((g) => {
     const next = new Set(g);
@@ -101,9 +140,9 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
       setBadUndo((u) => [...u, job]);
       return alert(`Couldn't undo the bad mark: ${(e as Error).message}`);
     }
-    // Back in the list: the refresh brings it with its mark gone.
+    // Back in the list: the reload brings it with its mark gone.
     setGone((g) => { const next = new Set(g); next.delete(job.id); return next; });
-    router.refresh();
+    void reload();
   };
   // Ctrl+Z / Cmd+Z, except while typing (a text box keeps its own undo).
   const undoRef = useRef(undoBad);
@@ -126,65 +165,29 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
   }, [toast]);
 
   const [marking, setMarking] = useState(false);
-  const [prevJobs, setPrevJobs] = useState(serverJobs);
-  const [known, setKnown] = useState(() => new Set(serverJobs.map((j) => j.id)));
-  const [fresh, setFresh] = useState<Set<number>>(() => new Set());
-  const [latest, setLatest] = useState<JobRow[]>([]);
   const [alerts, setAlerts] = useState(false);
-
-  // A refresh brought a new list: anything we haven't shown before is new.
-  if (serverJobs !== prevJobs) {
-    setPrevJobs(serverJobs);
-    const added = serverJobs.filter((j) => !known.has(j.id));
-    if (added.length) {
-      setKnown(new Set([...known, ...added.map((j) => j.id)]));
-      setFresh(new Set([...fresh, ...added.map((j) => j.id)]));
-      setLatest(added);
-    }
-  }
 
   // Only new jobs still on screen count: one that left the list since (opened via
   // the userscript, hidden by a filter) must not keep inflating the number.
   const unread = jobs.filter((j) => fresh.has(j.id)).length;
 
-  // Poll for worker writes; refresh only when something changed.
+  // Backup poll, visible tabs only (Supabase, not the web host).
   useEffect(() => {
     if (!live) return;
-    let version: string | null | undefined;
-    let stopped = false;
-    const check = async () => {
-      try {
-        const r = await fetch("/api/jobs/version", { cache: "no-store" });
-        const d = await r.json();
-        if (stopped || !d.ok) return;
-        if (version !== undefined && d.version !== version) router.refresh();
-        version = d.version;
-      } catch {
-        // offline for a moment — try again next tick
-      }
-    };
-    void check();
-    const timer = setInterval(() => { if (!document.hidden) void check(); }, POLL_MS);
-    const onVisible = () => { if (!document.hidden) void check(); };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [live, router]);
+    const timer = setInterval(() => { if (!document.hidden) void reloadRef.current(); }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [live]);
 
-  // Jobs announced straight from a Realtime message (background tab), so the refresh
+  // Jobs announced straight from a Realtime message (background tab), so the reload
   // that later shows them doesn't alert a second time.
   const notified = useRef(new Set<number>());
   const alertsRef = useRef(alerts);
   useEffect(() => { alertsRef.current = alerts; }, [alerts]);
 
   // New listed jobs, shared bad marks and this user's own opened/applied changes (also
-  // from the userscript) reach this page at once. A burst is folded into one refresh.
-  // A background tab doesn't re-render at all (each refresh is billed server work):
-  // it alerts from the message itself and refreshes once you come back to it. The
-  // poll above stays as the fallback if the socket drops.
+  // from the userscript) reach this page at once. A burst is folded into one reload.
+  // A background tab doesn't reload: it alerts from the message itself and reloads
+  // once you come back to it.
   useEffect(() => {
     if (!live) return;
     const supabase = createClient();
@@ -193,7 +196,7 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
     const changed = () => {
       if (document.hidden) { pending = true; return; }
       clearTimeout(timer);
-      timer = setTimeout(() => router.refresh(), 300);
+      timer = setTimeout(() => void reloadRef.current(), 300);
     };
     const jobAdded = (payload: { new: Record<string, unknown> }) => {
       const j = payload.new;
@@ -224,7 +227,7 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
       document.removeEventListener("visibilitychange", onVisible);
       void supabase.removeChannel(channel);
     };
-  }, [live, router, userId]);
+  }, [live, userId]);
 
   // Desktop alerts preference (per browser).
   useEffect(() => {
@@ -293,7 +296,7 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
       else {
         setGone((g) => new Set([...g, ...ids]));
         dismiss();
-        router.refresh();
+        void reload();
       }
     } catch {
       alert("Couldn't reach the server.");
@@ -302,8 +305,13 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
     }
   };
 
+  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
   return (
     <div>
+      {error && <p className="mb-4 rounded-lg bg-bad-bg px-3 py-2 text-sm text-bad">Couldn&apos;t load jobs: {error}</p>}
+      <p className="mb-3 text-sm text-muted">{loaded === null ? "Loading…" : `${total} job${total === 1 ? "" : "s"}`}</p>
+
       <div className="mb-3 flex flex-wrap items-center gap-2">
         {live && <span className="text-xs text-muted">Updates automatically</span>}
         {markAll && jobs.length > 0 && (
@@ -326,7 +334,18 @@ export function JobFeed({ jobs: serverJobs, isAdmin, live, userId, view, markAll
           </button>
         </div>
       )}
-      <JobList jobs={jobs} isAdmin={isAdmin} fresh={fresh} onState={onState} onExpand={onExpand} onBad={onBad} />
+      {loaded === null
+        ? <div className="card p-8 text-center text-sm text-muted">Loading jobs…</div>
+        : <JobList jobs={jobs} isAdmin={isAdmin} fresh={fresh} onState={onState} onExpand={onExpand} onBad={onBad}
+            onChanged={() => void reload()} />}
+
+      {pages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-3 text-sm">
+          {page > 1 && <Link className="btn" href={jobsHref(view, search, { page: page - 1 })}>← Newer</Link>}
+          <span className="text-muted">Page {page} of {pages}</span>
+          {page < pages && <Link className="btn" href={jobsHref(view, search, { page: page + 1 })}>Older →</Link>}
+        </div>
+      )}
       {toast && (
         <div className="fixed inset-x-4 bottom-4 z-20 mx-auto flex max-w-lg items-center gap-3 rounded-lg border border-border bg-surface px-4 py-2 text-sm shadow-lg">
           <span className="min-w-0 flex-1 truncate">👎 Marked bad: {toast.title}</span>

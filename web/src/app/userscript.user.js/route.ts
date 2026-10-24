@@ -6,11 +6,14 @@ import { USERSCRIPT_SOURCE } from "@/generated/userscript-source";
 export function GET(req: Request) {
   const origin = new URL(req.url).origin;
   const host = new URL(req.url).hostname;
-  // Proposals are written by the Supabase "generate" function (no ~10 s host limit).
+  // The whole userscript API (proposals, filter checks, settings, applied/bad marks)
+  // is the Supabase "generate" function: no ~10 s host limit, and opening projects
+  // costs this site nothing. Without Supabase configured, this site's /api/us.
   // Trimmed: a newline pasted into the host's env setting would otherwise land inside
   // a string literal below and stop the whole userscript with a SyntaxError.
   const supabase = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
   const genUrl = supabase ? `${supabase}/functions/v1/generate` : "";
+  const apiBase = genUrl || `${origin}/api/us`;
   const body = USERSCRIPT_SOURCE
     .replace(/^\/\/ @name(\s+)(.*)$/m, (_m, sp, name) => `// @name${sp}${name} (hosted)`)
     .replace(/^\/\/ @connect(\s+)127\.0\.0\.1$/m, (_m, sp) =>
@@ -20,7 +23,7 @@ export function GET(req: Request) {
     .replace(/^\/\/ @match(\s+)http:\/\/127\.0\.0\.1:8765\/\*$/m, (_m, sp) => `// @match${sp}${origin}/*`)
     .replace(/^\/\/ @updateURL(\s+).*$/m, (_m, sp) => `// @updateURL${sp}${origin}/userscript.user.js`)
     .replace(/^\/\/ @downloadURL(\s+).*$/m, (_m, sp) => `// @downloadURL${sp}${origin}/userscript.user.js`)
-    .replace(/const BOT_BASE = "http:\/\/127\.0\.0\.1:8765";/, `const BOT_BASE = "${origin}/api/us";`)
+    .replace(/const BOT_BASE = "http:\/\/127\.0\.0\.1:8765";/, `const BOT_BASE = "${apiBase}";`)
     .replaceAll(" — is `python -m bot serve` running?", ". Check your internet connection.");
   return new Response(body, {
     headers: { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" },

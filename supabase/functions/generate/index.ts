@@ -861,6 +861,13 @@ Give the bid amount and delivery days as the JSON object only.`;
   }
 }
 
+// src/lib/jobUrl.ts
+function jobUrl(seo) {
+  if (!seo) return "";
+  if (/^https?:\/\//.test(seo)) return seo;
+  return `https://www.freelancer.com/projects/${seo.replace(/^\/+/, "")}`;
+}
+
 // src/lib/jobs.ts
 var csv = (v) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 var lines = (v) => (v ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
@@ -1063,6 +1070,14 @@ async function skipVerdict(userId, s, job, collected, clientCountry, manual) {
   if (bad) return { skipped: true, hard: false, message: `Skipped \u2014 ${bad}; no proposal generated. Press \u2728 Generate to write one anyway.` };
   return null;
 }
+async function checkForUser(userId, ref, clientCountry) {
+  const s = await getEffectiveSettings(userId);
+  const { job, collected, error } = await ensureJob(s, ref);
+  if (error || !job) return error;
+  await touchUserJob(userId, job.id, {});
+  const verdict = await skipVerdict(userId, s, job, collected, clientCountry, false);
+  return { status: 200, body: { ok: true, id: job.id, ...verdict ?? { skipped: false } } };
+}
 async function generateForUser(userId, ref, clientCountry, opts = {}) {
   const s = await getEffectiveSettings(userId);
   const { job, collected, error } = await ensureJob(s, ref);
@@ -1128,24 +1143,127 @@ async function generateForUser(userId, ref, clientCountry, opts = {}) {
     }
   };
 }
+async function markBadForUser(userId, ref, reason) {
+  const notMarked = (why, message) => ({ status: 200, body: { ok: true, marked: false, reason: why, message } });
+  if (/^deleted:/.test(reason)) {
+    const stored = await findJob(ref);
+    if (!stored) return notMarked("not_found", "Not in your Jobs list, nothing to mark.");
+    return saveBadMark(userId, stored.id, reason);
+  }
+  const s = await getEffectiveSettings(userId);
+  const { job, error } = await ensureJob(s, ref);
+  if (!job && error?.status === 404) return notMarked("not_found", "Not in your Jobs list, nothing to mark.");
+  if (error || !job) return error;
+  return saveBadMark(userId, job.id, reason);
+}
+async function saveBadMark(userId, jobId, reason) {
+  const { data: existing } = await createAdminClient().from("job_flags").select("reason").eq("job_id", jobId);
+  if (existing?.length) {
+    const reasons2 = [...new Set(existing.map((f) => String(f.reason ?? "").trim()).filter(Boolean))].join("; ");
+    return { status: 200, body: { ok: true, marked: false, reason: "already_bad", message: `Already marked bad${reasons2 ? ` (${reasons2})` : ""}.` } };
+  }
+  const { error } = await createAdminClient().from("job_flags").upsert({ job_id: jobId, user_id: userId, reason: reason.trim().slice(0, 200) }, { onConflict: "job_id,user_id", ignoreDuplicates: true });
+  if (error) return { status: 400, body: { ok: false, message: error.message } };
+  return { status: 200, body: { ok: true } };
+}
+async function markApplied(userId, ref, applied = true) {
+  const s = await getEffectiveSettings(userId);
+  const { job, error } = await ensureJob(s, ref);
+  if (error || !job) return error;
+  await touchUserJob(userId, job.id, { applied_at: applied ? (/* @__PURE__ */ new Date()).toISOString() : null });
+  return { status: 200, body: { ok: true, status: applied ? "applied" : "opened" } };
+}
+async function jobText(userId, ref) {
+  const s = await getEffectiveSettings(userId);
+  const { job, error } = await ensureJob(s, ref);
+  if (error || !job) return error;
+  return { status: 200, body: { ok: true, id: job.id, title: job.title, skills: job.skills ?? "", description: job.description ?? "", url: jobUrl(job.url) } };
+}
+
+// src/lib/userscriptApi.ts
+var NO_API_KEY = "Missing or invalid API key. Open your bot Settings page, create a key, then set it from the Tampermonkey menu \u2192 \u201CSet bot API key\u201D.";
+var PANEL_OPTIONS = { autogen: "BOT_AUTO_GENERATE" };
+async function panelOptions(userId, q) {
+  const updates = {};
+  for (const [name, key] of Object.entries(PANEL_OPTIONS)) {
+    const raw = q.get(name);
+    if (raw !== null && raw.trim()) updates[key] = isTrue(raw) ? "1" : "0";
+  }
+  if (Object.keys(updates).length) {
+    const db = createAdminClient();
+    const { data } = await db.from("user_settings").select("values").eq("user_id", userId).maybeSingle();
+    await db.from("user_settings").upsert({
+      user_id: userId,
+      values: { ...data?.values ?? {}, ...updates },
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
+    });
+  }
+  const s = await getEffectiveSettings(userId);
+  const list = (v) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      seal: isTrue(s.BOT_SEAL_BIDS),
+      autogen: isTrue(s.BOT_AUTO_GENERATE),
+      autobid: isTrue(s.BOT_AUTO_BID),
+      // The userscript checks the client's country as soon as a project opens.
+      skip_countries: list(s.BOT_SKIP_COUNTRIES),
+      allow_countries: list(s.BOT_ALLOW_COUNTRIES)
+    }
+  };
+}
+async function userscriptRequest(action, userId, q) {
+  if (action === "options" || action === "seal") return panelOptions(userId, q);
+  const idRaw = (q.get("id") ?? "").trim();
+  const seo = (q.get("seo") ?? "").trim() || null;
+  if (idRaw && !/^\d+$/.test(idRaw)) return { status: 400, body: { ok: false, message: "Bad project id." } };
+  const ref = { id: idRaw ? Number(idRaw) : null, seo };
+  if (!ref.id && !ref.seo) return { status: 400, body: { ok: false, message: "Missing project id or seo." } };
+  const country = (q.get("country") ?? "").trim() || null;
+  if (action === "generate") return generateForUser(userId, ref, country, { manual: q.get("manual") === "1" });
+  if (action === "check") return checkForUser(userId, ref, country);
+  if (action === "applied") return markApplied(userId, ref);
+  if (action === "bad") return markBadForUser(userId, ref, (q.get("reason") ?? "").trim() || "bad");
+  if (action === "text") return jobText(userId, ref);
+  return { status: 404, body: { ok: false, message: `Unknown action '${action}'.` } };
+}
 
 // ../supabase/generate-src/entry.ts
-var json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+var CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-bot-key, apikey, content-type, x-client-info",
+  "Access-Control-Allow-Methods": "GET, OPTIONS"
+};
+var json = (status, body) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...CORS } });
+async function userFromSession(req) {
+  const m = /^Bearer\s+(\S+)$/i.exec(req.headers.get("authorization") ?? "");
+  if (!m) return null;
+  const db = createAdminClient();
+  const { data } = await db.auth.getUser(m[1]);
+  if (!data.user) return null;
+  const { data: p } = await db.from("profiles").select("status").eq("id", data.user.id).maybeSingle();
+  return p?.status === "approved" ? data.user.id : null;
+}
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
   try {
-    const userId = await userFromApiKey(req);
-    if (!userId) {
-      return json(401, { ok: false, message: "Missing or invalid API key. Open your bot Settings page, create a key, then set it from the Tampermonkey menu \u2192 \u201CSet bot API key\u201D." });
+    const url = new URL(req.url);
+    const action = /\/jobs\/([a-z]+)\/?$/.exec(url.pathname)?.[1] ?? "generate";
+    const apiUser = req.headers.get("x-bot-key") ? await userFromApiKey(req) : null;
+    if (apiUser) {
+      const r = await userscriptRequest(action, apiUser, url.searchParams);
+      return json(r.status, r.body);
     }
-    const q = new URL(req.url).searchParams;
-    const idRaw = (q.get("id") ?? "").trim();
-    const seo = (q.get("seo") ?? "").trim() || null;
-    if (idRaw && !/^\d+$/.test(idRaw)) return json(400, { ok: false, message: "Bad project id." });
-    const ref = { id: idRaw ? Number(idRaw) : null, seo };
-    if (!ref.id && !ref.seo) return json(400, { ok: false, message: "Missing project id or seo." });
-    const r = await generateForUser(userId, ref, (q.get("country") ?? "").trim() || null, { manual: q.get("manual") === "1" });
-    return json(r.status, r.body);
+    const webUser = action === "generate" ? await userFromSession(req) : null;
+    if (webUser) {
+      const id = (url.searchParams.get("id") ?? "").trim();
+      if (!/^\d+$/.test(id)) return json(400, { ok: false, message: "Bad project id." });
+      const r = await generateForUser(webUser, { id: Number(id) }, null, { force: true });
+      return json(r.status, r.body);
+    }
+    return json(401, { ok: false, message: NO_API_KEY });
   } catch (e) {
-    return json(500, { ok: false, message: `Generate failed: ${String(e.message ?? e).slice(0, 200)}` });
+    return json(500, { ok: false, message: `Request failed: ${String(e.message ?? e).slice(0, 200)}` });
   }
 });

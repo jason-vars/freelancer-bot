@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { SKIPPABLE_UPGRADES } from "@/lib/settings/fields";
 import { getEffectiveSettings, isTrue, type Values } from "@/lib/settings/store";
 import { aiPriceAndDuration, generateProposal } from "@/lib/proposal";
+import { jobUrl } from "@/lib/jobUrl";
 
 // Server-side job actions shared by the Jobs page and the userscript API. Ports of
 // the matching bot/webui.py helpers (_generate_for_job, _mark_applied, _job_text).
@@ -29,17 +30,11 @@ export type Job = {
 };
 
 export type JobRef = { id?: number | null; seo?: string | null };
-type Result = { status: number; body: Record<string, unknown> };
+export type Result = { status: number; body: Record<string, unknown> };
 
 const csv = (v: string | undefined) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
 const lines = (v: string | undefined) => (v ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
 const int = (v: string | undefined, d: number) => (/^\d+$/.test((v ?? "").trim()) ? parseInt(v!, 10) : d);
-
-export function jobUrl(seo: string | null): string {
-  if (!seo) return "";
-  if (/^https?:\/\//.test(seo)) return seo;
-  return `https://www.freelancer.com/projects/${seo.replace(/^\/+/, "")}`;
-}
 
 /** Portfolio entries, one per line; a legacy comma-separated list still works. */
 function portfolio(v: string | undefined): string[] {

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.36.0
+// @version      1.37.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -81,7 +81,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.36.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.37.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
