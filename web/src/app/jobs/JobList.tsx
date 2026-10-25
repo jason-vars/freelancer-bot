@@ -1,13 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 export type JobRow = {
   id: number;
   title: string;
   url: string;
-  description: string;
   skills: string[];
   budget: string;
   bids: string;
@@ -40,6 +39,25 @@ async function post(id: number, action: string, body?: Record<string, unknown>) 
   return data as { ok: boolean; message?: string; proposal?: string; amount?: number; period?: number; currency?: string };
 }
 
+/** "Generate proposal": written by the Supabase `generate` function as the signed-in
+ *  user, so the OpenAI wait costs the web host nothing. Falls back to the website when
+ *  there's no session or the function is an older build that doesn't take one. */
+async function generateProposal(id: number): ReturnType<typeof post> {
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+  const { data } = await createClient().auth.getSession();
+  const token = data.session?.access_token;
+  if (!base || !token) return post(id, "generate");
+  try {
+    const r = await fetch(`${base}/functions/v1/generate/jobs/generate?id=${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (r.status === 401 || r.status === 404) return post(id, "generate");
+    return await r.json().catch(() => ({ ok: false, message: `HTTP ${r.status}` }));
+  } catch {
+    return post(id, "generate");
+  }
+}
+
 /** The user's state of one job, which decides the tab it belongs in. */
 export type JobState = { opened: boolean; applied: boolean; skipped: boolean; bad: boolean; myFilter: boolean };
 
@@ -50,6 +68,8 @@ type Callbacks = {
   onExpand?: (job: JobRow, open: boolean) => void;
   /** You marked the job bad here (saved), so the list can offer Ctrl+Z / Undo. */
   onBad?: (job: JobRow) => void;
+  /** Something shared changed (a bad mark): reload the list. */
+  onChanged?: () => void;
 };
 
 export function JobList({ jobs, isAdmin, fresh, ...cb }: { jobs: JobRow[]; isAdmin: boolean; fresh?: Set<number> } & Callbacks) {
@@ -61,12 +81,24 @@ export function JobList({ jobs, isAdmin, fresh, ...cb }: { jobs: JobRow[]; isAdm
   );
 }
 
-function Job({ job, isAdmin, fresh, onState, onExpand, onBad }: { job: JobRow; isAdmin: boolean; fresh: boolean } & Callbacks) {
-  const router = useRouter();
+function Job({ job, isAdmin, fresh, onState, onExpand, onBad, onChanged }: { job: JobRow; isAdmin: boolean; fresh: boolean } & Callbacks) {
   const [opened, setOpened] = useState(Boolean(job.openedAt));
   const [applied, setApplied] = useState(Boolean(job.appliedAt));
   const [skipped, setSkipped] = useState(Boolean(job.skippedAt));
   const [expanded, setExpanded] = useState(false);
+  // Read straight from Supabase the first time the panel opens (the list leaves it out
+  // to keep reloads small), so it costs the web host nothing. null = not loaded yet;
+  // after an error the message stays and the next open tries again.
+  const [description, setDescription] = useState<string | null>(null);
+  const [descLoaded, setDescLoaded] = useState(false);
+  const loadDescription = async () => {
+    if (descLoaded) return;
+    setDescription(null);
+    const { data, error } = await createClient().from("jobs").select("description").eq("id", job.id).maybeSingle();
+    if (error) return setDescription("(couldn't load the description — close and reopen to retry)");
+    setDescription(data?.description || "(no description)");
+    setDescLoaded(true);
+  };
   const [proposal, setProposal] = useState(job.proposal ?? "");
   const [pricing, setPricing] = useState(
     job.amount != null ? `${job.amount} · ${job.periodDays ?? "?"} days` : "",
@@ -74,8 +106,8 @@ function Job({ job, isAdmin, fresh, onState, onExpand, onBad }: { job: JobRow; i
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  // Bad mark shown from local state so a click shows at once (the server refresh
-  // follows in the background). A refresh bringing new marks — yours confirmed, or
+  // Bad mark shown from local state so a click shows at once (the list reload
+  // follows in the background). A reload bringing new marks — yours confirmed, or
   // another user's via the live feed — replaces it.
   const fromProps = { count: job.badCount, byMe: job.badByMe, reasons: job.badReasons };
   const [bad, setBadState] = useState(fromProps);
@@ -101,7 +133,7 @@ function Job({ job, isAdmin, fresh, onState, onExpand, onBad }: { job: JobRow; i
   const generate = async () => {
     setBusy("generate");
     setError("");
-    const d = await post(job.id, "generate");
+    const d = await generateProposal(job.id);
     setBusy(null);
     if (!d.ok) return setError(d.message ?? "Generation failed.");
     setProposal(d.proposal ?? "");
@@ -157,7 +189,7 @@ function Job({ job, isAdmin, fresh, onState, onExpand, onBad }: { job: JobRow; i
     const d = await post(job.id, action);
     setBusy(null);
     if (d.ok) {
-      router.refresh(); // moves it in/out of the New list and syncs exact reasons
+      onChanged?.(); // moves it in/out of the New list and syncs exact reasons
       if (action === "bad" && !before.byMe) onBad?.(job);
     } else {
       setBadState(before);
@@ -216,7 +248,7 @@ function Job({ job, isAdmin, fresh, onState, onExpand, onBad }: { job: JobRow; i
 
       <div className="mt-3 flex flex-wrap gap-2">
         {/* Reading the details isn't opening the job: only opening it on Freelancer is. */}
-        <button className="btn" onClick={() => { onExpand?.(job, !expanded); setExpanded(!expanded); }}>
+        <button className="btn" onClick={() => { if (!expanded) void loadDescription(); onExpand?.(job, !expanded); setExpanded(!expanded); }}>
           {expanded ? "Hide" : "Details & proposal"}
         </button>
         <a className="btn" href={job.url} target="_blank" rel="noreferrer" onClick={markOpened}>Open on Freelancer ↗</a>
@@ -241,7 +273,7 @@ function Job({ job, isAdmin, fresh, onState, onExpand, onBad }: { job: JobRow; i
 
       {expanded && (
         <div className="mt-4 space-y-4 border-t border-border pt-4">
-          <p className="max-h-72 overflow-auto text-sm whitespace-pre-wrap text-muted">{job.description || "(no description)"}</p>
+          <p className="max-h-72 overflow-auto text-sm whitespace-pre-wrap text-muted">{description ?? "Loading description…"}</p>
           <div>
             <div className="mb-2 flex flex-wrap items-center gap-2">
               <button className="btn btn-primary" onClick={generate} disabled={busy !== null}>
