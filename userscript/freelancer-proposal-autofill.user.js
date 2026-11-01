@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.37.0
+// @version      1.38.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -81,7 +81,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.37.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.38.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -227,6 +227,7 @@
   // proposal: ✨ Generate still writes one if you want it anyway.
   let countryBlock = null, serverBlock = null, softSkip = null;
   let gateCheck = null;       // both checks for the current project
+  let optionsReady = Promise.resolve(); // the bot's settings, read when a project opens
   let runBtn = null, bidBtn = null;
   const blockedReason = () => countryBlock || serverBlock;
   function paintBlocked() {
@@ -256,6 +257,7 @@
         const text = currentClientCountry();
         if (text || Date.now() - started > 20000) {
           const hit = countryBlockReason(text);
+          console.log("[fbb] country check:", text, countryLists(), hit ? "BLOCKED" : "ok");
           if (hit) {
             block("country", "Skipped — " + hit.why + ".");
             // A skipped country is the admin's call, so the job is useless to everyone.
@@ -294,11 +296,15 @@
       });
     });
   }
-  // Starts both checks the moment a project opens.
+  // Starts both checks the moment a project opens. The country is matched only after
+  // the bot sent its skip lists: matching against the browser's saved copy (empty at
+  // first, stale after an edit) let a skipped country through to OpenAI. If the bot
+  // can't be reached, the saved copy is all there is.
   function startChecks(seo) {
     countryBlock = serverBlock = softSkip = null;
     paintBlocked();
-    gateCheck = seo ? Promise.all([checkServer(seo), checkCountry(seo)]) : null;
+    optionsReady = optionsRequest({}).then(cacheOptions, () => {});
+    gateCheck = seo ? Promise.all([checkServer(seo), optionsReady.then(() => checkCountry(seo))]) : null;
     if (seo) watchClosed(seo);
   }
 
@@ -1354,6 +1360,14 @@
       }
       // Project matched a currency/country skip filter — don't fill, don't cache.
       if (data && data.skipped) {
+        // The bot caught a skipped country the page check missed: same outcome as that
+        // check, so the job leaves everyone's list and no bid can go out.
+        if (/country_blocked/.test(data.message || "")) {
+          const why = "Skipped — client is in a skipped country";
+          block("country", why + ".");
+          autoMarkBad(seo, currentProjectId(), "country: skipped", why);
+          return;
+        }
         badge(data.message || "Skipped by filter.", "info");
         return;
       }
@@ -1410,8 +1424,8 @@
   // setting instead of the built-in default. On failure we fall back to the cached
   // values, which the buttons already show.
   watchBidRequests();
-  startChecks(currentSeo()); // in parallel with reading the options
-  optionsRequest({}).then(cacheOptions, () => {}).then(() => run(false));
+  startChecks(currentSeo()); // reads the options, and checks the country after that
+  optionsReady.then(() => run(false));
   // Keyed on the PROJECT, not the raw path: Freelancer rewrites the URL of the same
   // project after load (…/slug -> …/slug/details), and treating that as a new page
   // started a second generate that re-filled the form with a different proposal.
