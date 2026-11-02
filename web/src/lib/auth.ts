@@ -24,12 +24,13 @@ export async function getProfile(): Promise<Profile | null> {
   const { data: claims } = await supabase.auth.getClaims();
   const uid = claims?.claims?.sub;
   if (!uid) return null;
-  const { data } = await supabase
-    .from("profiles")
-    .select("id,email,full_name,role,status,api_key_prefix,created_at,approved_at,can_mark_bad")
-    .eq("id", uid)
-    .maybeSingle();
-  return (data as Profile | null) ?? null;
+  // "*", not a column list: a column added later (can_mark_bad) that the database
+  // doesn't have yet must not make every sign-in fail and bounce back to /login.
+  const { data } = await supabase.from("profiles").select("*").eq("id", uid).maybeSingle();
+  if (!data) return null;
+  const profile = { ...(data as Profile & { api_key_hash?: string }) };
+  delete profile.api_key_hash; // server-only secret's hash: never pass it around
+  return { ...profile, can_mark_bad: Boolean(profile.can_mark_bad) };
 }
 
 /** For pages only approved users may see. */

@@ -18,7 +18,8 @@ export default async function AdminPage() {
   const me = await requireAdmin();
   const supabase = await createClient();
   const [{ data: users }, { data: worker }, { count: jobCount }] = await Promise.all([
-    supabase.from("profiles").select("id,email,full_name,role,status,created_at,api_key_prefix,can_mark_bad")
+    // "*" so the list still loads on a database that lacks a newer column.
+    supabase.from("profiles").select("*")
       .order("status", { ascending: true }).order("created_at", { ascending: false }),
     supabase.from("worker_status").select("*").eq("id", 1).maybeSingle(),
     supabase.from("jobs").select("id", { count: "exact", head: true }),
