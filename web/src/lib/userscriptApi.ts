@@ -29,7 +29,7 @@ async function panelOptions(userId: string, q: URLSearchParams): Promise<Result>
       user_id: userId, values: { ...((data?.values as object) ?? {}), ...updates }, updated_at: new Date().toISOString(),
     });
   }
-  const s = await getEffectiveSettings(userId);
+  const [s, markBad] = await Promise.all([getEffectiveSettings(userId), userCanMarkBad(userId)]);
   const list = (v: string | undefined) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   return {
     status: 200,
@@ -37,9 +37,23 @@ async function panelOptions(userId: string, q: URLSearchParams): Promise<Result>
       ok: true, seal: isTrue(s.BOT_SEAL_BIDS), autogen: isTrue(s.BOT_AUTO_GENERATE), autobid: isTrue(s.BOT_AUTO_BID),
       // The userscript checks the client's country as soon as a project opens.
       skip_countries: list(s.BOT_SKIP_COUNTRIES), allow_countries: list(s.BOT_ALLOW_COUNTRIES),
+      // Shows the panel's 👎 Mark bad button.
+      can_mark_bad: markBad,
     },
   };
 }
+
+/** Admins, and users the admin allowed on the Admin page. ("*": an older database
+ *  without the column then still lets admins through.) */
+async function userCanMarkBad(userId: string): Promise<boolean> {
+  const { data } = await createAdminClient().from("profiles").select("*").eq("id", userId).maybeSingle();
+  return Boolean(data && (data.role === "admin" || data.can_mark_bad));
+}
+
+// Bad marks the userscript makes on its own from what the page shows (closed or
+// deleted project, skipped country): facts, not a judgement, so any user may send
+// them. Anything else is a hand-made mark and needs permission.
+const AUTOMATIC_BAD = /^(closed:|deleted:|country)/;
 
 /** One userscript request from an already-authenticated user. `action` is the last
  *  part of the path: options, generate, check, applied, bad or text. */
@@ -56,7 +70,13 @@ export async function userscriptRequest(action: string, userId: string, q: URLSe
   if (action === "generate") return generateForUser(userId, ref, country, { manual: q.get("manual") === "1" });
   if (action === "check") return checkForUser(userId, ref, country);
   if (action === "applied") return markApplied(userId, ref);
-  if (action === "bad") return markBadForUser(userId, ref, (q.get("reason") ?? "").trim() || "bad");
+  if (action === "bad") {
+    const reason = (q.get("reason") ?? "").trim() || "bad";
+    if (!AUTOMATIC_BAD.test(reason) && !(await userCanMarkBad(userId))) {
+      return { status: 403, body: { ok: false, message: "Only users the admin allows can mark jobs bad." } };
+    }
+    return markBadForUser(userId, ref, reason);
+  }
   if (action === "text") return jobText(userId, ref);
   return { status: 404, body: { ok: false, message: `Unknown action '${action}'.` } };
 }

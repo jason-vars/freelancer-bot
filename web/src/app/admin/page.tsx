@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { deleteUser, requestFetch, setUserRole, setUserStatus } from "./actions";
+import { deleteUser, requestFetch, setCanMarkBad, setUserRole, setUserStatus } from "./actions";
 
 function when(iso: string | null): string {
   return iso
@@ -18,7 +18,7 @@ export default async function AdminPage() {
   const me = await requireAdmin();
   const supabase = await createClient();
   const [{ data: users }, { data: worker }, { count: jobCount }] = await Promise.all([
-    supabase.from("profiles").select("id,email,full_name,role,status,created_at,api_key_prefix")
+    supabase.from("profiles").select("id,email,full_name,role,status,created_at,api_key_prefix,can_mark_bad")
       .order("status", { ascending: true }).order("created_at", { ascending: false }),
     supabase.from("worker_status").select("*").eq("id", 1).maybeSingle(),
     supabase.from("jobs").select("id", { count: "exact", head: true }),
@@ -65,6 +65,7 @@ export default async function AdminPage() {
                 <th className="py-2 pr-3 font-medium">User</th>
                 <th className="py-2 pr-3 font-medium">Status</th>
                 <th className="py-2 pr-3 font-medium">Role</th>
+                <th className="py-2 pr-3 font-medium" title="Can mark jobs bad by hand. A bad job leaves every user's list.">Mark bad</th>
                 <th className="py-2 pr-3 font-medium">Registered</th>
                 <th className="py-2 font-medium" />
               </tr>
@@ -86,6 +87,14 @@ export default async function AdminPage() {
                       </span>
                     </td>
                     <td className="py-2.5 pr-3">{u.role}</td>
+                    <td className="py-2.5 pr-3">
+                      {u.role === "admin" ? <span className="text-xs text-muted">always</span> : (
+                        <form action={setCanMarkBad.bind(null, u.id, !u.can_mark_bad)} className="flex items-center gap-2">
+                          <span className={`chip ${u.can_mark_bad ? "chip-ok" : ""}`}>{u.can_mark_bad ? "allowed" : "no"}</span>
+                          <button className="btn">{u.can_mark_bad ? "Revoke" : "Allow"}</button>
+                        </form>
+                      )}
+                    </td>
                     <td className="py-2.5 pr-3 text-muted">{when(u.created_at)}</td>
                     <td className="py-2.5">
                       {self ? <span className="text-xs text-muted">you</span> : (
