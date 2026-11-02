@@ -72,16 +72,20 @@ type Callbacks = {
   onChanged?: () => void;
 };
 
-export function JobList({ jobs, isAdmin, fresh, ...cb }: { jobs: JobRow[]; isAdmin: boolean; fresh?: Set<number> } & Callbacks) {
+export function JobList({ jobs, isAdmin, canMarkBad, fresh, ...cb }: {
+  jobs: JobRow[]; isAdmin: boolean; canMarkBad: boolean; fresh?: Set<number>;
+} & Callbacks) {
   if (!jobs.length) return <div className="card p-8 text-center text-sm text-muted">No jobs here yet.</div>;
   return (
     <ul className="space-y-3">
-      {jobs.map((j) => <Job key={j.id} job={j} isAdmin={isAdmin} fresh={fresh?.has(j.id) ?? false} {...cb} />)}
+      {jobs.map((j) => <Job key={j.id} job={j} isAdmin={isAdmin} canMarkBad={canMarkBad} fresh={fresh?.has(j.id) ?? false} {...cb} />)}
     </ul>
   );
 }
 
-function Job({ job, isAdmin, fresh, onState, onExpand, onBad, onChanged }: { job: JobRow; isAdmin: boolean; fresh: boolean } & Callbacks) {
+function Job({ job, isAdmin, canMarkBad, fresh, onState, onExpand, onBad, onChanged }: {
+  job: JobRow; isAdmin: boolean; canMarkBad: boolean; fresh: boolean;
+} & Callbacks) {
   const [opened, setOpened] = useState(Boolean(job.openedAt));
   const [applied, setApplied] = useState(Boolean(job.appliedAt));
   const [skipped, setSkipped] = useState(Boolean(job.skippedAt));
@@ -259,10 +263,12 @@ function Job({ job, isAdmin, fresh, onState, onExpand, onBad, onChanged }: { job
             {skipped ? "Unskip" : "Mark skipped"}
           </button>
         )}
-        {/* On New too: the title and tags are often enough to tell a bad job. */}
+        {/* On New too: the title and tags are often enough to tell a bad job. Only for
+            users the admin allows (Admin page): a bad job leaves everyone's list. Your
+            own earlier mark can always be undone. */}
         {bad.byMe ? (
           <button className="btn" onClick={() => setBad("unbad")} disabled={busy !== null}>Undo bad mark</button>
-        ) : (
+        ) : canMarkBad && (
           <button className="btn btn-danger" onClick={() => setBad("bad")} disabled={busy !== null}>👎 Mark bad</button>
         )}
         {isAdmin && bad.count > 0 && (

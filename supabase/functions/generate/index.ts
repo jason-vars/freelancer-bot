@@ -207,13 +207,21 @@ var GROUPS = [
         key: "BOT_HOURLY_RATE",
         label: "Hourly rate",
         kind: "int",
-        help: "Bid on HOURLY projects, per hour (raised to the client's minimum if below it). The bid table below is only for fixed-price jobs. Blank = middle of the client's hourly range."
+        help: "Bid on HOURLY projects, per hour (raised to the client's minimum if below it). The bid table below is only for fixed-price jobs. Blank = the Default bid below, from the client's hourly range."
+      },
+      {
+        key: "BOT_DEFAULT_BID",
+        label: "Default bid",
+        kind: "select",
+        help: "The amount bid from the client's budget range when no row of the table below matches (and, for hourly jobs, when no hourly rate is set). E.g. a $30\u2013250 job: middle = $140, minimum = $30.",
+        default: "middle",
+        choices: [["middle", "Middle of the client's budget"], ["min", "Client's minimum budget"]]
       },
       {
         key: "BOT_BID_RULES",
         label: "Bid by currency & budget",
         kind: "bidrules",
-        help: "Fixed-price jobs only. First matching row wins; otherwise half-way between the budget's min and max, rounded up."
+        help: "Fixed-price jobs only. First matching row wins; otherwise the Default bid above. Leave it empty to always use the Default bid."
       }
     ]
   },
@@ -1044,14 +1052,19 @@ async function resolvePricing(s, j) {
     if (priced) return priced;
   }
   const { budget_min: lo, budget_max: hi } = j;
+  const fromRange = () => {
+    if (lo == null && hi == null) return 200;
+    if ((s.BOT_DEFAULT_BID ?? "").trim() === "min") return lo ?? hi;
+    return hi == null ? niceAmount(lo) : lo == null ? hi : niceAmount((lo + hi) / 2, hi);
+  };
   if (j.project_type === "hourly") {
     const rate = Number(s.BOT_HOURLY_RATE);
-    const amount2 = rate > 0 ? Math.max(rate, lo ?? 0) : lo == null && hi == null ? 200 : hi == null ? niceAmount(lo) : lo == null ? hi : niceAmount((lo + hi) / 2, hi);
+    const amount2 = rate > 0 ? Math.max(rate, lo ?? 0) : fromRange();
     return [amount2, Math.max(1, int(s.BOT_DEFAULT_PERIOD_DAYS, 7))];
   }
   const ruled = bidFromRules(s, j);
   if (ruled) return ruled;
-  const amount = lo == null && hi == null ? 200 : hi == null ? niceAmount(lo) : lo == null ? hi : niceAmount((lo + hi) / 2, hi);
+  const amount = fromRange();
   const top = hi ?? lo;
   const days = top != null && top < 300 ? 1 : int(s.BOT_DEFAULT_PERIOD_DAYS, 7);
   return [amount, days];
@@ -1198,7 +1211,7 @@ async function panelOptions(userId, q) {
       updated_at: (/* @__PURE__ */ new Date()).toISOString()
     });
   }
-  const s = await getEffectiveSettings(userId);
+  const [s, markBad] = await Promise.all([getEffectiveSettings(userId), userCanMarkBad(userId)]);
   const list = (v) => (v ?? "").split(",").map((x) => x.trim()).filter(Boolean);
   return {
     status: 200,
@@ -1209,10 +1222,17 @@ async function panelOptions(userId, q) {
       autobid: isTrue(s.BOT_AUTO_BID),
       // The userscript checks the client's country as soon as a project opens.
       skip_countries: list(s.BOT_SKIP_COUNTRIES),
-      allow_countries: list(s.BOT_ALLOW_COUNTRIES)
+      allow_countries: list(s.BOT_ALLOW_COUNTRIES),
+      // Shows the panel's 👎 Mark bad button.
+      can_mark_bad: markBad
     }
   };
 }
+async function userCanMarkBad(userId) {
+  const { data } = await createAdminClient().from("profiles").select("*").eq("id", userId).maybeSingle();
+  return Boolean(data && (data.role === "admin" || data.can_mark_bad));
+}
+var AUTOMATIC_BAD = /^(closed:|deleted:|country)/;
 async function userscriptRequest(action, userId, q) {
   if (action === "options" || action === "seal") return panelOptions(userId, q);
   const idRaw = (q.get("id") ?? "").trim();
@@ -1224,7 +1244,13 @@ async function userscriptRequest(action, userId, q) {
   if (action === "generate") return generateForUser(userId, ref, country, { manual: q.get("manual") === "1" });
   if (action === "check") return checkForUser(userId, ref, country);
   if (action === "applied") return markApplied(userId, ref);
-  if (action === "bad") return markBadForUser(userId, ref, (q.get("reason") ?? "").trim() || "bad");
+  if (action === "bad") {
+    const reason = (q.get("reason") ?? "").trim() || "bad";
+    if (!AUTOMATIC_BAD.test(reason) && !await userCanMarkBad(userId)) {
+      return { status: 403, body: { ok: false, message: "Only users the admin allows can mark jobs bad." } };
+    }
+    return markBadForUser(userId, ref, reason);
+  }
   if (action === "text") return jobText(userId, ref);
   return { status: 404, body: { ok: false, message: `Unknown action '${action}'.` } };
 }

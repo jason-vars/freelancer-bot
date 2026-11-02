@@ -11,7 +11,12 @@ export type Profile = {
   api_key_prefix: string | null;
   created_at: string;
   approved_at: string | null;
+  /** The admin let this user mark jobs bad by hand (admins always may). */
+  can_mark_bad: boolean;
 };
+
+/** Whether this user may mark jobs bad by hand: admins, and users the admin allowed. */
+export const canMarkBad = (p: Pick<Profile, "role" | "can_mark_bad">) => p.role === "admin" || Boolean(p.can_mark_bad);
 
 /** The signed-in user's profile, or null when signed out. */
 export async function getProfile(): Promise<Profile | null> {
@@ -21,7 +26,7 @@ export async function getProfile(): Promise<Profile | null> {
   if (!uid) return null;
   const { data } = await supabase
     .from("profiles")
-    .select("id,email,full_name,role,status,api_key_prefix,created_at,approved_at")
+    .select("id,email,full_name,role,status,api_key_prefix,created_at,approved_at,can_mark_bad")
     .eq("id", uid)
     .maybeSingle();
   return (data as Profile | null) ?? null;

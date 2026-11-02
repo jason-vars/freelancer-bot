@@ -53,6 +53,18 @@ returns boolean language sql stable security definer set search_path = public as
   );
 $$;
 
+-- "Mark bad" hides a job from EVERY user, so only users the admin allows (Admin page)
+-- may do it by hand; admins always may. Added after launch, so an ALTER.
+alter table public.profiles add column if not exists can_mark_bad boolean not null default false;
+
+create or replace function public.can_mark_bad()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and status = 'approved' and (role = 'admin' or can_mark_bad)
+  );
+$$;
+
 -- ── Settings ──────────────────────────────────────────────────────────────────────
 -- Admin settings, keyed by the same names the Python bot reads from .env
 -- (BOT_KEYWORDS, OPENAI_API_KEY, ...). The worker overlays these on its .env each
@@ -365,15 +377,16 @@ drop policy if exists "user_jobs: admin read" on public.user_jobs;
 create policy "user_jobs: admin read" on public.user_jobs
   for select to authenticated using ((select public.is_admin()));
 
--- Bad marks are shared: every approved user sees all of them, adds or changes only
--- their own, and admins can clear anyone's.
+-- Bad marks are shared: every approved user sees all of them, adds (if the admin
+-- allows them, see can_mark_bad) or changes only their own, and admins can clear
+-- anyone's.
 drop policy if exists "job_flags: approved read" on public.job_flags;
 create policy "job_flags: approved read" on public.job_flags
   for select to authenticated using ((select public.is_approved()));
 
 drop policy if exists "job_flags: own insert" on public.job_flags;
 create policy "job_flags: own insert" on public.job_flags
-  for insert to authenticated with check (user_id = (select auth.uid()) and (select public.is_approved()));
+  for insert to authenticated with check (user_id = (select auth.uid()) and (select public.can_mark_bad()));
 
 drop policy if exists "job_flags: own update" on public.job_flags;
 create policy "job_flags: own update" on public.job_flags

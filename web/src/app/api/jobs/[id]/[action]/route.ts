@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProfile } from "@/lib/auth";
+import { canMarkBad, getProfile } from "@/lib/auth";
 import { generateForUser, markApplied, markOpened, markSkipped } from "@/lib/jobs";
 import { createClient } from "@/lib/supabase/server";
 
@@ -30,6 +30,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!/^\d+$/.test(id)) return json(400, { ok: false, message: "Bad project id." });
   const ref = { id: Number(id) };
 
+  if (action === "bad" && !canMarkBad(profile)) {
+    return json(403, { ok: false, message: "Only users the admin allows can mark jobs bad." });
+  }
   if (action === "bad" || action === "unbad") return flag(action, ref.id, profile.id, req);
   if (action === "clearbad") {
     if (profile.role !== "admin") return json(403, { ok: false, message: "Admins only." });

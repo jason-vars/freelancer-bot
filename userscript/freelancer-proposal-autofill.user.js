@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Freelancer Bid Bot — Proposal Auto-Fill
 // @namespace    freelancer-bid-bot
-// @version      1.38.0
+// @version      1.39.0
 // @description  When you open a Freelancer project, fetch the bot-generated (OpenAI) proposal + bid amount + delivery days and fill the bid form automatically, then place the bid on its own (cancellable countdown; switched on in the bot's Settings). Works even for projects the bot never collected — they're fetched live and filtered (incl. client country scraped from the page) before generating. Marks jobs 'applied' in the bot (on Place bid, or when it detects you've already bid) so the Jobs page shows what you've done.
 // @match        https://www.freelancer.com/projects/*
 // @include      /^https:\/\/(www\.)?freelancer\.[a-z]{2,3}(\.[a-z]{2,3})?\/projects\//
@@ -81,7 +81,7 @@
 
   // Proof of injection: if this line isn't in the page console (F12), Tampermonkey
   // isn't running the script here — check that it's enabled and that the URL matches.
-  console.log("[fbb] userscript 1.38.0 loaded on", location.href);
+  console.log("[fbb] userscript 1.39.0 loaded on", location.href);
 
   // ── Config ────────────────────────────────────────────────────────────────
   // Where your bot's web UI is listening (python -m bot webui / serve).
@@ -334,6 +334,8 @@
   // when auto-fill couldn't find the bid box on a slow page) ─────────────────
   let statusEl = null;
   let genBtn = null;
+  // 👎 Mark bad: hidden until the bot says the admin allows this user (can_mark_bad).
+  let badBtn = null;
   function mkBtn(label, color, onClick) {
     const b = document.createElement("button");
     b.textContent = label;
@@ -372,7 +374,9 @@
     const navRow = document.createElement("div");
     navRow.style.cssText = "display:flex;gap:8px;";
     navRow.appendChild(mkBtn("⬇ Go to Place bid", "#0f766e", () => scrollToPlaceBid()));
-    navRow.appendChild(mkBtn("👎 Mark bad", "#b42318", () => markBadHere()));
+    badBtn = mkBtn("👎 Mark bad", "#b42318", () => markBadHere());
+    badBtn.style.display = "none";
+    navRow.appendChild(badBtn);
     const copyRow = document.createElement("div");
     copyRow.style.cssText = "display:flex;gap:8px;";
     copyRow.appendChild(genBtn);
@@ -459,6 +463,7 @@
     if (typeof d.seal === "boolean") cacheSeal(d.seal);
     if (typeof d.autogen === "boolean") cacheAutoGen(d.autogen);
     if (typeof d.autobid === "boolean") cacheAutoBid(d.autobid);
+    if (badBtn) badBtn.style.display = d.can_mark_bad ? "" : "none";
     cacheCountries(d);
   }
 

@@ -32,6 +32,14 @@ export async function setUserRole(userId: string, role: "user" | "admin") {
   revalidatePath("/admin");
 }
 
+/** Lets a user mark jobs bad by hand (the 👎 buttons), or takes that away. */
+export async function setCanMarkBad(userId: string, allowed: boolean) {
+  await adminOnly();
+  const supabase = await createClient();
+  await supabase.from("profiles").update({ can_mark_bad: allowed }).eq("id", userId);
+  revalidatePath("/admin");
+}
+
 export async function deleteUser(userId: string) {
   const me = await adminOnly();
   if (userId === me.id) return;

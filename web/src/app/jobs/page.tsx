@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { requireApproved } from "@/lib/auth";
+import { canMarkBad, requireApproved } from "@/lib/auth";
 import { JobFeed } from "./JobFeed";
 import { ADMIN_VIEWS, VIEWS, jobsHref, type View } from "./views";
 
@@ -34,7 +34,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
         ))}
       </div>
 
-      <JobFeed key={`${view}|${search}|${page}`} isAdmin={isAdmin} userId={profile.id}
+      <JobFeed key={`${view}|${search}|${page}`} isAdmin={isAdmin} canMarkBad={canMarkBad(profile)} userId={profile.id}
         view={view} search={search} page={page} />
     </div>
   );

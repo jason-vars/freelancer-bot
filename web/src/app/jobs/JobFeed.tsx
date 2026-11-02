@@ -60,8 +60,8 @@ function belongsIn(view: string, s: JobState): boolean {
   }
 }
 
-export function JobFeed({ isAdmin, userId, view, search, page }: {
-  isAdmin: boolean; userId: string; view: View; search: string; page: number;
+export function JobFeed({ isAdmin, canMarkBad, userId, view, search, page }: {
+  isAdmin: boolean; canMarkBad: boolean; userId: string; view: View; search: string; page: number;
 }) {
   // Only the first page follows new jobs; older pages are a fixed slice.
   const live = page === 1;
@@ -336,7 +336,7 @@ export function JobFeed({ isAdmin, userId, view, search, page }: {
       )}
       {loaded === null
         ? <div className="card p-8 text-center text-sm text-muted">Loading jobs…</div>
-        : <JobList jobs={jobs} isAdmin={isAdmin} fresh={fresh} onState={onState} onExpand={onExpand} onBad={onBad}
+        : <JobList jobs={jobs} isAdmin={isAdmin} canMarkBad={canMarkBad} fresh={fresh} onState={onState} onExpand={onExpand} onBad={onBad}
             onChanged={() => void reload()} />}
 
       {pages > 1 && (

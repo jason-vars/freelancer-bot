@@ -245,19 +245,25 @@ async function resolvePricing(s: Values, j: Job): Promise<[number, number]> {
     if (priced) return priced;
   }
   const { budget_min: lo, budget_max: hi } = j;
+  // From the client's range when nothing more specific applies (Default bid): their
+  // minimum exactly, or the middle rounded up to a tidy number.
+  const fromRange = (): number => {
+    if (lo == null && hi == null) return 200;
+    if ((s.BOT_DEFAULT_BID ?? "").trim() === "min") return lo ?? hi!;
+    return hi == null ? niceAmount(lo!) : lo == null ? hi : niceAmount((lo + hi) / 2, hi);
+  };
   // Hourly: bid your hourly rate. The bid table holds fixed-price totals, so a
   // $40-50/hr job would otherwise match a 30-250 row and bid $200 an hour. The rate
   // is raised to the client's minimum (a bid below their range looks like a mistake)
-  // but never lowered to their maximum. No rate set: middle of their range.
+  // but never lowered to their maximum. No rate set: the Default bid from their range.
   if (j.project_type === "hourly") {
     const rate = Number(s.BOT_HOURLY_RATE);
-    const amount = rate > 0 ? Math.max(rate, lo ?? 0)
-      : lo == null && hi == null ? 200 : hi == null ? niceAmount(lo!) : lo == null ? hi : niceAmount((lo + hi) / 2, hi);
+    const amount = rate > 0 ? Math.max(rate, lo ?? 0) : fromRange();
     return [amount, Math.max(1, int(s.BOT_DEFAULT_PERIOD_DAYS, 7))];
   }
   const ruled = bidFromRules(s, j);
   if (ruled) return ruled;
-  const amount = lo == null && hi == null ? 200 : hi == null ? niceAmount(lo!) : lo == null ? hi : niceAmount((lo + hi) / 2, hi);
+  const amount = fromRange();
   const top = hi ?? lo;
   const days = top != null && top < 300 ? 1 : int(s.BOT_DEFAULT_PERIOD_DAYS, 7);
   return [amount, days];
