@@ -14,8 +14,24 @@ import { PAGE_SIZE, jobsHref, type View } from "./views";
 // desktop alert). The page keys this component by view/search/page, so switching
 // views remounts it instead of counting the new view's jobs as "new".
 
-// Backup only, in case the Realtime socket drops: Realtime brings changes at once.
-const POLL_MS = 300_000;
+// Backup for when Realtime brings nothing (socket dropped, or a session token it
+// rejects, which silently stops the RLS-filtered events): a tiny "anything new?"
+// query straight to Supabase, matching the fetcher's 30 s pace. Costs the web host
+// nothing; the list itself only reloads when the answer changed.
+const POLL_MS = 30_000;
+
+/** Fingerprint of what the lists show: newest saved job, plus the shared bad marks
+ *  (count catches removals, newest time catches additions). */
+async function listVersion(): Promise<string | null> {
+  const supabase = createClient();
+  const [jobs, flags, latestFlag] = await Promise.all([
+    supabase.from("jobs").select("synced_at").order("synced_at", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("job_flags").select("job_id", { count: "exact", head: true }),
+    supabase.from("job_flags").select("created_at").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
+  if (jobs.error) return null;
+  return [jobs.data?.synced_at ?? "", flags.count ?? 0, latestFlag.data?.created_at ?? ""].join("|");
+}
 // Worker statuses of jobs that show in the lists (views.ts PASSED). Realtime only
 // wakes the page for NEW jobs in one of these, not for filtered ones or status edits.
 const LISTED = "new,alerting,alerted,alert_failed,notify_skipped";
@@ -171,10 +187,20 @@ export function JobFeed({ isAdmin, canMarkBad, userId, view, search, page }: {
   // the userscript, hidden by a filter) must not keep inflating the number.
   const unread = jobs.filter((j) => fresh.has(j.id)).length;
 
-  // Backup poll, visible tabs only (Supabase, not the web host).
+  // Backup poll, visible tabs only (Supabase, not the web host): reloads the list when
+  // the fingerprint moved, so new jobs show within ~30 s even if Realtime is silent.
   useEffect(() => {
     if (!live) return;
-    const timer = setInterval(() => { if (!document.hidden) void reloadRef.current(); }, POLL_MS);
+    let last: string | null = null;
+    const check = async () => {
+      if (document.hidden) return;
+      const v = await listVersion().catch(() => null);
+      if (v === null) return;
+      if (last !== null && v !== last) void reloadRef.current();
+      last = v;
+    };
+    void check();
+    const timer = setInterval(() => void check(), POLL_MS);
     return () => clearInterval(timer);
   }, [live]);
 
@@ -221,7 +247,10 @@ export function JobFeed({ isAdmin, canMarkBad, userId, view, search, page }: {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "jobs", filter: `status=in.(${LISTED})` }, jobAdded)
       .on("postgres_changes", { event: "*", schema: "public", table: "job_flags" }, changed)
       .on("postgres_changes", { event: "*", schema: "public", table: "user_jobs", filter: `user_id=eq.${userId}` }, changed)
-      .subscribe();
+      // A failure is otherwise invisible (the poll above covers for it): say why.
+      .subscribe((status, err) => {
+        if (status !== "SUBSCRIBED") console.warn("[jobs] live updates:", status, err?.message ?? "");
+      });
     return () => {
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
